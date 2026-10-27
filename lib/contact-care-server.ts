@@ -4,6 +4,16 @@ import { CONTACT_CARE_MESSAGES } from "@/lib/contact-care";
 
 export const CARE_CLAIM_FIELDS = "id,user_id,match_id,order_id,exchanged_at,counterparty_name,first_contact_at,explanation,reason,status,evidence_count,supplement_due_at,created_at,review_note,used_at,used_match_id";
 
+export async function careManualBalance(admin: SupabaseClient, userId: string) {
+  const result = await admin.from("contact_care_manual_vouchers").select("id", { count: "exact", head: true })
+    .eq("user_id", userId).is("used_at", null).is("revoked_at", null);
+  // Rolling deployment: absence of the additive migration must not break existing claims.
+  if (result.error && ["42P01", "PGRST205"].includes(result.error.code)) return { installed: false, remaining: 0 };
+  if (result.error) throw result.error;
+  if (!Number.isSafeInteger(result.count) || result.count! < 0) throw new Error("CARE_BALANCE_UNAVAILABLE");
+  return { installed: true, remaining: result.count! };
+}
+
 // Preserve PostgreSQL microseconds in cursors; never interpolate unvalidated text.
 export function parseCareCursor(raw: string) {
   const match = raw.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2}))\|([0-9a-f-]{36})$/i);

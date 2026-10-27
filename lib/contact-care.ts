@@ -11,6 +11,8 @@ export type ContactCareMatch = { id: string; name: string; order_id?: string; ex
 export type ContactCareStatus = {
   active: boolean; starts_at: string | null; claim: ContactCareClaim | null;
   payments: ContactCareMatch[]; matches: ContactCareMatch[];
+  manual_remaining?: number;
+  manual_history?: { used_match_id: string; used_at: string }[];
 };
 export const CONTACT_CARE_MESSAGES: Record<string, string> = {
   CARE_ONCE: "이미 신청 중이거나 교환권을 받은 내역이 있어요. 지급은 계정당 한 번만 가능해요.",

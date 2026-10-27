@@ -2,7 +2,7 @@ import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { CONTACT_CARE_UUID } from "@/lib/contact-care";
-import { careJson, careError, careMatchNames, CARE_CLAIM_FIELDS, readCareJson } from "@/lib/contact-care-server";
+import { careJson, careError, careMatchNames, careManualBalance, CARE_CLAIM_FIELDS, readCareJson } from "@/lib/contact-care-server";
 import { hashDatingContactBlockValue, normalizeDatingContactPhone } from "@/lib/dating-contact-blocks";
 import { hashOneOnOneBlockedPhone } from "@/lib/dating-1on1-phone-blocks";
 import { CARE_EVIDENCE_BUCKET, prepareCareEvidence, readCareForm } from "@/lib/contact-care-evidence";
@@ -14,15 +14,31 @@ export async function GET(req: Request) {
   if (!user) return careJson({ error: "로그인이 필요해요." }, 401);
   const admin = createAdminClient();
   try {
-    const [policy, claim] = await Promise.all([
+    if (new URL(req.url).searchParams.get("summary") === "1") {
+      const [claim, manual] = await Promise.all([
+        admin.from("contact_care_claims").select("status,used_at").eq("user_id", user.id).maybeSingle(),
+        careManualBalance(admin, user.id),
+      ]);
+      if (claim.error) throw claim.error;
+      return careJson({ remaining: manual.remaining + (claim.data?.status === "approved" && !claim.data.used_at ? 1 : 0) });
+    }
+    const [policy, claim, manual] = await Promise.all([
       admin.from("contact_care_policy").select("enabled,starts_at").eq("id", true).maybeSingle(),
       admin.from("contact_care_claims").select(CARE_CLAIM_FIELDS).eq("user_id", user.id).maybeSingle(),
+      careManualBalance(admin, user.id),
     ]);
     if (policy.error) throw policy.error;
     if (claim.error) throw claim.error;
     const active = policy.data?.enabled === true && Date.parse(policy.data.starts_at) <= Date.now();
     const result = { active, starts_at: policy.data?.starts_at ?? null, claim: claim.data,
+      manual_remaining: manual.remaining, manual_history: [] as { used_match_id: string; used_at: string }[],
       payments: [] as { id: string; name?: string; order_id: string; exchanged_at: string }[], matches: [] as unknown[] };
+    if (manual.installed) {
+      const history = await admin.from("contact_care_manual_vouchers").select("used_match_id,used_at")
+        .eq("user_id", user.id).not("used_at", "is", null).order("used_at", { ascending: false }).limit(10);
+      if (history.error) throw history.error;
+      result.manual_history = history.data ?? [];
+    }
     if ((active && (!claim.data || claim.data.status === "rejected")) || claim.data?.status === "needs_info") {
       const orderQuery = admin.from("toss_test_payment_orders").select("id,product_ref_id,approved_at")
         .eq("user_id", user.id).eq("product_type", "one_on_one_contact_exchange").eq("status", "paid")
@@ -50,8 +66,8 @@ export async function GET(req: Request) {
         result.payments.push({ id: previous.match_id, name: previous.counterparty_name || "상대 프로필", order_id: previous.order_id, exchanged_at: previous.exchanged_at });
       }
     }
-    if (claim.data?.status === "approved" && !claim.data.used_at) {
-      const originalMatchId = claim.data.match_id;
+    if (manual.remaining > 0 || claim.data?.status === "approved" && !claim.data.used_at) {
+      const originalMatchId = claim.data?.match_id;
       const matches = await admin.from("dating_1on1_match_proposals")
         .select("id,source_user_id,source_card_id,candidate_card_id")
         .or(`source_user_id.eq.${user.id},candidate_user_id.eq.${user.id}`)
@@ -59,7 +75,7 @@ export async function GET(req: Request) {
         .order("created_at", { ascending: false }).limit(30);
       if (matches.error) throw matches.error;
       const names = await careMatchNames(admin, matches.data ?? [], user.id);
-      result.matches = (matches.data ?? []).filter(m => m.id !== originalMatchId).map(m => ({ id: m.id, name: names.get(m.id) }));
+      result.matches = (matches.data ?? []).filter(m => manual.remaining > 0 || m.id !== originalMatchId).map(m => ({ id: m.id, name: names.get(m.id) }));
     }
     return careJson(result);
   } catch (error) { return careError(error); }
@@ -110,7 +126,7 @@ export async function POST(req: Request) {
       if (res.error) throw res.error;
       return careJson(res.data);
     }
-    if (body.action !== "redeem" || body.confirmed !== true) return careJson({ error: "교환권 사용을 확인해 주세요." }, 400);
+    if (!["redeem", "redeem_manual"].includes(body.action) || body.confirmed !== true) return careJson({ error: "교환권 사용을 확인해 주세요." }, 400);
     const match = await admin.from("dating_1on1_match_proposals").select("source_user_id,candidate_user_id").eq("id", body.matchId).maybeSingle();
     if (match.error) throw match.error;
     if (!match.data || ![match.data.source_user_id, match.data.candidate_user_id].includes(user.id)) return careJson({ error: "해당 매칭을 이용할 수 없어요." }, 404);
@@ -119,7 +135,7 @@ export async function POST(req: Request) {
     if (profiles.error) throw profiles.error;
     const phones = ids.map(id => normalizeDatingContactPhone(profiles.data?.find(p => p.user_id === id)?.phone_e164 ?? ""));
     if (phones.some(p => !p)) return careJson({ error: "휴대폰 인증 상태를 확인해 주세요. 교환권은 유지돼요." }, 409);
-    const res = await admin.rpc("redeem_contact_care", { p_user: user.id, p_match: body.matchId, p_phones: phones,
+    const res = await admin.rpc(body.action === "redeem_manual" ? "redeem_contact_care_manual" : "redeem_contact_care", { p_user: user.id, p_match: body.matchId, p_phones: phones,
       p_contact_hashes: phones.map(p => hashDatingContactBlockValue("phone", p)), p_legacy_hashes: phones.map(hashOneOnOneBlockedPhone) });
     if (res.error) throw res.error;
     return careJson(res.data);

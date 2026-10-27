@@ -37,7 +37,7 @@ async function fixture() {
     create policy unrelated_public_policy on storage.objects for all to anon,authenticated using(true) with check(true);
     alter default privileges in schema public grant all on tables to anon,authenticated,service_role;
   `);
-  try { await db.exec(read('supabase/sql/contact_care.sql')); await db.exec(read('supabase/sql/contact_care_evidence.sql')); } catch (e) { await db.close(); throw e; }
+  try { await db.exec(read('supabase/sql/contact_care.sql')); await db.exec(read('supabase/sql/contact_care_evidence.sql')); await db.exec(read('supabase/sql/contact_care_manual_vouchers.sql')); } catch (e) { await db.close(); throw e; }
   const q = (sql, args = []) => db.query(sql, args);
   const rpc = async (name, args) => (await q(`select ${name}(${args.map((_, i) => '$' + (i + 1)).join(',')}) v`, args)).rows[0].v;
   await q('insert into auth.users(id) values($1),($2),($3),($4)', [id(1),id(2),id(3),id(4)]);
@@ -219,7 +219,7 @@ test('API guards: login, origin, malformed body, admin permissions; no DB before
 
 // Small PostgREST adapter for this feature: real handlers -> real PostgreSQL SQL.
 function client(f) {
-  const tables=new Set(['contact_care_policy','contact_care_claims','contact_care_uploads','profiles','toss_test_payment_orders','dating_1on1_match_proposals','dating_1on1_cards']);
+  const tables=new Set(['contact_care_policy','contact_care_claims','contact_care_uploads','contact_care_manual_vouchers','profiles','toss_test_payment_orders','dating_1on1_match_proposals','dating_1on1_cards']);
   return {
     storage:{from(bucket){assert.equal(bucket,'contact-care-evidence');return {
       upload:async(name,bytes)=>{assert(Buffer.isBuffer(bytes));await f.q('insert into storage.objects values($1,$2)',[bucket,name]);return {error:null};},
@@ -228,11 +228,11 @@ function client(f) {
     };}},
     rpc: async (name,args)=>{try{return {data:await f.rpc(name,Object.values(args)),error:null};}catch(error){return {data:null,error};}},
     from(table){
-      assert(tables.has(table));let fields='*',filters=[],values=[],orders=[],limit=100,single=false;
+      assert(tables.has(table));let fields='*',filters=[],values=[],orders=[],limit=100,single=false,head=false;
       const column=v=>{assert.match(v,/^[a-z_][a-z0-9_]*$/);return v;};
       const bind=v=>{values.push(v);return '$'+values.length;};
       const b={
-        select(v){fields=v.split(',').map(column).join(',');return b;},
+        select(v,options){fields=v.split(',').map(column).join(',');head=options?.head===true;if(head)assert.equal(options.count,'exact');return b;},
         eq(k,v){filters.push(`${column(k)}=${bind(v)}`);return b;},
         gt(k,v){filters.push(`${column(k)}>${bind(v)}`);return b;},
         lt(k,v){filters.push(`${column(k)}<${bind(v)}`);return b;},
@@ -253,8 +253,8 @@ function client(f) {
         limit(n){assert(n<=100);limit=n;return b;},
         maybeSingle(){single=true;return b;},
         abortSignal(){return b;},
-        then(yes,no){return f.q(`select ${fields} from ${table}${filters.length?' where '+filters.join(' and '):''}${orders.length?' order by '+orders.join(','):''} limit ${limit}`,values)
-          .then(r=>({data:JSON.parse(JSON.stringify(single?r.rows[0]||null:r.rows)),error:null}),error=>({data:null,error})).then(yes,no);},
+        then(yes,no){return f.q(`select ${head?'count(*)::int n':fields} from ${table}${filters.length?' where '+filters.join(' and '):''}${orders.length?' order by '+orders.join(','):''} limit ${limit}`,values)
+          .then(r=>({data:head?null:JSON.parse(JSON.stringify(single?r.rows[0]||null:r.rows)),count:head?r.rows[0].n:null,error:null}),error=>({data:null,error})).then(yes,no);},
       };return b;
     },
   };
@@ -538,3 +538,110 @@ test('application guidance matches 24h/72h boundaries, supplement, inputs and sc
   assert.equal(issue({...value,reason:'scam',first:new Date(now).toISOString()}),null);
   assert.equal(issue({...value,now:now+48*hour,supplement:{dueAt:new Date(now+48*hour).toISOString()}}),null);
 });
+
+const grantManual = (f, count=3, user=id(1)) => f.q(`insert into contact_care_manual_vouchers(user_id,grant_reference,grant_index,reason)
+  select $1::uuid,'offline-operator-grant-'||($1::uuid)::text,n,'운영자 요청에 따른 추가 교환권 지급' from generate_series(1,$2::int) n
+  on conflict(grant_reference,grant_index) do nothing`,[user,count]);
+const manualRedeem = (f, overrides=[]) => f.rpc('redeem_contact_care_manual',[id(1),id(20),['+821011111111','+821033333333'],['hash1','hash3'],['legacy1','legacy3']].map((v,i)=>overrides[i]===undefined?v:overrides[i]));
+const manualRemaining = async f => (await f.q('select count(*)::int n from contact_care_manual_vouchers where used_at is null and revoked_at is null')).rows[0].n;
+const addManualMatch = (f,n) => f.q('insert into dating_1on1_match_proposals(id,source_user_id,candidate_user_id,source_card_id,candidate_card_id) values($1,$2,$3,$2,$3)',[id(n),id(1),id(3)]);
+
+test('manual migration is additive and repeatable; grant retries preserve existing claim and payments',()=>withDb(async f=>{
+  await f.ready();const claim=await f.status(),payments=await f.q('select * from toss_test_payment_orders'),matches=await f.q('select * from dating_1on1_match_proposals order by id');
+  const legacy=(await f.q("select pg_get_functiondef('redeem_contact_care(uuid,uuid,text[],text[],text[])'::regprocedure) d")).rows[0].d;
+  await f.db.exec(read('supabase/sql/contact_care_manual_vouchers.sql'));
+  await grantManual(f);await grantManual(f);
+  assert.equal(await manualRemaining(f),3);assert.deepEqual(await f.status(),claim);
+  assert.deepEqual(await f.q('select * from toss_test_payment_orders'),payments);
+  assert.deepEqual(await f.q('select * from dating_1on1_match_proposals order by id'),matches);
+  assert.equal((await f.q("select pg_get_functiondef('redeem_contact_care(uuid,uuid,text[],text[],text[])'::regprocedure) d")).rows[0].d,legacy);
+}));
+
+test('manual vouchers: 3 -> 2 -> 1 -> 0, retries do not spend, old claim still redeemable',()=>withDb(async f=>{
+  await f.ready();await grantManual(f);const claim=await f.status();
+  const payments=await f.q('select * from toss_test_payment_orders');
+  await addManualMatch(f,21);await addManualMatch(f,22);await addManualMatch(f,23);
+  for(const n of [20,21,22]) {
+    assert.equal((await manualRedeem(f,[undefined,id(n)])).alreadyUsed,false);
+    assert.equal((await manualRedeem(f,[undefined,id(n)])).alreadyUsed,true);
+    assert.equal(await manualRemaining(f),22-n);
+    assert.deepEqual(await f.status(),claim);
+  }
+  await grantManual(f);assert.equal(await manualRemaining(f),0,'retrying the original grant after use must not restore spent vouchers');
+  await assert.rejects(manualRedeem(f,[undefined,id(23)]),/CARE_NO_CREDIT/);
+  assert.equal((await f.redeem([undefined,id(23)])).ok,true);
+  assert.deepEqual(await f.q('select * from toss_test_payment_orders'),payments);
+  await assert.rejects(f.q("insert into toss_test_payment_orders(id,user_id,product_ref_id,status,approved_at) values($1,$2,$3,'ready',null)",[id(201),id(3),id(20)]),/CARE_ALREADY_EXCHANGED/);
+  await assert.rejects(f.upload(id(1),id(20),id(201)),/CARE_ONCE|CARE_PAYMENT/,'voucher exchange cannot generate another compensation');
+  await f.q("update dating_1on1_match_proposals set state='candidate_rejected' where id=$1",[id(20)]);
+  assert.equal((await manualRedeem(f)).alreadyUsed,true);
+  assert.equal((await f.q('select state from dating_1on1_match_proposals where id=$1',[id(20)])).rows[0].state,'candidate_rejected','retry must not reopen a closed match');
+}));
+
+test('manual vouchers have no issuance/write access for browser OR service roles',()=>withDb(async f=>{
+  await grantManual(f);
+  for(const role of ['anon','authenticated','service_role']) {
+    await f.db.exec('set role '+role);
+    if(role!=='service_role') {
+      await assert.rejects(f.q('select * from contact_care_manual_vouchers'),/permission denied/);
+      await assert.rejects(manualRedeem(f),/permission denied/);
+    }
+    await assert.rejects(grantManual(f),/permission denied/);
+    await assert.rejects(f.q('update contact_care_manual_vouchers set used_at=null'),/permission denied/);
+    await assert.rejects(f.q('delete from contact_care_manual_vouchers'),/permission denied/);
+    await f.db.exec('reset role');
+  }
+  await f.db.exec('set role service_role');assert.equal((await manualRedeem(f)).ok,true);await f.db.exec('reset role');
+}));
+
+for(const [sql,code] of failureCases.filter(([,code])=>code!=='CARE_PAYMENT')) test('manual redemption fails closed without spending: '+code+' / '+sql.slice(0,58),()=>withDb(async f=>{
+  await grantManual(f);await f.db.exec(sql);
+  await assert.rejects(manualRedeem(f),new RegExp(code));assert.equal(await manualRemaining(f),3);
+}));
+
+test('manual redemption rejects revoked/no credit, foreign ownership, forged phones and invalid IDs',()=>withDb(async f=>{
+  await assert.rejects(manualRedeem(f),/CARE_NO_CREDIT/);
+  await grantManual(f);
+  await assert.rejects(manualRedeem(f,[null]),/CARE_INPUT/);
+  await assert.rejects(manualRedeem(f,[undefined,null]),/CARE_INPUT/);
+  await assert.rejects(manualRedeem(f,[id(2)]),/CARE_NO_CREDIT/);
+  await assert.rejects(manualRedeem(f,[undefined,undefined,['+821011111111']]),/CARE_UNAVAILABLE/);
+  await assert.rejects(manualRedeem(f,[undefined,undefined,null]),/CARE_UNAVAILABLE/);
+  await f.q('update dating_1on1_match_proposals set source_user_id=$1 where id=$2',[id(2),id(20)]);
+  await assert.rejects(manualRedeem(f),/CARE_UNAVAILABLE/);
+  await f.db.exec('update contact_care_manual_vouchers set revoked_at=now()');
+  await assert.rejects(manualRedeem(f),/CARE_NO_CREDIT/);
+}));
+
+test('manual DB failure rolls back BOTH voucher use and number exchange; queued double click spends once',()=>withDb(async f=>{
+  await grantManual(f);await f.db.exec('alter table contact_care_manual_vouchers add constraint offline_spend_failure check(used_at is null)');
+  await assert.rejects(manualRedeem(f),/offline_spend_failure/);assert.equal(await manualRemaining(f),3);
+  assert.equal((await f.q('select contact_exchange_status s from dating_1on1_match_proposals where id=$1',[id(20)])).rows[0].s,'awaiting_applicant_payment');
+  await f.db.exec('alter table contact_care_manual_vouchers drop constraint offline_spend_failure');
+  const responses=await Promise.all([manualRedeem(f),manualRedeem(f)]);
+  assert.deepEqual(responses.map(r=>r.alreadyUsed),[false,true]);assert.equal(await manualRemaining(f),2);
+  assert.match(read('supabase/sql/contact_care_manual_vouchers.sql'),/pg_advisory_xact_lock\(hashtextextended\(p_match::text,15000\)\)/);
+  assert.match(read('supabase/sql/contact_care_manual_vouchers.sql'),/pg_advisory_xact_lock\(hashtextextended\(p_user::text,17003\)\)/);
+}));
+
+test('manual API -> DB -> balance/history, authenticated owner only and unchanged legacy claim',()=>withDb(async f=>{
+  await f.ready();await grantManual(f);const claim=await f.status();const db=client(f);
+  const mocks={
+    'next/server':{NextResponse:{json:(body,init)=>Response.json(body,init)}},
+    '@/lib/supabase/request':{getRequestAuthContext:async()=>({user:{id:id(1)}})},
+    '@/lib/supabase/server':{createAdminClient:()=>db},
+    '@/lib/dating-contact-blocks':{normalizeDatingContactPhone:p=>p,hashDatingContactBlockValue:(_,p)=>p.endsWith('1111')?'hash1':'hash3'},
+    '@/lib/dating-1on1-phone-blocks':{hashOneOnOneBlockedPhone:p=>p.endsWith('1111')?'legacy1':'legacy3'},
+  };
+  const api=load('app/api/dating/1on1/contact-care/route.ts',mocks);
+  const readMember=async(query='')=>{const response=await api.GET(new Request('https://local.invalid/api'+query));assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');return response.json();};
+  assert.deepEqual(await readMember('?summary=1'),{remaining:4});
+  let body=await readMember();assert.equal(body.manual_remaining,3);assert.equal(body.matches.length,1);
+  const response=await api.POST(new Request('https://local.invalid/api',{method:'POST',headers:{host:'local.invalid',origin:'https://local.invalid','content-type':'application/json'},body:JSON.stringify({action:'redeem_manual',matchId:id(20),confirmed:true,userId:id(2),quantity:99})}));
+  assert.equal(response.status,200,JSON.stringify(await response.clone().json()));
+  assert.deepEqual(await readMember('?summary=1'),{remaining:3});
+  body=await readMember();assert.equal(body.manual_remaining,2);assert.equal(body.manual_history[0].used_match_id,id(20));
+  assert(!JSON.stringify(body).includes('+8210'));assert(!JSON.stringify(body).includes('운영자 요청'));assert.deepEqual(await f.status(),claim);
+  await f.db.exec('drop table contact_care_manual_vouchers cascade');
+  assert.deepEqual(await readMember('?summary=1'),{remaining:1},'missing additive migration leaves legacy claim functional');
+}));

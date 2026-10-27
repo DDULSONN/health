@@ -23,7 +23,7 @@ async function main(){
   try{
     browser=await chromium.launch({channel:'msedge',headless:true});
     const context=await browser.newContext({viewport:{width:390,height:844}});
-    let claim=null,reads=0,writes=0,fail=false,installed=true,active=true,policyReads=0,noticeStarted=Date.now();
+    let claim=null,reads=0,writes=0,fail=false,installed=true,active=true,policyReads=0,noticeStarted=Date.now(),manualRemaining=0,manualHistory=[],summaryReads=0;
     const errors=[];
     await context.route('**/api/**',async route=>{
       const req=route.request(),url=new URL(req.url());assert.equal(url.origin,origin);
@@ -32,6 +32,9 @@ async function main(){
         policyReads++;await route.fulfill({json:{active:installed&&active,startsAt:new Date(noticeStarted).toISOString(),endsAt:new Date(noticeStarted+48*3600000).toISOString()}});return;
       }
       if(url.pathname.endsWith('/evidence')){await route.fulfill({contentType:'image/webp',body:await require('sharp')({create:{width:120,height:240,channels:3,background:'#e5e5e5'}}).webp().toBuffer()});return;}
+      if(req.method()==='GET'&&url.searchParams.get('summary')==='1'){
+        summaryReads++;await route.fulfill({json:{remaining:manualRemaining+(claim?.status==='approved'&&!claim.used_at?1:0)}});return;
+      }
       if(req.method()==='POST'){
         writes++;let body;
         if(req.headers()['content-type'].startsWith('multipart/form-data')){
@@ -44,16 +47,19 @@ async function main(){
         }else if(body.action==='apply'){
           assert.equal(body.confirmed,true);assert.equal(body.matchId,id(10));assert.equal(body.orderId,id(100));
           claim={id:id(500),user_id:id(1),match_id:id(10),order_id:id(100),first_contact_at:body.firstContactAt,explanation:body.explanation,reason:body.reason,evidence_count:1,supplement_due_at:null,status:'pending',created_at:new Date().toISOString(),review_note:null,used_at:null,used_match_id:null};
+        }else if(body.action==='redeem_manual'){
+          assert(manualRemaining>0);assert.equal(body.confirmed,true);assert.equal(body.matchId,id(20+manualHistory.length));
+          manualRemaining--;manualHistory.push({used_match_id:body.matchId,used_at:new Date().toISOString()});
         }else{assert.equal(body.action,'redeem');assert.equal(body.matchId,id(20));claim={...claim,used_at:new Date().toISOString(),used_match_id:id(20)};}
         await route.fulfill({json:{ok:true}});return;
       }
       reads++;
       if(!installed){await route.fulfill({status:503,json:{error:'교환권 기능을 준비 중이에요.'}});return;}
       await route.fulfill({json:url.pathname.startsWith('/api/admin')?{items:['pending','needs_info'].includes(claim?.status)?[{...claim,nickname:'검증회원'}]:[],next:null}:
-        {active,starts_at:'2026-10-01T00:00:00Z',claim,payments:active&&(!claim||['rejected','needs_info'].includes(claim.status))?[{id:id(10),name:'이전상대',order_id:id(100),exchanged_at:new Date(Date.now()-48*3600000).toISOString()}]:[],matches:claim?.status==='approved'?[{id:id(20),name:'새상대'}]:[]}});
+        {active,starts_at:'2026-10-01T00:00:00Z',claim,manual_remaining:manualRemaining,manual_history:manualHistory,payments:active&&(!claim||['rejected','needs_info'].includes(claim.status))?[{id:id(10),name:'이전상대',order_id:id(100),exchanged_at:new Date(Date.now()-48*3600000).toISOString()}]:[],matches:manualRemaining>0?[{id:id(20+manualHistory.length),name:'새상대'}]:claim?.status==='approved'?[{id:id(20),name:'새상대'}]:[]}});
     });
     const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
-    await page.goto(origin);assert.equal(reads,0,'collapsed panels do not fetch');assert.equal(writes,0);
+    await page.goto(origin);assert.equal(reads,0,'collapsed panels do not fetch full order or match lists');assert.equal(writes,0);
     const member=page.getByRole('region',{name:'회원 화면'}),admin=page.getByRole('region',{name:'관리자 화면'});
     await member.locator('summary').click();await member.getByLabel('내가 결제한 상대').waitFor();
     const contactTime=new Date(Date.now()-36*3600000);const localTime=new Date(contactTime.getTime()-contactTime.getTimezoneOffset()*60000).toISOString().slice(0,16);
@@ -128,7 +134,32 @@ async function main(){
     assert.equal(await member.locator('details').getAttribute('open'),'','support deep link opens the form without a second click');
     await page.goto(origin+'/mypage?section=matching&match=one_on_one&care=1');await member.getByLabel('내가 결제한 상대').waitFor();
     assert.equal(await member.locator('details').getAttribute('open'),'','login return query opens support even without the URL fragment');
-    assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,widths:[320,390,768],writes,reads,policyReads,paymentRequests:0,pageErrors:errors,screenshots:output}));
+    // Additional operator vouchers are visible before opening My Page details.
+    claim={id:id(500),user_id:id(1),match_id:id(10),status:'approved',evidence_count:0,used_at:null,used_match_id:null};
+    manualRemaining=3;manualHistory=[];
+    await page.goto(origin);await member.getByText('보유 4장',{exact:true}).waitFor();
+    await member.locator('summary').click();await member.getByText('추가 지급 교환권 3장 · 사용 전까지 유지',{exact:true}).waitFor();
+    for(const width of [320,390,768]){
+      await page.setViewportSize({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+      await page.screenshot({path:path.join(output,`manual-vouchers-${width}.png`),fullPage:true});
+    }
+    const beforeManual=writes;
+    await member.getByLabel('추가 지급 교환권으로 교환할 상대').selectOption(id(20));
+    page.once('dialog',d=>d.dismiss());await member.getByRole('button',{name:'이 매칭에 교환권 사용'}).click();assert.equal(writes,beforeManual);
+    fail=true;page.once('dialog',d=>d.accept());await member.getByRole('button',{name:'이 매칭에 교환권 사용'}).click();
+    await member.getByRole('alert').waitFor();assert.equal(manualRemaining,3);assert.equal(await member.getByRole('button',{name:'이 매칭에 교환권 사용'}).isEnabled(),false);
+    fail=false;await member.getByRole('button',{name:'내역 다시 확인'}).click();
+    for(const n of [20,21,22]){
+      await member.getByLabel('추가 지급 교환권으로 교환할 상대').selectOption(id(n));
+      page.once('dialog',d=>d.accept());await member.getByRole('button',{name:'이 매칭에 교환권 사용'}).evaluate(b=>{b.click();b.click();});
+      await member.getByText(`추가 지급 교환권 ${22-n}장 · 사용 전까지 유지`,{exact:true}).waitFor();
+      await member.getByText(`보유 ${23-n}장`,{exact:true}).waitFor();assert.equal(claim.used_at,null,'legacy voucher is preserved');
+    }
+    assert.equal(writes,beforeManual+4,'three uses plus one rejected request, no duplicate click');
+    assert.equal(await member.getByLabel('교환할 상대',{exact:true}).count(),1,'legacy voucher remains usable after manual ones are spent');
+    await member.getByText('최근 교환권 사용 내역',{exact:true}).click();assert.equal(await member.getByRole('link',{name:/연락처 확인/}).count(),3);
+    await page.reload();await member.getByText('보유 1장',{exact:true}).waitFor();
+    assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,widths:[320,390,768],writes,reads,summaryReads,policyReads,paymentRequests:0,pageErrors:errors,screenshots:output}));
   }finally{await browser?.close();await new Promise(r=>server.close(r));}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
