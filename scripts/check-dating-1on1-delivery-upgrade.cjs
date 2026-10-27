@@ -43,7 +43,7 @@ function memoryDb(tables, options = {}) {
         if (insert) {
           if (options.reserveError) return { data: null, error: { code: options.reserveError } };
           if (reservations.some(r => r.recipient_user_id === insert.recipient_user_id)) return { data: null, error: { code: '23505' } };
-          const row = { id: 'reservation-' + reservations.length, status: 'sending', ...insert };
+          const row = { id: 'reservation-' + reservations.length, status: 'sending', created_at: new Date(now).toISOString(), ...insert };
           reservations.push(row); tables[table] = [...(tables[table] ?? []), row];
           options.afterReserve?.(); return { data: row, error: null };
         }
@@ -95,7 +95,7 @@ test('mutual acceptance accepts either participant, but canceled contact does no
 
 function reminderFixture(options = {}) {
   const row = match(options.match), messages = [];
-  const tables = { dating_1on1_match_proposals: [row], admin_open_card_outreach_mail_logs: options.legacy ? [{ id: 'old', user_id: recipient,
+  const tables = { dating_1on1_match_proposals: [row], dating_1on1_reminder_deliveries: options.recent ? [{ id: 'previous', recipient_user_id: recipient, created_at: options.recent, status: options.recentStatus || 'sent' }] : [], admin_open_card_outreach_mail_logs: options.legacy ? [{ id: 'old', user_id: recipient,
     campaign_key: 'one_on_one_match_pending_24h', success: true, meta: { match_id: id } }] : [] };
   const db = memoryDb(tables, { ...options, afterReserve: () => {
     if (options.cancelOnReserve) row.state = 'source_skipped';
@@ -123,13 +123,27 @@ test('reminder timing has exact 24h/48h boundaries and rollout cutoff', () => {
   for (const [hour, eligible] of [[8, false], [9, true], [19, true], [20, false], [23, false], [0, false]])
     assert.equal(module.isOneOnOneReminderHour(Date.parse(`2026-10-26T${String(hour).padStart(2, '0')}:00:00+09:00`)), eligible);
 });
-test('a pending request sends exactly once with readable Korean, exact match link and a stable provider key', async () => {
+test('a pending request sends exactly once with readable Korean, grouped inbox link and a stable provider key', async () => {
   const f = reminderFixture(); assert.equal(await f.send(), 'sent'); assert.equal(await f.send(), 'skipped');
   assert.equal(f.messages.length, 1); const m = f.messages[0];
-  assert.match(m.text, new RegExp('matchId=' + id)); assert.match(m.subject, /아직 응답하지 않은/);
+  assert.match(m.text, /tab=one_on_one&focus=incoming#one-on-one-incoming/); assert.match(m.subject, /아직 응답하지 않은/);
+  assert.match(m.text, /수락만으로 결제되지는 않아요/); assert.doesNotMatch(m.text, /읽지 않|matchId=/);
   assert.equal(Buffer.from(m.text).toString('utf8'), m.text); assert.doesNotMatch(m.text, /�|18,000|할인|지금 결제/);
   assert.equal(m.key, `one-on-one-reminder/${id}/${recipient}/selection_pending_24h`);
   assert.equal(f.db.reservations[0].status, 'sent');
+});
+
+for (const status of ['sent', 'failed', 'sending']) test('rolling 24h cap includes previous-day and ambiguous sends: ' + status, async () => {
+  const f = reminderFixture({ recent: '2026-10-25T10:00:00Z', recentStatus: status });
+  assert.equal(await f.send(), 'skipped'); assert.equal(f.messages.length, 0); assert.equal(f.db.reservations.length, 0);
+});
+test('history lookup fails closed; reminders older than 24h do not suppress a new eligible event', async () => {
+  const failed = reminderFixture({ failedTable: 'dating_1on1_reminder_deliveries' });
+  assert.equal(await failed.send(), 'failed'); assert.equal(failed.messages.length, 0);
+  const expired = reminderFixture({ recent: new Date(now - 24 * 3600000 - 1).toISOString() });
+  assert.equal(await expired.send(), 'sent'); assert.equal(expired.messages.length, 1);
+  const boundary = reminderFixture({ recent: new Date(now - 24 * 3600000).toISOString() });
+  assert.equal(await boundary.send(), 'skipped');
 });
 test('concurrent cron delivery claims permit only one external message', async () => {
   const f = reminderFixture(); const results = await Promise.all([f.send(), f.send(), f.send()]);
@@ -172,8 +186,8 @@ test('actual cron requires authorization, daytime, activation and fresh bounded 
     }, Clock);
     const res = await route.GET(new Request('https://example.invalid/cron'));
     assert.equal(res.status, condition === 'unauthorized' ? 401 : condition === 'queryFailure' ? 500 : 200, condition);
-    assert.equal(sends.length, condition === 'active' ? 3 : 0, condition);
-    if (condition === 'active') assert.deepEqual(sends.map(x => x.uid), [recipient, source, recipient]);
+    assert.equal(sends.length, condition === 'active' ? 2 : 0, condition);
+    if (condition === 'active') assert.deepEqual(sends.map(x => x.uid), [recipient, source]);
     if (['unauthorized', 'night'].includes(condition)) assert.equal(db.calls.length, 0);
   }
 });

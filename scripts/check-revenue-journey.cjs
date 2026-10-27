@@ -60,8 +60,9 @@ test('new entry points reuse existing locks, authority and contact callbacks', (
   assert.doesNotMatch(landing,/무료|20,000|결제/);
   assert.ok(landing.indexOf('className={styles.reviewSection}') < landing.indexOf('className={styles.heroBody}'));
   assert.equal((landing.match(/className=\{styles.reviewSection\}/g) || []).length, 1);
-  assert.match(home,/프로필이 준비됐어요\. 마음에 드는 후보에게 먼저 요청해 보세요\./);
-  assert.doesNotMatch(home,/프로필이 준비됐어요\.[^<]*(?:무료|결제)/);
+  assert.match(home,/마음에 드는 분이 있다면 먼저 요청해 보세요\. 요청은 무료예요\./);
+  assert.match(home,/getOneOnOneStarterGroups\(recommendationGroups\)/);
+  assert.match(home,/후보 모두 보기 · \{recommendationCount\}명/);
 });
 
 test('immediate SQL upgrade is idempotent, private, and preserves existing sends and matching data', async () => {

@@ -19,6 +19,9 @@ import { oneOnOneEndedNotice } from "@/lib/dating-1on1-notification-status";
 import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import CandidateImpression from "@/components/dating/CandidateImpression";
+import CandidateFavoriteButton from "@/components/dating/CandidateFavoriteButton";
+import OneOnOneFavorites from "@/components/dating/OneOnOneFavorites";
+import { getOneOnOneStarterKeys, getOneOnOneStarterGroups } from "@/lib/dating-1on1-starter";
 import { CandidateHideButton, CandidateHidesPanel } from "@/components/dating/CandidateHides";
 import { getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import { VIEWER_SESSION_ERROR } from "@/lib/viewer-session-recovery";
@@ -63,6 +66,7 @@ type OneOnOneRecommendationGroup = {
   next_refresh_at?: string | null;
   can_refresh?: boolean;
   recommendations?: OneOnOneCardPreview[];
+  favorite_candidates?: OneOnOneCardPreview[];
   admin_recommendation_date?: string | null;
   admin_recommendations?: OneOnOneCardPreview[];
   admin_recommendation_limit?: number;
@@ -161,7 +165,11 @@ export default function OneOnOneHomePanel({
   onRefreshRecommendations,
   onCandidateHidden,
   onCandidateRestored,
+  onFavoriteChanged,
+  focusIncomingRequests = false,
 }: {
+  onFavoriteChanged?: (sourceCardId: string, candidateId: string, favorite: boolean) => void;
+  focusIncomingRequests?: boolean;
   focusedMatchId?: string | null;
   arrivedFromOnboarding: boolean;
   onReported: (result: DatingReportResult) => void;
@@ -195,6 +203,9 @@ export default function OneOnOneHomePanel({
 }) {
   const [plusGuideOpen, setPlusGuideOpen] = useState(false);
   const [matchGuideOpen, setMatchGuideOpen] = useState(false);
+  const [allCandidatesVisible, setAllCandidatesVisible] = useState(false);
+  const [favoriteBusyKeys, setFavoriteBusyKeys] = useState<string[]>([]);
+  const incomingFocused = useRef(false);
   const focusedMatchRef = useRef<HTMLDivElement>(null);
   const scrolledMatchId = useRef<string | null>(null);
   const profileSectionRef = useRef<HTMLDetailsElement>(null);
@@ -233,6 +244,19 @@ export default function OneOnOneHomePanel({
   const actionSummary = getOneOnOneActionSummary(activeMatches);
   const incomingRequests = activeMatches.filter((match) => match.id !== focusedMatch?.id && isIncomingOneOnOneRequest(match));
   const ongoingMatches = activeMatches.filter((match) => match.id !== focusedMatch?.id && !isIncomingOneOnOneRequest(match));
+  const starterKeys = getOneOnOneStarterKeys(recommendationGroups);
+  const starterPreview = arrivedFromOnboarding && !allCandidatesVisible && !targetMatchId && !focusIncomingRequests && starterKeys.size > 0;
+  const displayedGroups = starterPreview ? getOneOnOneStarterGroups(recommendationGroups) : recommendationGroups;
+  const favorites = recommendationGroups.flatMap(group => (group.favorite_candidates ?? [])
+    .filter(card => card.id && group.source_card_id && !hiddenCandidateIds.has(card.id))
+    .map(card => ({ group, card })));
+  useEffect(() => {
+    if (!focusIncomingRequests) { incomingFocused.current = false; return; }
+    if (targetMatchId || loading || sessionError || error || !viewerLoggedIn || !incomingSectionRef.current || incomingFocused.current) return;
+    incomingSectionRef.current.scrollIntoView({ block: "start", behavior: "auto" });
+    incomingSectionRef.current.focus({ preventScroll: true });
+    incomingFocused.current = true;
+  }, [focusIncomingRequests, targetMatchId, loading, sessionError, error, viewerLoggedIn, incomingRequests.length]);
   // Shortcuts only move focus/scroll; they never refresh candidates or submit an action.
   function jumpToSection(section: HTMLElement | null) {
     if (!section) return;
@@ -257,13 +281,17 @@ export default function OneOnOneHomePanel({
     }
   }
   const shortcutsDisabled = loading || sessionError || Boolean(error);
+  function favoriteBusy(sourceId: string, candidateId: string, busy: boolean) {
+    const key = `${sourceId}:${candidateId}`;
+    setFavoriteBusyKeys(keys => busy ? [...new Set([...keys, key])] : keys.filter(value => value !== key));
+  }
   return (
     <section id="one-on-one-candidates" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-4 shadow-none md:p-6">
-      {arrivedFromOnboarding ? (
+      {arrivedFromOnboarding && viewerLoggedIn && hasOneOnOneCard && !loading && !sessionError && !error ? (
         <div role="status" className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
           <p className="text-sm font-black text-emerald-900">1:1 신청서 작성 완료</p>
           <p className="mt-1 text-xs font-semibold leading-5 text-emerald-700">
-            등록한 정보로 추천 후보를 바로 확인할 수 있어요. 아래에서 마음에 드는 후보를 선택해보세요.
+            마음에 드는 분이 있다면 먼저 요청해 보세요. 요청은 무료예요.
           </p>
         </div>
       ) : null}
@@ -345,7 +373,7 @@ export default function OneOnOneHomePanel({
             <p className="mt-2 text-[13px] leading-6 text-neutral-600">프로필을 등록하고 추천 후보에게 요청을 보내세요. 서로 수락한 뒤 연락처를 교환할 수 있어요.</p>
             <p className="mt-2 text-xs leading-5 text-neutral-500">등록·요청 무료 · 연락처 교환 건당 {ONE_ON_ONE_CONTACT_PRICE_KRW.toLocaleString("ko-KR")}원</p>
             <Link
-              href={buildLoginRedirect(targetMatchId ? oneOnOneMatchHref(targetMatchId) : ONE_ON_ONE_HOME_HREF)}
+              href={buildLoginRedirect(targetMatchId ? oneOnOneMatchHref(targetMatchId) : focusIncomingRequests ? `${ONE_ON_ONE_HOME_HREF}&focus=incoming` : ONE_ON_ONE_HOME_HREF)}
               className="mt-3 inline-flex min-h-[42px] items-center rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700"
             >
               로그인하기
@@ -397,7 +425,8 @@ export default function OneOnOneHomePanel({
                   onExchange={onContactCheckout} onNudge={onContactNudge} />
               )} />
             </div>
-            <div ref={incomingSectionRef} tabIndex={-1} data-one-on-one-section="incoming" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
+            <div id="one-on-one-incoming" ref={incomingSectionRef} tabIndex={-1} data-one-on-one-section="incoming" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
+            {focusIncomingRequests && incomingRequests.length === 0 ? <p role="status" className="mb-3 rounded-xl bg-neutral-50 p-3 text-sm leading-6 text-neutral-600">현재 응답할 요청이 없어요. 이미 응답했거나 상대가 요청을 취소한 경우 목록이 달라질 수 있어요.</p> : null}
             <OneOnOneIncomingRequests requests={incomingRequests} renderRequest={(match) => match.counterparty_card ? (
               <OneOnOneCandidateCard
                 compact
@@ -425,17 +454,35 @@ export default function OneOnOneHomePanel({
               </div>
             )} />
             </div>
+            <OneOnOneFavorites items={favorites} renderCandidate={({ group, card }) => {
+              const sourceCardId = group.source_card_id!, candidateId = card.id!;
+              const busy = processingAutoKeys.includes(`${sourceCardId}:${candidateId}`) || favoriteBusyKeys.includes(`${sourceCardId}:${candidateId}`) || refreshingRecommendationIds.includes(sourceCardId);
+              return <OneOnOneCandidateCard compact key={`${sourceCardId}:favorite:${candidateId}`} card={card}
+                reportTarget={{ type: "one_on_one_card", id: candidateId }} onReported={onReported} badge="찜한 후보"
+                impressionTicket={group.impression_ticket}>
+                <button type="button" disabled={busy} onClick={() => onAutoSelect(sourceCardId, candidateId, card.name)}
+                  className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#d90037]">
+                  {processingAutoKeys.includes(`${sourceCardId}:${candidateId}`) ? "요청 보내는 중..." : "매칭 요청 보내기"}
+                </button>
+                {onFavoriteChanged ? <CandidateFavoriteButton sourceCardId={sourceCardId} candidateId={candidateId} favorite disabled={busy}
+                  onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}
+                  onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, false)} /> : null}
+              </OneOnOneCandidateCard>;
+            }} />
             {hasOneOnOneCard ? <div ref={recommendationSectionRef} tabIndex={-1} data-one-on-one-section="recommendations" className="scroll-mt-40 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-rose-300">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-base font-bold text-neutral-900">추천 후보</p>
+                  <p className="text-base font-bold text-neutral-900">{starterPreview ? "먼저 이 분들을 만나보세요" : "추천 후보"}</p>
                   <p className="mt-1 text-xs leading-5 text-neutral-600">
-                    프로필 기준으로 먼저 보여드리는 후보예요. 최근 24시간 동안 {plusActive ? "2회" : "1회"} 새로 섞을 수 있어요.
+                    {starterPreview ? "추천 후보 중 3명까지 먼저 보여드려요. 전체 후보도 바로 볼 수 있어요." : <>프로필 기준으로 먼저 보여드리는 후보예요. 최근 24시간 동안 {plusActive ? "2회" : "1회"} 새로 섞을 수 있어요.</>}
                   </p>
-                  {arrivedFromOnboarding ? <p className="mt-2 text-xs font-medium leading-5 text-neutral-700">프로필이 준비됐어요. 마음에 드는 후보에게 먼저 요청해 보세요.</p> : null}
                 </div>
-                <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-rose-700">{recommendationCount}명</span>
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-rose-700">{starterPreview ? `${starterKeys.size}명 먼저 보기` : `${recommendationCount}명`}</span>
               </div>
+              {starterPreview ? <button type="button" onClick={() => setAllCandidatesVisible(true)}
+                className="mt-2 min-h-[44px] rounded-lg border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+                후보 모두 보기 · {recommendationCount}명
+              </button> : null}
 
               {recommendationsLoading ? (
                 <p role="status" className="mt-3 rounded-xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">추천 후보를 불러오는 중이에요.</p>
@@ -449,7 +496,7 @@ export default function OneOnOneHomePanel({
                 <p className="mt-3 rounded-xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">현재 보여줄 추천 후보가 없어요. 조건에 맞는 후보가 생기면 여기서 바로 볼 수 있습니다.</p>
               ) : (
                 <div className="mt-3 space-y-4">
-                  {recommendationGroups.map((group, groupIndex) => {
+                  {displayedGroups.map((group, groupIndex) => {
                     const sourceCardId = String(group.source_card_id ?? "");
                     const sourceCard = activeCards.find((card) => card.id === sourceCardId);
                     const recommendations = group.recommendations ?? [];
@@ -466,11 +513,11 @@ export default function OneOnOneHomePanel({
                             </p>
                           </div>
                         </div>
-                        <OneOnOneRefreshControl usage={group} busy={refreshing} blocked={!canRefresh}
+                        {!starterPreview ? <OneOnOneRefreshControl usage={group} busy={refreshing} blocked={!canRefresh || favoriteBusyKeys.length > 0}
                           onCheckUsage={onReload}
                           plusOffer={{ cardId: sourceCardId, active: plusActive }}
                           notice={refreshNotice?.sourceCardId === sourceCardId ? refreshNotice : null}
-                          onRequest={() => onRefreshRecommendations(sourceCardId)} />
+                          onRequest={() => onRefreshRecommendations(sourceCardId)} /> : null}
                         <div className="mt-3 space-y-3">
                           {recommendations.map((candidate) => {
                             const candidateId = String(candidate.id ?? "");
@@ -489,16 +536,23 @@ export default function OneOnOneHomePanel({
                               >
                                 <button
                                   type="button"
-                                  disabled={!canSelect || processingAutoKeys.includes(actionKey)}
+                                  disabled={!canSelect || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
                                   onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}
                                   className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#d90037]"
                                 >
                                   {processingAutoKeys.includes(actionKey) ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                 </button>
+                                <div className="flex flex-wrap items-start justify-between gap-x-2">
+                                {onFavoriteChanged ? <CandidateFavoriteButton sourceCardId={sourceCardId} candidateId={candidateId}
+                                  favorite={Boolean(group.favorite_candidates?.some(card => card.id === candidateId))}
+                                  disabled={!canSelect || refreshing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
+                                  onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}
+                                  onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, !group.favorite_candidates?.some(card => card.id === candidateId))} /> : null}
                                 {onCandidateHidden ? <CandidateHideButton enabled={group.hides_enabled === true}
                                   sourceCardId={sourceCardId} candidateId={candidateId} ticket={group.impression_ticket}
                                   disabled={!canSelect || refreshing || processingAutoKeys.length > 0}
                                   onHidden={onCandidateHidden} /> : null}
+                                </div>
                               </OneOnOneCandidateCard>
                             );
                           })}
@@ -528,16 +582,23 @@ export default function OneOnOneHomePanel({
                                     >
                                       <button
                                         type="button"
-                                        disabled={!canSelect || processingAutoKeys.includes(actionKey)}
+                                        disabled={!canSelect || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
                                         onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}
                                         className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#d90037]"
                                       >
                                         {processingAutoKeys.includes(actionKey) ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                       </button>
+                                      <div className="flex flex-wrap items-start justify-between gap-x-2">
+                                      {onFavoriteChanged ? <CandidateFavoriteButton sourceCardId={sourceCardId} candidateId={candidateId}
+                                        favorite={Boolean(group.favorite_candidates?.some(card => card.id === candidateId))}
+                                        disabled={!canSelect || refreshing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
+                                        onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}
+                                        onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, !group.favorite_candidates?.some(card => card.id === candidateId))} /> : null}
                                       {onCandidateHidden ? <CandidateHideButton enabled={group.hides_enabled === true}
                                         sourceCardId={sourceCardId} candidateId={candidateId} ticket={group.impression_ticket}
                                         disabled={!canSelect || refreshing || processingAutoKeys.length > 0}
                                         onHidden={onCandidateHidden} /> : null}
+                                      </div>
                                     </OneOnOneCandidateCard>
                                   );
                                 })}
@@ -545,7 +606,7 @@ export default function OneOnOneHomePanel({
                             </div>
                           ) : null}
                         </div>
-                        <OneOnOneExpansionPanel enabled={group.expansion_enabled === true} sourceCardId={sourceCardId}
+                        <OneOnOneExpansionPanel enabled={!starterPreview && group.expansion_enabled === true} sourceCardId={sourceCardId}
                           revision={group} blocked={refreshing || processingAutoKeys.length > 0}
                           hidesEnabled={group.hides_enabled === true && Boolean(onCandidateHidden)} onHidden={onCandidateHidden}
                           onSelect={(candidateId, name) => onAutoSelect(sourceCardId, candidateId, name)} onReported={onReported} />

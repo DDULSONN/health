@@ -723,6 +723,9 @@ export async function sendDatingEmailToAddressDetailed(
       if (/^https:\/\/helchang\.com\/mypage\?section=matching#(?:open|paid)-card-(?:received|applied)$/.test(line)) {
         return `<a href="${escaped}" style="display:inline-block;margin:12px 0;padding:12px 20px;background:#111;color:#fff;border-radius:10px;text-decoration:none;font-weight:600">지원 내역 확인</a>`;
       }
+      if (line === "https://helchang.com/community/dating/cards?tab=one_on_one&focus=incoming#one-on-one-incoming") {
+        return `<a href="${escaped}" style="display:inline-block;margin:12px 0;padding:12px 20px;background:#111;color:#fff;border-radius:10px;text-decoration:none;font-weight:600">받은 요청 확인</a>`;
+      }
       if (/^https:\/\/helchang\.com\/api\/email\/unsubscribe\?[^\s"<>]+$/.test(line)) {
         return `<a href="${escaped}" style="color:#525252">알림 수신거부</a>`;
       }

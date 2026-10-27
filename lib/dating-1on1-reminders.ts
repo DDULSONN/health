@@ -35,6 +35,12 @@ export async function sendOneOnOnePendingReminder(admin: SupabaseClient, row: On
   const eligibleRecipient = kind === "selection_pending_24h"
     ? row.candidate_user_id === recipientId : [row.source_user_id, row.candidate_user_id].includes(recipientId);
   if (!eligibleRecipient || !isOneOnOneReminderHour(nowMs) || getOneOnOneReminderKind(row, nowMs, startedAt) !== kind) return "skipped";
+  // KST-day uniqueness remains the atomic concurrency guard. Also avoid two
+  // reminders less than 24h apart across consecutive days, including uncertain sends.
+  const recent = await admin.from(TABLE).select("id").eq("recipient_user_id", recipientId)
+    .gte("created_at", new Date(nowMs - 24 * HOUR).toISOString()).limit(1);
+  if (recent.error) return "failed";
+  if (recent.data?.length) return "skipped";
   const type = kind === "selection_pending_24h" ? "dating_1on1_selection_received" : "dating_1on1_match_accepted";
   const isCurrent = async () => {
     if (!isOneOnOneReminderHour(Date.now())) return false;

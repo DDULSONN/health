@@ -2067,10 +2067,24 @@ function OpenCardsContent() {
       ...group,
       recommendations: group.recommendations?.filter(card => card.id !== candidateId),
       admin_recommendations: group.admin_recommendations?.filter(card => card.id !== candidateId),
+      favorite_candidates: group.favorite_candidates?.filter(card => card.id !== candidateId),
       hidden_candidate_ids: [...new Set([...(group.hidden_candidate_ids ?? []), candidateId])],
     })));
     setOneOnOneRecommendationsLoading(false);
     setOneOnOneActionNotice("추천 목록에서 숨겼어요. 기존 요청·매칭은 그대로 유지돼요.");
+  };
+
+  const handleOneOnOneFavoriteChanged = (sourceCardId: string, candidateId: string, favorite: boolean) => {
+    // Acknowledged by the existing API; no extra reads, matching action or quota changes.
+    oneOnOneRecommendationsRequest.cancel();
+    setOneOnOneRecommendations(groups => groups.map(group => {
+      if (group.source_card_id !== sourceCardId) return group;
+      const candidate = [...(group.recommendations ?? []), ...(group.admin_recommendations ?? []), ...(group.favorite_candidates ?? [])]
+        .find(card => card.id === candidateId);
+      const kept = (group.favorite_candidates ?? []).filter(card => card.id !== candidateId);
+      return { ...group, favorite_candidates: favorite && candidate && !group.hidden_candidate_ids?.includes(candidateId) ? [...kept, candidate] : kept };
+    }));
+    setOneOnOneRecommendationsLoading(false);
   };
 
   useEffect(() => {
@@ -3554,6 +3568,8 @@ function OpenCardsContent() {
           onReload={() => { void reloadOneOnOneHome(); }}
           onCandidateHidden={handleHideOneOnOneCandidate}
           onCandidateRestored={() => reloadOneOnOneHome(true, true)}
+          onFavoriteChanged={handleOneOnOneFavoriteChanged}
+          focusIncomingRequests={searchParams.get("focus") === "incoming"}
           onContactCheckout={handleOneOnOneContactCheckout}
           onContactNudge={handleOneOnOneContactNudge}
           onAutoSelect={handleOneOnOneAutoSelect}

@@ -28,7 +28,8 @@ async function renderEmail(subject, text) {
   const samples = [
     ['request', templates.buildOneOnOneSelectionReceivedNotification('미리보기 회원', '내 프로필', id), '매칭 상태 확인', `https://helchang.com/community/dating/cards?tab=one_on_one&matchId=${id}#selected-one-on-one-match`],
     ['accepted', templates.buildOneOnOneAcceptedNotification('미리보기 회원', id), '매칭 상태 확인'],
-    ['reminder', templates.buildOneOnOnePendingReminder(id, 'selection_pending_24h'), '매칭 상태 확인'],
+    ['reminder', templates.buildOneOnOnePendingReminder(id, 'selection_pending_24h'), '받은 요청 확인', 'https://helchang.com/community/dating/cards?tab=one_on_one&focus=incoming#one-on-one-incoming'],
+    ['mutual-reminder', templates.buildOneOnOnePendingReminder(id, 'mutual_pending_24h'), '매칭 상태 확인', `https://helchang.com/community/dating/cards?tab=one_on_one&matchId=${id}#selected-one-on-one-match`],
     ['open-received', templates.buildDatingApplicationReceivedNotification('미리보기 회원'), '지원 내역 확인', 'https://helchang.com/mypage?section=matching#open-card-received'],
     ['open-accepted', templates.buildDatingApplicationAcceptedNotification('미리보기 회원'), '지원 내역 확인', 'https://helchang.com/mypage?section=matching#open-card-applied'],
   ];

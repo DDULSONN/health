@@ -11,6 +11,13 @@
   request “unread”: an actual read receipt is not required or inferred.
 - Reminder hours are 09:00–19:59 KST. At most one reminder attempt per account/KST
   day and one per match/event/recipient. Immediate event messages are separate.
+- Also suppress reminders if any reminder attempt was reserved in the preceding
+  24 hours, including failed/uncertain delivery. The hourly worker stops further
+  attempts for that recipient after a success or failure in the same run.
+- Pending-request reminders open the authenticated grouped inbox (not a stale
+  single request). Already answered/canceled requests do not reappear. An empty
+  inbox explains that the current state may differ from the earlier notice.
+  Mutual-acceptance reminders retain their existing exact-match link.
 - Only events after the SQL activation timestamp, aged 24–48 hours, qualify.
   This is not a historical blast or a campaign to inactive members.
 - Ordinary/paid open-card emails now link to the appropriate received/applied
@@ -38,6 +45,7 @@
 - The new SMS constraint and reminder table are required. If SQL is absent,
   extra SMS fails closed and reminder cron returns `NOT_ENABLED`; matching still
   works. No production SQL or live messaging is executed by the test suite.
+- The grouped-inbox/rolling-24h improvement needs no additional SQL or schedule.
 
 ## Rollout / rollback
 

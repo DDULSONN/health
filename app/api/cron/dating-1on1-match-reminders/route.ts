@@ -36,6 +36,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "알림 대상을 확인하지 못했습니다." }, { status: 500 });
   }
   const results = { candidates: 0, sent: 0, skipped: 0, failed: 0, budgetReached: false };
+  const attemptedRecipients = new Set<string>();
   // Reuse the existing hourly cron; bounded work, no additional schedule or polling.
   for (const match of rows.flatMap(res => res.data ?? []) as OneOnOneReminderMatch[]) {
     const kind = getOneOnOneReminderKind(match, nowMs, startedAt);
@@ -48,10 +49,13 @@ export async function GET(request: Request) {
         return NextResponse.json({ ok: true, results });
       }
       results.candidates++;
+      if (attemptedRecipients.has(recipientId)) { results.skipped++; continue; }
       try {
         const result = await sendOneOnOnePendingReminder(admin, match, recipientId, kind, startedAt, nowMs);
         results[result]++;
+        if (result === "sent" || result === "failed") attemptedRecipients.add(recipientId);
       } catch (error) {
+        attemptedRecipients.add(recipientId);
         results.failed++;
         console.error("[cron 1on1-reminders] delivery failed", { matchId: match.id, error });
       }

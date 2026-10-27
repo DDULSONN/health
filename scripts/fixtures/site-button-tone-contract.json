@@ -3,7 +3,7 @@
   "reviewedUxBaseline": "Legacy navigation, completion and inline feedback reviewed against ac955ce. Candidate-hide controls reviewed against e45dd22: all 116 existing My Page handlers unchanged. Home hides reviewed against 91ff9fd: existing handlers unchanged; only unsent proposals are filtered. Covered by check-candidate-hides, check-home-candidate-hides and real-page home/mypage hide browser tests.",
   "files": {
     "app/mypage/page.tsx": "3a62fad12ef208cf4d447662bc880f483e9639e62311ddfbec6eb6e13aeaaf1d",
-    "app/community/dating/cards/page.tsx": "ddc3da6987ae5b2a01e6c5075d0c4a941c6a30e633c696500c4e2a90035f34b6",
+    "app/community/dating/cards/page.tsx": "1b8d0d26cf0fba437109648bdbe91425cbf8e9031c8f122bbb9dcaef8feeb42c",
     "app/community/dating/cards/[id]/page.tsx": "3869e13f9080c4201b7b52d3629355ae99592c61907d034a35053f34f0d7f0d2",
     "app/community/dating/cards/[id]/apply/page.tsx": "0cd9ce1751a63f5bebd5ff6dd679bfd7910878dc7c51e539b970de5faa416cf0",
     "components/dating/DatingPlusOffers.tsx": "177929a327362af7ab958d33cdd9f3404652532dc4c2d6366f64844458efe432",

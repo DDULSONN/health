@@ -92,8 +92,17 @@ if (require.main === module) {
       ...baseline.panel.callbacks.filter(callback => callback !== 'onClick={() => setVisibleMatchCount((count) => count + 8)}'),
       'onClick={onReload}', 'onCheckUsage={onReload}', 'onExchange={onContactCheckout}', 'onNudge={onContactNudge}',
       ...Array(4).fill('onHidden={onCandidateHidden}'), 'onRestored={onCandidateRestored}',
-    ].sort(), disabled: [...baseline.panel.disabled,
+      // Reviewed saved-candidate actions reuse the existing matching callback.
+      'onClick={() => onAutoSelect(sourceCardId, candidateId, card.name)}',
+      'onClick={() => setAllCandidatesVisible(true)}', 'onReported={onReported}',
+      ...Array(3).fill('onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}'),
+      ...Array(2).fill('onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, !group.favorite_candidates?.some(card => card.id === candidateId))}'),
+      'onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, false)}',
+    ].sort(), disabled: [...baseline.panel.disabled.map(value => value === 'disabled={!canSelect || processingAutoKeys.includes(actionKey)}'
+      ? 'disabled={!canSelect || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}' : value),
       ...Array(2).fill('disabled={!canSelect || refreshing || processingAutoKeys.length > 0}'),
+      ...Array(2).fill('disabled={!canSelect || refreshing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}'),
+      ...Array(2).fill('disabled={busy}'),
       'disabled={processingMatchIds.includes(match.id) || refreshingRecommendationIds.length > 0}',
     ].sort() };
     assert.deepEqual(panelContract(read(files.OneOnOneCandidateCard)), expected);

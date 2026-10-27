@@ -184,12 +184,12 @@ function text(tree) {
 }
 for (const remaining of [0, 1, 2]) test(`real home result markup shows ${remaining} remaining and preserves button permission`, () => {
   const source = ast('components/dating/OneOnOneHomePanel.tsx');
-  const call = find(source, n => ts.isCallExpression(n) && n.expression.getText(source) === 'recommendationGroups.map');
+  const call = find(source, n => ts.isCallExpression(n) && n.expression.getText(source) === 'displayedGroups.map');
   const render = evaluate('exports.render = ' + call.arguments[0].getText(source) + ';', {
     ...copy, activeCards: [], refreshingRecommendationIds: [], onRefreshRecommendations() {}, onReload() {},
     OneOnOneRefreshControl: 'RefreshControl', refreshNotice: null, plusActive: false,
     OneOnOneExpansionPanel: 'ExpansionPanel', processingAutoKeys: [], onReported() {}, onAutoSelect() {},
-    onCandidateHidden: undefined, onCandidateRestored: undefined,
+    onCandidateHidden: undefined, onCandidateRestored: undefined, onFavoriteChanged: undefined, starterPreview: false, favoriteBusyKeys: [],
   }).render;
   const tree = render({ ...quota(remaining), recommendations: [], admin_recommendations: [] }, 0);
   const control = nodes(tree).find(n => n.type === 'RefreshControl');
