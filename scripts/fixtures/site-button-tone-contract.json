@@ -1,9 +1,9 @@
 {
   "baseCommit": "2cfd6e256fb4faf650f40b8146507fe44e1cac88",
-  "reviewedUxBaseline": "Legacy navigation, completion and inline feedback reviewed against ac955ce. Candidate-hide controls reviewed against e45dd22: all 116 existing My Page handlers unchanged. Home hides reviewed against 91ff9fd: existing handlers unchanged; only unsent proposals are filtered. Covered by check-candidate-hides, check-home-candidate-hides and real-page home/mypage hide browser tests.",
+  "reviewedUxBaseline": "Legacy navigation, completion and inline feedback reviewed against ac955ce. Candidate-hide controls reviewed against e45dd22: all 116 existing My Page handlers unchanged. Home hides reviewed against 91ff9fd: existing handlers unchanged; only unsent proposals are filtered. Hidden-slot notices reviewed against 0b02832: only the hide-success text changes in these pages. Covered by check-candidate-hides, check-home-candidate-hides, recommendation hide-slot tests and real-page home/mypage hide/restore/reload/refresh browser tests.",
   "files": {
-    "app/mypage/page.tsx": "3a62fad12ef208cf4d447662bc880f483e9639e62311ddfbec6eb6e13aeaaf1d",
-    "app/community/dating/cards/page.tsx": "1b8d0d26cf0fba437109648bdbe91425cbf8e9031c8f122bbb9dcaef8feeb42c",
+    "app/mypage/page.tsx": "2714c8a905835a80fb7734dc9004eb9793f18b29234614722c02b99f7cc2d8e8",
+    "app/community/dating/cards/page.tsx": "3a6661fbfb5a9684c1afa9510a94246fb2ec6903ae15c8336ba2687da996a398",
     "app/community/dating/cards/[id]/page.tsx": "3869e13f9080c4201b7b52d3629355ae99592c61907d034a35053f34f0d7f0d2",
     "app/community/dating/cards/[id]/apply/page.tsx": "0cd9ce1751a63f5bebd5ff6dd679bfd7910878dc7c51e539b970de5faa416cf0",
     "components/dating/DatingPlusOffers.tsx": "177929a327362af7ab958d33cdd9f3404652532dc4c2d6366f64844458efe432",
