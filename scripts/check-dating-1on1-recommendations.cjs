@@ -1500,6 +1500,74 @@ const activeFixture = size => {
   tables.profiles.forEach(p => { p.last_meaningful_activity_at = new Date(now - 1000).toISOString(); });
   return tables;
 };
+function hideCandidate(tables, candidate) {
+  tables.dating_1on1_candidate_hides ??= [];
+  tables.dating_1on1_candidate_hides.push({ id: 'hide-' + candidate.id, user_id: 'user-source',
+    candidate_user_id: candidate.user_id, candidate_card_id: candidate.id, candidate_name: candidate.name, created_at: new Date(now).toISOString() });
+}
+for (const legacy of [false, true]) test('hidden candidates stay excluded through repeated refreshes, favorites, extras and re-created profiles: legacy=' + legacy, async () => {
+  const tables = activeFixture(60);
+  if (!legacy) { tables.dating_1on1_recommendation_pages = []; tables.dating_1on1_recommendation_page_history = []; }
+  const initial = await runApi(tables, { atTime: now });
+  const hidden = allCandidates(initial.body).slice(0, 7);
+  hidden.forEach(c => hideCandidate(tables, c));
+  const hiddenUsers = new Set(hidden.map(c => c.user_id));
+  tables.dating_1on1_candidate_favorites = [{ user_id: 'user-source', source_card_id: 'source', candidate_card_id: hidden[0].id }];
+  tables.dating_1on1_cards.push({ ...tables.dating_1on1_cards.find(c => c.id === hidden[1].id), id: 'recreated-hidden', created_at: new Date(now - 1).toISOString() });
+  const pairBefore = structuredClone(tables.dating_1on1_match_proposals);
+  for (let step = 0; step < 8; step++) {
+    const at = now + step * 25 * 3600000;
+    const refresh = await runRefresh(tables, { atTime: at });
+    assert.equal(refresh.response.status, 200);
+    const read = await runApi(tables, { atTime: at + 1 });
+    assert.equal(read.response.status, 200); assert.equal(read.body.items[0].hides_enabled, true);
+    const visible = allCandidates(read.body);
+    assert.equal(visible.length, 13); assert.ok(visible.every(c => !hiddenUsers.has(c.user_id)));
+    assert.deepEqual(read.body.items[0].favorite_candidates, []);
+    assert.ok(read.body.items[0].hidden_candidate_ids.includes('recreated-hidden'));
+    if (!legacy) assert.deepEqual(ids(visible), [...tables.dating_1on1_recommendation_pages[0].main_candidate_ids, ...tables.dating_1on1_recommendation_pages[0].extra_candidate_ids], 'persisted refresh matches next GET exactly');
+  }
+  assert.deepEqual(tables.dating_1on1_match_proposals, pairBefore);
+  tables.dating_1on1_candidate_hides = [];
+  const restored = await runApi(tables, { atTime: now });
+  assert.equal(restored.body.items[0].favorite_candidates[0].id, hidden[0].id, 'unhide restores favorite without rewriting it');
+});
+test('hiding an already-saved page removes only those cards and never consumes a quota', async () => {
+  const tables = activeFixture(40); tables.dating_1on1_recommendation_pages = [];
+  await runRefresh(tables, { atTime: now });
+  const before = allCandidates((await runApi(tables, { atTime: now + 1 })).body);
+  before.slice(0, 4).forEach(c => hideCandidate(tables, c));
+  const snapshot = structuredClone(tables);
+  const after = await runApi(tables, { atTime: now + 2 });
+  assert.deepEqual(ids(allCandidates(after.body)), ids(before.slice(4)));
+  assert.deepEqual(tables, snapshot, 'ordinary GET neither alters exact page nor writes quota');
+});
+test('hides apply to stored expansion without refilling and do not affect another viewer', async () => {
+  const tables = activeFixture(40);
+  const expanded = await runExpansion(tables); const snapshotIds = ids(expanded.body.candidates);
+  hideCandidate(tables, expanded.body.candidates[0]);
+  const result = await runExpansion(tables, snapshotIds);
+  assert.deepEqual(ids(result.body.candidates), snapshotIds.slice(1));
+  tables.dating_1on1_candidate_hides[0].user_id = 'different-viewer';
+  assert.deepEqual(ids((await runExpansion(tables, snapshotIds)).body.candidates), snapshotIds);
+});
+test('all-hidden pool and failed hide reads cannot consume refresh or expose hidden profiles', async () => {
+  const tables = activeFixture(20); tables.dating_1on1_cards.slice(1).forEach(c => hideCandidate(tables, c));
+  const empty = await runRefresh(tables, { atTime: now });
+  assert.equal(empty.rpcCalls.length, 0);
+  assert.equal(allCandidates((await runApi(tables, { atTime: now })).body).length, 0);
+  assert.equal((await runExpansion(tables)).body.candidates.length, 0);
+  for (const code of ['42P01', 'PGRST205', '57014']) {
+    const intercept = q => q.table === 'dating_1on1_candidate_hides' ? { data: null, error: { code } } : null;
+    const read = await runApi(activeFixture(20), { atTime: now, intercept });
+    if (code !== '57014') { assert.equal(read.response.status, 200); assert.equal(read.body.items[0].hides_enabled, false); }
+    else {
+      assert.ok(read.response.status >= 500);
+      assert.equal((await runRefresh(activeFixture(20), { atTime: now, intercept })).rpcCalls.length, 0);
+      assert.ok((await runExpansion(activeFixture(20), undefined, intercept)).response.status >= 500);
+    }
+  }
+});
 for (const size of [0, 3, 10, 13, 14, 16, 80]) test('expansion is additive, read-only and does not duplicate main/extra: pool ' + size, async () => {
   const tables = activeFixture(size), before = structuredClone(tables);
   const main = await runApi(tables, { atTime: now });

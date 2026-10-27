@@ -5,6 +5,7 @@ import { fetchClientJson } from "@/lib/client-json-request";
 import DatingReportButton, { type DatingReportResult } from "@/components/DatingReportButton";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
 import CandidateImpression from "@/components/dating/CandidateImpression";
+import { CandidateHideButton } from "@/components/dating/CandidateHides";
 
 type Candidate = {
   id: string; name: string; age: number | null; region: string; height_cm: number | null; job: string;
@@ -26,8 +27,9 @@ function validPayload(value: unknown, source: string): value is Payload {
       [c.intro_text, c.strengths_text, c.preferred_partner_text].every(text => text == null || typeof text === "string"));
 }
 
-export default function OneOnOneExpansionPanel({ enabled, sourceCardId, revision, blocked = false, onSelect, onReported }: {
+export default function OneOnOneExpansionPanel({ enabled, sourceCardId, revision, blocked = false, hidesEnabled = false, onHidden, onSelect, onReported }: {
   enabled: boolean; sourceCardId: string; revision: unknown; blocked?: boolean;
+  hidesEnabled?: boolean; onHidden?: (candidateId: string) => void;
   onSelect: (candidateId: string, name: string) => void | Promise<void>;
   onReported?: (result: DatingReportResult) => void;
 }) {
@@ -91,7 +93,7 @@ export default function OneOnOneExpansionPanel({ enabled, sourceCardId, revision
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={url} alt={`${candidate.name} 후보 사진 ${i + 1}`} loading="lazy" decoding="async" className="max-h-full max-w-full object-contain" />
           </a>)}</div>
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <button type="button" disabled={Boolean(selecting) || blocked} className="min-h-11 flex-1 rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white disabled:opacity-50"
               onClick={async () => {
                 if (selectingRef.current) return;
@@ -100,6 +102,9 @@ export default function OneOnOneExpansionPanel({ enabled, sourceCardId, revision
                 catch { setError("요청 결과를 확인하지 못했어요. 진행 중인 매칭을 확인해 주세요."); }
                 finally { selectingRef.current = false; setSelecting(null); }
               }}>{selecting === candidate.id ? "요청 확인 중…" : "매칭 요청 보내기"}</button>
+            <CandidateHideButton enabled={hidesEnabled} sourceCardId={sourceCardId} candidateId={candidate.id}
+              ticket={data.impression_ticket} disabled={Boolean(selecting) || blocked}
+              onHidden={id => { setData(prev => prev ? { ...prev, candidates: prev.candidates.filter(row => row.id !== id) } : null); onHidden?.(id); }} />
             <DatingReportButton targetType="one_on_one_card" targetId={candidate.id} label={candidate.name}
               onReported={result => { setData(null); setOpen(false); onReported?.(result); }} />
           </div>

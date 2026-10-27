@@ -1,8 +1,8 @@
 {
   "baseCommit": "2cfd6e256fb4faf650f40b8146507fe44e1cac88",
-  "reviewedUxBaseline": "Legacy navigation, completion and inline feedback reviewed against ac955ce; behavior covered by check-legacy-ux and check-open-card-participation.",
+  "reviewedUxBaseline": "Legacy navigation, completion and inline feedback reviewed against ac955ce. Candidate-hide controls reviewed against e45dd22: all 116 existing My Page handlers unchanged; covered by check-candidate-hides, check-dating-1on1-recommendations and check-candidate-hides-browser.",
   "files": {
-    "app/mypage/page.tsx": "222ad77442d0f14fe8728379e85dc6009987173565821fd7a1084fee9d4c9101",
+    "app/mypage/page.tsx": "3a62fad12ef208cf4d447662bc880f483e9639e62311ddfbec6eb6e13aeaaf1d",
     "app/community/dating/cards/page.tsx": "d10efacca22e5e549d0950c033a785ecffd3cd09f7632b970a23baf2066373a2",
     "app/community/dating/cards/[id]/page.tsx": "3869e13f9080c4201b7b52d3629355ae99592c61907d034a35053f34f0d7f0d2",
     "app/community/dating/cards/[id]/apply/page.tsx": "0cd9ce1751a63f5bebd5ff6dd679bfd7910878dc7c51e539b970de5faa416cf0",

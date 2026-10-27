@@ -59,6 +59,7 @@ import { readRecommendationPage, recommendationSourceKey } from "@/lib/dating-1o
 import { nextRecommendationPage, restoreRecommendationPage } from "@/lib/dating-1on1-recommendation-page";
 import { readRecommendationHistory } from "@/lib/dating-1on1-recommendation-history";
 import { getRegionDistanceMeta } from "@/lib/region-distance";
+import { readCandidateHides } from "@/lib/dating-candidate-hides";
 
 const RECOMMENDATION_LIMIT = 10;
 const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
@@ -303,6 +304,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
   let adminUserBlockPairSet: Awaited<ReturnType<typeof getOneOnOneAdminUserBlockPairSetForUsers>>;
   let contactBlockMap: Awaited<ReturnType<typeof getDatingContactBlockMapForUsers>>;
   let blockedUserIds: Awaited<ReturnType<typeof getDatingBlockedUserIds>>;
+  let hiddenCandidates: Awaited<ReturnType<typeof readCandidateHides>>;
   try {
     [
       pairRows,
@@ -312,6 +314,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       blockedUserIds,
       plusByUserId,
       activityByUserId,
+      hiddenCandidates,
     ] = await Promise.all([
       fetchOneOnOnePairHistory(admin, user.id),
       getOneOnOnePhoneBlockMapForUsers(admin, allCandidateUserIds),
@@ -328,6 +331,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         console.warn("[GET /api/dating/1on1/recommendations/my] activity unavailable", error);
         return new Map<string, string>();
       }),
+      readCandidateHides(admin, user.id),
     ]);
   } catch (error) {
     console.error("[GET /api/dating/1on1/recommendations/my] recommendation context failed", error);
@@ -362,6 +366,12 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     }
   }
   const candidateRevisitTimes = new Map(candidateUniverse.map((card) => [card.id, lastHandledAtByUserId.get(card.user_id)]));
+  const hiddenUserIds = new Set(hiddenCandidates.rows.map(row => row.candidate_user_id));
+  const notHidden = (card: RecommendationCard) => !hiddenUserIds.has(card.user_id);
+  const hiddenCardIds = [...new Set([
+    ...hiddenCandidates.rows.flatMap(row => row.candidate_card_id ? [row.candidate_card_id] : []),
+    ...candidateUniverse.filter(card => hiddenUserIds.has(card.user_id)).map(card => card.id),
+  ])];
 
   const unavailableCardIds = new Set<string>();
   const buildItems = (simulateRefresh = false) => mySourceCards.map((sourceCard) => {
@@ -428,7 +438,10 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       last_handled_at: candidateRevisitTimes.get(candidate.id) != null
         ? new Date(candidateRevisitTimes.get(candidate.id)!).toISOString() : null,
     }));
-    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, unsavedCandidates, `${adminRecommendationDate}:default`, nowMs);
+    // New selections and legacy replay must use the same eligible pool, so the
+    // planned refresh cannot disagree with its subsequent GET response.
+    const selectionCandidates = unsavedCandidates.filter(notHidden);
+    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, selectionCandidates, `${adminRecommendationDate}:default`, nowMs);
     const defaultPageAt = Date.parse(`${adminRecommendationDate}T00:00:00+09:00`);
     const dailyObservedIds = observedCandidateIdsAt(observations, defaultPageAt);
     const defaultRecommendations = dailyObservedIds.size ? takeObservedRecommendations(sourceCard, defaultSortedCandidates,
@@ -465,7 +478,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     const replay = hasSavedPage && observations.length > 0
       ? { recommendations: [] as typeof defaultRecommendations, extraRecommendations: [] as typeof defaultRecommendations,
         shownIds: observedCandidateIdsAt(observations, nowMs) }
-      : replayRecommendationRefreshes(sourceCard, unsavedCandidates,
+      : replayRecommendationRefreshes(sourceCard, selectionCandidates,
       defaultRecommendations, hasActiveRefresh ? refreshSeeds : [], handledPairIds, RECOMMENDATION_LIMIT, nowMs,
       { limit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES, excludeIds: recentHandledIds }, observations);
     let recommendations = hasActiveRefresh ? replay.recommendations : defaultRecommendations;
@@ -473,12 +486,15 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     const pageContext = { handled: handledPairIds, extraExcluded: recentHandledIds, observations,
       limit: RECOMMENDATION_LIMIT, extraLimit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES, recentPages: recentPages ?? undefined };
     if (hasSavedPage) {
-      const restored = restoreRecommendationPage(sourceCard, unsavedCandidates, savedPage, nowMs, pageContext);
+      // Retain hidden slots only in this already-saved page; final filtering
+      // removes them without hiding becoming an implicit charged refresh.
+      const savedIds = new Set([...savedPage.main_candidate_ids, ...savedPage.extra_candidate_ids]);
+      const restored = restoreRecommendationPage(sourceCard, unsavedCandidates.filter(card => notHidden(card) || savedIds.has(card.id)), savedPage, nowMs, pageContext);
       recommendations = restored.recommendations;
       adminRecommendations = restored.extraRecommendations;
     }
     if (simulateRefresh && refreshPlan && sourceCard.id === refreshPlan.sourceCardId && savedPageResult?.available) {
-      const next = nextRecommendationPage(sourceCard, unsavedCandidates, { recommendations, extraRecommendations: adminRecommendations },
+      const next = nextRecommendationPage(sourceCard, selectionCandidates, { recommendations: recommendations.filter(notHidden), extraRecommendations: adminRecommendations.filter(notHidden) },
         refreshPlan.at, nowMs, pageContext, replay.shownIds);
       recommendations = next.recommendations;
       adminRecommendations = next.extraRecommendations;
@@ -498,7 +514,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       // only revalidated, never reranked/refilled as history changes.
       ...(expansion.candidateIds ? [] : observations.length
         ? observedCandidateIdsAt(observations, nowMs) : replay.shownIds)]) : new Set<string>();
-    const expansionCandidates = expansion ? selectExpansionCandidates(sourceCard, unsavedCandidates.filter(card => profiles.get(card.user_id)?.phone),
+    const expansionCandidates = expansion ? selectExpansionCandidates(sourceCard, unsavedCandidates.filter(card => notHidden(card) && profiles.get(card.user_id)?.phone),
       expansionExclusions, adminRecommendationDate, nowMs, expansion.candidateIds) : [];
 
     return {
@@ -513,12 +529,14 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       next_refresh_at: bonusRemaining > 0 ? null : refreshAvailability.nextRefreshAt,
       can_refresh: refreshAvailability.canRefreshNow || bonusRemaining > 0,
       recovery_refresh_applied: Boolean(getActiveRecommendationRefresh(recoverySeed, nowMs)),
-      candidate_pool_count: candidates.length,
+      candidate_pool_count: candidates.filter(notHidden).length,
+      hides_enabled: hiddenCandidates.available,
+      hidden_candidate_ids: hiddenCardIds,
       plus: sourcePlus,
-      favorite_candidates: favoriteCandidates,
-      recommendations: recommendations,
+      favorite_candidates: favoriteCandidates.filter(notHidden),
+      recommendations: recommendations.filter(notHidden),
       admin_recommendation_date: adminRecommendationDate,
-      admin_recommendations: adminRecommendations,
+      admin_recommendations: adminRecommendations.filter(notHidden),
       admin_recommendation_limit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
       ...(expansion ? { expansion_candidates: expansionCandidates } : {}),
     };

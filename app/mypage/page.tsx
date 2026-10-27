@@ -30,6 +30,7 @@ import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import CandidateImpression from "@/components/dating/CandidateImpression";
+import { CandidateHideButton, CandidateHidesPanel } from "@/components/dating/CandidateHides";
 import { flushCandidateImpressions } from "@/lib/dating-1on1-impressions-client";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
 import OneOnOneNextSteps from "@/components/dating/OneOnOneNextSteps";
@@ -1052,6 +1053,8 @@ function canCancelOneOnOneMatch(match: Pick<MyOneOnOneMatch, "state" | "contact_
 }
 
 type MyOneOnOneAutoRecommendationGroup = {
+  hides_enabled?: boolean;
+  hidden_candidate_ids?: string[];
   recommendation_region_widened?: boolean;
   impression_ticket?: string | null;
   source_card_id: string;
@@ -5576,6 +5579,21 @@ export default function MyPage() {
     } finally {
       setProcessingOneOnOneAutoKeys((prev) => prev.filter((key) => key !== actionKey));
     }
+  };
+
+  const handleHideOneOnOneCandidate = (candidateId: string) => {
+    oneOnOneRecommendationsRequest.cancel();
+    setMyOneOnOneAutoRecommendations((groups) => groups.map((group) => ({
+      ...group,
+      recommendations: group.recommendations.filter((card) => card.id !== candidateId),
+      favorite_candidates: group.favorite_candidates?.filter((card) => card.id !== candidateId),
+      admin_recommendations: group.admin_recommendations?.filter((card) => card.id !== candidateId),
+      hidden_candidate_ids: [...new Set([...(group.hidden_candidate_ids ?? []), candidateId])],
+    })));
+    setOneOnOneActionNotice("추천 목록에서 숨겼어요. 기존 요청·매칭은 그대로 유지돼요.");
+    void reloadOneOnOneRecommendations(true, true).catch(() => {
+      setOneOnOneActionNotice("숨김은 저장됐어요. 목록 확인이 늦어지고 있으니 화면을 다시 불러와 주세요.");
+    });
   };
 
   const handleToggleOneOnOneFavorite = async (
@@ -10191,7 +10209,8 @@ export default function MyPage() {
               const adminAutoRecommendations = autoRecommendationGroup?.admin_recommendations ?? [];
               const canRefreshAutoRecommendations = autoRecommendationGroup?.can_refresh === true;
               const refreshingAutoRecommendations = refreshingOneOnOneRecommendationIds.includes(item.id);
-              const incomingCandidates = relatedMatches.filter((match) => match.role === "source" && match.state === "proposed");
+              const incomingCandidates = relatedMatches.filter((match) => match.role === "source" && match.state === "proposed" &&
+                !autoRecommendationGroup?.hidden_candidate_ids?.includes(match.counterparty_card?.id ?? ""));
               const waitingCandidateResponses = relatedMatches.filter(
                 (match) => match.role === "source" && match.state === "source_selected"
               );
@@ -10466,6 +10485,9 @@ export default function MyPage() {
                                       >
                                         {saving ? "처리 중..." : "찜 해제"}
                                       </button>
+                                      <CandidateHideButton enabled={autoRecommendationGroup?.hides_enabled === true}
+                                        sourceCardId={item.id} candidateId={card.id} disabled={selecting || saving || refreshingAutoRecommendations}
+                                        onHidden={handleHideOneOnOneCandidate} />
                                       <SmallDatingReportButton
                                         disabled={reportingDatingTargetKeys.includes(`one_on_one_card:${card.id}`)}
                                         onClick={() => void handleDatingUserReport("one_on_one_card", card.id, "1:1 찜한 후보")}
@@ -10532,6 +10554,10 @@ export default function MyPage() {
                                   >
                                     {processingOneOnOneFavoriteKeys.includes(actionKey) ? "저장 중..." : "♡ 찜"}
                                   </button>
+                                  <CandidateHideButton enabled={autoRecommendationGroup?.hides_enabled === true}
+                                    sourceCardId={item.id} candidateId={card.id} ticket={autoRecommendationGroup?.impression_ticket}
+                                    disabled={processing || refreshingAutoRecommendations || processingOneOnOneFavoriteKeys.includes(actionKey)}
+                                    onHidden={handleHideOneOnOneCandidate} />
                                   <SmallDatingReportButton
                                     disabled={reportingDatingTargetKeys.includes(`one_on_one_card:${card.id}`)}
                                     onClick={() => void handleDatingUserReport("one_on_one_card", card.id, "1:1 추천 후보")}
@@ -10598,6 +10624,10 @@ export default function MyPage() {
                                         >
                                           {processingOneOnOneFavoriteKeys.includes(actionKey) ? "저장 중..." : "♡ 찜"}
                                         </button>
+                                        <CandidateHideButton enabled={autoRecommendationGroup?.hides_enabled === true}
+                                          sourceCardId={item.id} candidateId={card.id} ticket={autoRecommendationGroup?.impression_ticket}
+                                          disabled={processing || refreshingAutoRecommendations || processingOneOnOneFavoriteKeys.includes(actionKey)}
+                                          onHidden={handleHideOneOnOneCandidate} />
                                         <SmallDatingReportButton
                                           disabled={reportingDatingTargetKeys.includes(`one_on_one_card:${card.id}`)}
                                           onClick={() => void handleDatingUserReport("one_on_one_card", card.id, "1:1 추가 후보")}
@@ -10617,6 +10647,7 @@ export default function MyPage() {
 
                   {!isArchivedOneOnOneCard && autoRecommendationGroup?.expansion_enabled === true && <OneOnOneExpansionPanel
                     enabled sourceCardId={item.id} revision={autoRecommendationGroup}
+                    hidesEnabled={autoRecommendationGroup?.hides_enabled === true} onHidden={handleHideOneOnOneCandidate}
                     blocked={refreshingAutoRecommendations || processingOneOnOneAutoKeys.length > 0 || mutatingOneOnOneCard}
                     onSelect={(candidateId, name) => handleOneOnOneAutoRecommendationSelect(item.id, candidateId, name)} />}
 
@@ -10669,6 +10700,9 @@ export default function MyPage() {
                                 >
                                   {processing ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                 </button>
+                                <CandidateHideButton enabled={autoRecommendationGroup?.hides_enabled === true}
+                                  sourceCardId={item.id} candidateId={card.id} disabled={processing || refreshingAutoRecommendations}
+                                  onHidden={handleHideOneOnOneCandidate} />
                                 <SmallDatingReportButton
                                   disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
                                   onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "1:1 후보")}
@@ -10682,6 +10716,9 @@ export default function MyPage() {
                     </div>
                   )}
 
+
+                  {!isArchivedOneOnOneCard && <CandidateHidesPanel enabled={autoRecommendationGroup?.hides_enabled === true}
+                    revision={autoRecommendationGroup} onRestored={() => reloadOneOnOneRecommendations(true, true)} />}
 
                   {waitingCandidateResponses.length > 0 && (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3">
