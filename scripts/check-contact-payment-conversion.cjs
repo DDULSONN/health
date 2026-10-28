@@ -29,15 +29,16 @@ test('new standard checkout is exactly 10% lower; old order price remains explic
     assert.match(read(file), /amount: body.amount \?\? ONE_ON_ONE_CONTACT_PRICE_KRW/);
   }
 });
-test('approved announcement shows only the discount percentage and uses the existing site-wide host', () => {
+test('previous price announcement keeps percentage-only copy; its expired host is replaced without changing checkout', () => {
   const draft = load('lib/contact-price-update-notice.ts', { '@/lib/dating-contact-price': price }).CONTACT_PRICE_UPDATE_NOTICE;
   assert.equal(draft.price, undefined); assert.equal(draft.previousPrice, undefined);
   assert.doesNotMatch(JSON.stringify(draft), /18,?000|20,?000/);
   assert.match(draft.priceLabel, /10%/); assert.match(draft.paragraphs.join(' '), /프로필 검수와 신고 대응/);
   assert.equal(draft.startsAt, undefined); assert.equal(draft.endsAt, undefined);
   assert.doesNotMatch(read('app/layout.tsx'), /ContactPriceUpdateNotice/);
-  assert.match(read('lib/site-announcement.ts'), /contact-price-update-notice/);
-  assert.match(read('components/PaymentMethodAnnouncement.tsx'), /return <ContactPriceUpdateNotice onClose=\{close\}/);
+  assert.match(read('lib/site-announcement.ts'), /friend-recommendation-2026-10-28/);
+  assert.match(read('components/PaymentMethodAnnouncement.tsx'), /return <FriendRecommendationNotice/);
+  assert.doesNotMatch(read('components/PaymentMethodAnnouncement.tsx'), /ContactPriceUpdateNotice/);
   assert.doesNotMatch(JSON.stringify(draft), /\uFFFD/);
 });
 const nudge = load('lib/dating-1on1-contact-nudge.ts');

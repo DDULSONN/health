@@ -1,9 +1,9 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { isSiteAnnouncementActive, SITE_ANNOUNCEMENT } from "@/lib/site-announcement";
-import ContactPriceUpdateNotice from "@/components/dating/ContactPriceUpdateNotice";
+import FriendRecommendationNotice from "@/components/dating/sharing/FriendRecommendationNotice";
 
 const STORAGE_KEY = `site-announcement:${SITE_ANNOUNCEMENT.id}`;
 // Site-wide notice, but never interrupt authentication, verification, checkout
@@ -11,7 +11,7 @@ const STORAGE_KEY = `site-announcement:${SITE_ANNOUNCEMENT.id}`;
 const EXCLUDED_PATH_PREFIXES = [
   "/api", "/admin", "/mypage/admin", "/payments", "/auth", "/login", "/signup",
   "/account-recovery", "/phone-verification", "/verify-email", "/onboarding",
-  "/community/write",
+  "/community/write", "/s",
 ];
 
 let acknowledgedInMemory = false;
@@ -41,6 +41,7 @@ function saveAcknowledgement() {
 
 export default function PaymentMethodAnnouncement() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -75,5 +76,9 @@ export default function PaymentMethodAnnouncement() {
 
   if (!open || !isVisiblePath(pathname) || !isSiteAnnouncementActive()) return null;
 
-  return <ContactPriceUpdateNotice onClose={close} />;
+  return <FriendRecommendationNotice
+    onClose={close}
+    onExplore={() => { close(); router.push("/community/dating/cards"); }}
+    onSettings={() => { close(); router.push("/mypage?section=settings"); }}
+  />;
 }

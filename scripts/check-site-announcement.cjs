@@ -25,6 +25,7 @@ const key = `site-announcement:${notice.id}`;
 function browser({ at = start + 1000, pathname = '/mypage', storage = new Map(), denied = false } = {}) {
   let time = at, open = false, pendingEffect, cleanup;
   const timers = new Map(), listeners = new Map();
+  const navigations = [];
   let sequence = 0;
   const Clock = class extends Date { static now() { return time; } };
   const dom = {
@@ -39,9 +40,9 @@ function browser({ at = start + 1000, pathname = '/mypage', storage = new Map(),
   };
   const component = evaluate('components/PaymentMethodAnnouncement.tsx', {
     'react': { useState: () => [open, value => { open = value; }], useEffect: cb => { pendingEffect = cb; } },
-    'next/navigation': { usePathname: () => pathname },
+    'next/navigation': { usePathname: () => pathname, useRouter: () => ({ push: url => { navigations.push({ url, acknowledged: storage.get(key), open }); } }) },
     '@/lib/site-announcement': evaluate('lib/site-announcement.ts', policyImports, { Date: Clock }),
-    '@/components/dating/ContactPriceUpdateNotice': { default: 'test-notice' },
+    '@/components/dating/sharing/FriendRecommendationNotice': { default: 'test-notice' },
   }, { window: dom, document: dom, Date: Clock }).default;
   return {
     render: () => component(),
@@ -58,7 +59,7 @@ function browser({ at = start + 1000, pathname = '/mypage', storage = new Map(),
     },
     suspendUntil: value => { time = value; },
     event: name => listeners.get(name)?.(),
-    timers, storage,
+    timers, storage, navigations,
   };
 }
 function button(node) {
@@ -72,10 +73,10 @@ function button(node) {
 test('new Korean notice replaces the old release and has a fixed 48-hour window', () => {
   assert.equal(end - start, 48 * 3600000);
   assert.notEqual(notice.id, 'one-on-one-refresh-fixed-2026-09-08');
-  assert.equal(notice.title, '더 나은 짐툴을 만들어가겠습니다');
-  assert.match(notice.message, /이용 화면과 사진 등록, 신고·차단 기능/);
-  assert.match(notice.message, /프로필 검수와 신고 대응/);
-  assert.match(notice.message, /꾸준히 개선/);
+  assert.equal(notice.title, '친구 추천 기능 안내');
+  assert.match(notice.message, /오픈카드나 1:1 후보/);
+  assert.match(notice.message, /친구에게 추천/);
+  assert.match(notice.message, /원치 않으면 설정에서 끌 수 있어요/);
   assert.equal(noticeContent.CONTACT_PRICE_UPDATE_NOTICE.priceLabel, '1:1 연락처 교환 · 10% 인하');
   assert.doesNotMatch(JSON.stringify(noticeContent.CONTACT_PRICE_UPDATE_NOTICE), /18,?000|20,?000/);
   assert.doesNotMatch(notice.message, /모든 회원|전부 새로운|100%/);
@@ -97,7 +98,7 @@ test('rendered notice shows only the percentage, while actual checkout price rem
   assert.equal(evaluate('lib/dating-contact-price.ts', {}).ONE_ON_ONE_CONTACT_PRICE_KRW, 18000);
 });
 test('new notice still appears after acknowledging the previous notice, but only once itself', () => {
-  const storage = new Map([['site-announcement:one-on-one-candidate-expansion-2026-10-10', '1']]);
+  const storage = new Map([['site-announcement:contact-price-quality-update-2026-10', '1']]);
   const page = browser({ storage }); page.mount(); page.advance(start + 1450);
   assert.ok(page.render()); button(page.render()).props.onClick();
   assert.equal(page.render(), null); assert.equal(storage.get(key), '1');
@@ -105,8 +106,8 @@ test('new notice still appears after acknowledging the previous notice, but only
   const reload = browser({ storage }); reload.mount(); reload.advance(start + 2000); assert.equal(reload.render(), null);
 });
 test('site-wide update has a new acknowledgement and fixed expiry', () => {
-  assert.equal(notice.id, 'contact-price-quality-update-2026-10');
-  assert.equal(notice.endsAt, '2026-10-25T00:00:00+09:00');
+  assert.equal(notice.id, 'friend-recommendation-2026-10-28');
+  assert.equal(notice.endsAt, '2026-10-30T22:30:00+09:00');
   for (const pathname of ['/', '/landing', '/community', '/community/dating/cards', '/dating/1on1', '/mypage', '/chat', '/notifications', '/tools', '/1rm', '/protein']) {
     const page = browser({ pathname }); page.mount(); page.advance(start+1450);
     assert.ok(page.render(), pathname);
@@ -117,9 +118,19 @@ test('site-wide update has a new acknowledgement and fixed expiry', () => {
 test('site-wide notice never interrupts checkout, account recovery, verification or profile forms', () => {
   for (const pathname of ['/payments/success', '/payments/fail', '/login', '/signup', '/auth/callback', '/account-recovery',
     '/phone-verification', '/verify-email', '/onboarding/dating', '/dating/card/new', '/dating/paid/card-id/apply',
-    '/community/write', '/community/post-id/edit', '/admin', '/mypage/admin/dating-1on1', '/api/dating/1on1/my']) {
+    '/community/write', '/community/post-id/edit', '/admin', '/mypage/admin/dating-1on1', '/api/dating/1on1/my', '/s', '/s/share-token']) {
     const page=browser({ pathname }); page.mount(); page.advance(start+1450);
     assert.equal(page.render(),null,pathname); assert.equal(page.timers.size,0,pathname);
+  }
+});
+
+test('notice actions acknowledge before navigation and never change sharing preferences', () => {
+  for (const [action, url] of [['onExplore', '/community/dating/cards'], ['onSettings', '/mypage?section=settings']]) {
+    const page = browser(); page.mount(); page.advance(start + 1450);
+    page.render().props[action]();
+    assert.deepEqual(page.navigations, [{ url, acknowledged: '1', open: false }]);
+    assert.equal(page.render(), null);
+    assert.deepEqual([...page.storage], [[key, '1']]);
   }
 });
 test('expired visitors do not mount a notice or timers', () => {

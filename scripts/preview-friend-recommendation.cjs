@@ -16,7 +16,7 @@ async function start(port=0){const f=fixture(),out=fs.mkdtempSync(path.join(os.t
       else {const m=url.pathname.match(/^\/api\/dating\/friend-shares\/([^/]+)(?:\/photos\/([^/]+)\/([01])|(\/request))?$/);if(!m){res.writeHead(404);return res.end();}const route=m[2]?'@/app/api/dating/friend-shares/[token]/photos/[itemId]/[index]/route':m[4]?'@/app/api/dating/friend-shares/[token]/request/route':'@/app/api/dating/friend-shares/[token]/route';response=await f.load(route)[req.method](request,{params:Promise.resolve({token:m[1],itemId:m[2],index:m[3]})});}
       res.writeHead(response.status,Object.fromEntries(response.headers));return res.end(Buffer.from(await response.arrayBuffer()));
     }
-    res.setHeader('Content-Type','text/html; charset=utf-8');res.end('<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><div id="root"></div><script src="/app.js"></script></html>');
+    res.setHeader('Content-Type','text/html; charset=utf-8');res.end('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>짐툴 · 친구 추천 미리보기</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body><div id="root"></div><script src="/app.js"></script></body></html>');
   }catch(e){res.writeHead(500,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}));}});
   await new Promise(resolve=>server.listen(port,'127.0.0.1',resolve));return{origin:`http://127.0.0.1:${server.address().port}`,fixture:f,close:()=>new Promise(resolve=>server.close(resolve)),output:out};
 }

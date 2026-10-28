@@ -87,6 +87,7 @@ const unitFiles = [
   'check-profiles-authority-write-guard.cjs',
 ];
 const browserFiles = [
+  'check-friend-notice-browser.cjs',
   'check-friend-recommendation-browser.cjs',
   'check-candidate-hides-browser.cjs',
   'check-site-button-tone-browser.cjs',
