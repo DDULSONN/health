@@ -21,7 +21,8 @@ async function fixture() {
       contact_exchange_paid_at timestamptz,contact_exchange_paid_by_user_id uuid,contact_exchange_approved_at timestamptz,
       contact_exchange_approved_by_user_id uuid,contact_exchange_note text,updated_at timestamptz,created_at timestamptz default now());
     create table toss_test_payment_orders(id uuid primary key,user_id uuid,product_type text default 'one_on_one_contact_exchange',product_ref_id uuid,
-      status text default 'paid',amount int default 20000,approved_at timestamptz default now()-interval '2 days',payment_key text,cancel_amount int,canceled_at timestamptz);
+      status text default 'paid',amount int default 20000,approved_at timestamptz default now()-interval '2 days',payment_key text,cancel_amount int,canceled_at timestamptz,
+      toss_order_id text,created_at timestamptz default now(),updated_at timestamptz);
     create table dating_1on1_plus_subscriptions(user_id uuid,expires_at timestamptz,contact_exchange_included boolean);
     create table dating_1on1_admin_user_blocks(user_a_id uuid,user_b_id uuid);
     create table dating_user_blocks(blocker_user_id uuid,blocked_user_id uuid);
@@ -71,6 +72,116 @@ async function fixture() {
   return { db,q,rpc,activate,apply,approve,redeem,ready,status,upload };
 }
 async function withDb(fn) { const f = await fixture(); try { await fn(f); } finally { await f.db.close(); } }
+
+async function careCheckoutFixture(f, { manual = false, provider } = {}) {
+  if (manual) await grantManual(f); else await f.ready();
+  await f.q(`insert into toss_test_payment_orders(id,user_id,product_ref_id,status,approved_at,toss_order_id)
+    values($1,$2,$3,'ready',null,'expired_checkout_001')`, [id(101),id(3),id(20)]);
+  const base = client(f); let calls = 0, rpcCalls = 0;
+  const db = { ...base, rpc: async (...args) => { rpcCalls++; return base.rpc(...args); } };
+  const api = load('app/api/dating/1on1/contact-care/route.ts', {
+    'next/server': { NextResponse: { json: (body,init) => Response.json(body,init) } },
+    '@/lib/supabase/request': { getRequestAuthContext: async () => ({ user: { id:id(1) } }) },
+    '@/lib/supabase/server': { createAdminClient: () => db },
+    '@/lib/dating-contact-blocks': { normalizeDatingContactPhone:p=>p,hashDatingContactBlockValue:(_,p)=>p.endsWith('1111')?'hash1':'hash3' },
+    '@/lib/dating-1on1-phone-blocks': { hashOneOnOneBlockedPhone:p=>p.endsWith('1111')?'legacy1':'legacy3' },
+    '@/lib/toss-payments': { getTossPaymentByOrderId: async orderId => {
+      calls++;
+      return provider ? provider(orderId,f) : { orderId,status:'EXPIRED',totalAmount:20000,approvedAt:null };
+    } },
+  });
+  return {
+    post: (overrides={}) => api.POST(new Request('https://local.invalid/api', { method:'POST',
+      headers:{host:'local.invalid',origin:'https://local.invalid','content-type':'application/json'},
+      body:JSON.stringify({action:manual?'redeem_manual':'redeem',matchId:id(20),confirmed:true,...overrides}),
+    })),
+    order: async () => (await f.q('select * from toss_test_payment_orders where id=$1',[id(101)])).rows[0],
+    calls: () => calls, rpcCalls: () => rpcCalls,
+  };
+}
+
+for (const manual of [false,true]) test(`expired checkout recovery -> locked redemption is idempotent (${manual?'manual':'claim'})`, () => withDb(async f => {
+  const before = await f.q('select * from toss_test_payment_orders');
+  const api = await careCheckoutFixture(f,{manual});
+  const r = await api.post();assert.equal(r.status,200,JSON.stringify(await r.clone().json()));
+  assert.equal((await api.order()).status,'canceled');assert.equal(api.calls(),1);assert.equal(api.rpcCalls(),2);
+  assert.equal((await f.q('select contact_exchange_status s from dating_1on1_match_proposals where id=$1',[id(20)])).rows[0].s,'approved');
+  assert.equal((await (await api.post()).json()).alreadyUsed,true);assert.equal(api.calls(),1);
+  if (manual) assert.equal(await manualRemaining(f),2); else assert.equal((await f.status()).used_match_id,id(20));
+  assert.deepEqual(await f.q('select * from toss_test_payment_orders where id=$1',[id(100)]),before);
+  await assert.rejects(f.q("insert into toss_test_payment_orders(id,user_id,product_ref_id,status,approved_at) values($1,$2,$3,'ready',null)",[id(200),id(3),id(20)]),/CARE_ALREADY_EXCHANGED/);
+}));
+
+const careProviderUnsafe = [
+  ...['READY','IN_PROGRESS','WAITING_FOR_DEPOSIT','DONE','CANCELED','PARTIAL_CANCELED',undefined,'UNKNOWN'].map(status=>({status})),
+  {orderId:'another_order'}, {totalAmount:18000}, {totalAmount:'20000'}, {approvedAt:'2026-10-28T00:00:00Z'},
+  {cancels:[{cancelAmount:20000}]}, {cancels:{}},
+];
+for (const variant of careProviderUnsafe) test('checkout stays blocked for provider '+JSON.stringify(variant), () => withDb(async f => {
+  const api = await careCheckoutFixture(f,{provider:async orderId=>({orderId,status:'EXPIRED',totalAmount:20000,approvedAt:null,...variant})});
+  assert.equal((await api.post()).status,409);assert.equal((await api.order()).status,'ready');
+  assert.equal((await f.status()).used_at,null);assert.equal(api.rpcCalls(),1);
+}));
+
+for (const status of ['ABORTED','EXPIRED']) test('unapproved terminal provider state '+status+' allows voucher without another payment', () => withDb(async f => {
+  const api = await careCheckoutFixture(f,{provider:async orderId=>({orderId,status,totalAmount:20000})});
+  assert.equal((await api.post()).status,200);assert.equal((await api.order()).status,'canceled');
+}));
+
+for (const message of ['timeout','404 NOT_FOUND_PAYMENT','503 provider unavailable']) test('provider lookup '+message+' cannot spend voucher', () => withDb(async f => {
+  const api=await careCheckoutFixture(f,{provider:async()=>{throw Error(message);}});
+  assert.equal((await api.post()).status,409);assert.equal((await api.order()).status,'ready');assert.equal((await f.status()).used_at,null);
+}));
+
+test('failed initial RPC never cleans orders on no credit, changed match or foreign target', () => withDb(async f => {
+  const api=await careCheckoutFixture(f);
+  assert.equal((await api.post({confirmed:false})).status,400);
+  assert.equal((await api.post({matchId:id(999)})).status,404);
+  await f.q("update contact_care_claims set status='rejected'");
+  assert.equal((await api.post()).status,409);assert.equal(api.calls(),0);
+  await f.q("update contact_care_claims set status='approved'");
+  await f.q("update dating_1on1_match_proposals set state='candidate_rejected' where id=$1",[id(20)]);
+  assert.equal((await api.post()).status,409);assert.equal(api.calls(),0);assert.equal((await api.order()).status,'ready');
+}));
+
+for (const change of ["status='paid'", "payment_key='existing-key'", "approved_at=now()", "cancel_amount=1", "canceled_at=now()", "user_id='"+id(4)+"'"]) test('local payment evidence blocks cleanup: '+change, () => withDb(async f => {
+  const api=await careCheckoutFixture(f);await f.q('update toss_test_payment_orders set '+change+' where id=$1',[id(101)]);
+  const before=await api.order();assert.equal((await api.post()).status,409);assert.deepEqual(await api.order(),before);
+  assert.equal(api.calls(),0);assert.equal((await f.status()).used_at,null);
+}));
+
+test('mixed active and expired orders are not partially cleaned; max eight provider reads', () => withDb(async f => {
+  const api=await careCheckoutFixture(f,{provider:async orderId=>({orderId,status:orderId==='expired_checkout_001'?'EXPIRED':'IN_PROGRESS',totalAmount:20000})});
+  await f.q("insert into toss_test_payment_orders(id,user_id,product_ref_id,status,approved_at,toss_order_id) values($1,$2,$3,'ready',null,'active_checkout_002')",[id(102),id(1),id(20)]);
+  assert.equal((await api.post()).status,409);assert.equal((await api.order()).status,'ready');assert.equal(api.calls(),2);
+  for(let n=103;n<=109;n++) await f.q("insert into toss_test_payment_orders(id,user_id,product_ref_id,status,approved_at,toss_order_id) values($1,$2,$3,'ready',null,$4)",[id(n),id(1),id(20),'extra_checkout_'+n]);
+  assert.equal((await api.post()).status,409);assert.equal(api.calls(),2);assert.equal((await f.status()).used_at,null);
+}));
+
+test('approval racing provider lookup is not overwritten and does not spend credit', () => withDb(async f => {
+  const api=await careCheckoutFixture(f,{provider:async(orderId)=>{
+    await f.q("update toss_test_payment_orders set status='paid',payment_key='approved-key',approved_at=now() where id=$1",[id(101)]);
+    return {orderId,status:'EXPIRED',totalAmount:20000};
+  }});
+  assert.equal((await api.post()).status,409);assert.equal((await api.order()).status,'paid');assert.equal((await f.status()).used_at,null);assert.equal(api.rpcCalls(),1);
+}));
+
+test('new checkout arriving during cleanup is caught by unchanged redemption lock/check', () => withDb(async f => {
+  const api=await careCheckoutFixture(f,{provider:async(orderId)=>{
+    await f.q("insert into toss_test_payment_orders(id,user_id,product_ref_id,status,approved_at,toss_order_id) values($1,$2,$3,'ready',null,'concurrent_checkout')",[id(102),id(1),id(20)]);
+    return {orderId,status:'EXPIRED',totalAmount:20000};
+  }});
+  assert.equal((await api.post()).status,409);assert.equal((await api.order()).status,'canceled');assert.equal((await f.status()).used_at,null);assert.equal(api.rpcCalls(),2);
+}));
+
+test('block installed during provider lookup is rechecked before contact release', () => withDb(async f => {
+  const api=await careCheckoutFixture(f,{provider:async(orderId)=>{
+    await f.q('insert into dating_user_blocks values($1,$2)',[id(3),id(1)]);
+    return {orderId,status:'EXPIRED',totalAmount:20000};
+  }});
+  const r=await api.post();assert.equal(r.status,409);assert.equal((await r.json()).code,'CARE_BLOCKED');
+  assert.equal((await f.status()).used_at,null);assert.equal((await f.q('select contact_exchange_status s from dating_1on1_match_proposals where id=$1',[id(20)])).rows[0].s,'awaiting_applicant_payment');
+}));
 
 test('migration is repeatable, disabled, and does not alter existing records', () => withDb(async f => {
   const before = await f.q('select * from dating_1on1_match_proposals order by id');
@@ -228,10 +339,11 @@ function client(f) {
     };}},
     rpc: async (name,args)=>{try{return {data:await f.rpc(name,Object.values(args)),error:null};}catch(error){return {data:null,error};}},
     from(table){
-      assert(tables.has(table));let fields='*',filters=[],values=[],orders=[],limit=100,single=false,head=false;
+      assert(tables.has(table));let fields='*',filters=[],values=[],orders=[],limit=100,single=false,head=false,updates=null;
       const column=v=>{assert.match(v,/^[a-z_][a-z0-9_]*$/);return v;};
       const bind=v=>{values.push(v);return '$'+values.length;};
       const b={
+        update(v){updates=Object.entries(v).map(([k,val])=>`${column(k)}=${bind(val)}`).join(',');return b;},
         select(v,options){fields=v.split(',').map(column).join(',');head=options?.head===true;if(head)assert.equal(options.count,'exact');return b;},
         eq(k,v){filters.push(`${column(k)}=${bind(v)}`);return b;},
         gt(k,v){filters.push(`${column(k)}>${bind(v)}`);return b;},
@@ -242,6 +354,7 @@ function client(f) {
         in(k,v){filters.push(`${column(k)} in (${v.map(bind).join(',')})`);return b;},
         or(v){
           if(v==='cancel_amount.is.null,cancel_amount.eq.0')filters.push('(cancel_amount is null or cancel_amount=0)');
+          else if(v==='status.eq.ready,status.eq.paid,payment_key.not.is.null,approved_at.not.is.null')filters.push("(status in ('ready','paid') or payment_key is not null or approved_at is not null)");
           else if(v.startsWith('created_at.gt.')) {
             const m=v.match(/^created_at.gt.([^,]+),and\(created_at.eq.([^,]+),id.gt.([\da-f-]+)\)$/);assert(m);assert.equal(m[1],m[2]);
             filters.push(`(created_at>${bind(m[1])} or (created_at=${bind(m[2])} and id>${bind(m[3])}))`);
@@ -253,7 +366,7 @@ function client(f) {
         limit(n){assert(n<=100);limit=n;return b;},
         maybeSingle(){single=true;return b;},
         abortSignal(){return b;},
-        then(yes,no){return f.q(`select ${head?'count(*)::int n':fields} from ${table}${filters.length?' where '+filters.join(' and '):''}${orders.length?' order by '+orders.join(','):''} limit ${limit}`,values)
+        then(yes,no){return f.q(updates ? `update ${table} set ${updates}${filters.length?' where '+filters.join(' and '):''} returning ${fields}` : `select ${head?'count(*)::int n':fields} from ${table}${filters.length?' where '+filters.join(' and '):''}${orders.length?' order by '+orders.join(','):''} limit ${limit}`,values)
           .then(r=>({data:head?null:JSON.parse(JSON.stringify(single?r.rows[0]||null:r.rows)),count:head?r.rows[0].n:null,error:null}),error=>({data:null,error})).then(yes,no);},
       };return b;
     },

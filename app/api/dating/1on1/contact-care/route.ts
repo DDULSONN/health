@@ -6,6 +6,7 @@ import { careJson, careError, careMatchNames, careManualBalance, CARE_CLAIM_FIEL
 import { hashDatingContactBlockValue, normalizeDatingContactPhone } from "@/lib/dating-contact-blocks";
 import { hashOneOnOneBlockedPhone } from "@/lib/dating-1on1-phone-blocks";
 import { CARE_EVIDENCE_BUCKET, prepareCareEvidence, readCareForm } from "@/lib/contact-care-evidence";
+import { reconcileExpiredCareCheckout } from "@/lib/contact-care-checkout";
 
 export const runtime = "nodejs";
 
@@ -135,8 +136,15 @@ export async function POST(req: Request) {
     if (profiles.error) throw profiles.error;
     const phones = ids.map(id => normalizeDatingContactPhone(profiles.data?.find(p => p.user_id === id)?.phone_e164 ?? ""));
     if (phones.some(p => !p)) return careJson({ error: "휴대폰 인증 상태를 확인해 주세요. 교환권은 유지돼요." }, 409);
-    const res = await admin.rpc(body.action === "redeem_manual" ? "redeem_contact_care_manual" : "redeem_contact_care", { p_user: user.id, p_match: body.matchId, p_phones: phones,
-      p_contact_hashes: phones.map(p => hashDatingContactBlockValue("phone", p)), p_legacy_hashes: phones.map(hashOneOnOneBlockedPhone) });
+    const rpc = body.action === "redeem_manual" ? "redeem_contact_care_manual" : "redeem_contact_care";
+    const args = { p_user: user.id, p_match: body.matchId, p_phones: phones,
+      p_contact_hashes: phones.map(p => hashDatingContactBlockValue("phone", p)), p_legacy_hashes: phones.map(hashOneOnOneBlockedPhone) };
+    let res = await admin.rpc(rpc, args);
+    if (res.error?.message === "CARE_CHECKOUT" && await reconcileExpiredCareCheckout(admin, body.matchId, ids)) {
+      // One retry only, and only after a definite SQL rejection (no ambiguous
+      // mutation retries). SQL still owns atomic credit use and contact release.
+      res = await admin.rpc(rpc, args);
+    }
     if (res.error) throw res.error;
     return careJson(res.data);
   } catch (error) { return careError(error); }
