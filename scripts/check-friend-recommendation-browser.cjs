@@ -18,5 +18,6 @@ const {start}=require('./preview-friend-recommendation.cjs'),{chromium}=require(
     await ctx.addCookies([{name:'fixture_role',value:'recipient',url:s.origin}]);await page.goto(link);await page.getByText('현재 볼 수 있는 프로필이 없어요.').waitFor();assert.equal(await page.locator('article').count(),0);
     await ctx.close();cases++;console.log('PASS production UI/API privacy/admin/OFF '+width);
   }
+  await require('./check-friend-share-sender-browser.cjs').runSenderChecks(s,browser);
   assert.deepEqual(errors,[]);console.log(JSON.stringify({cases,screenshots:s.output,externalSends:0,productionWrites:0}));
 }finally{if(browser)await browser.close();await s.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -3,6 +3,44 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const {fixture,loader,id}=require('./fixtures/friend-recommendation-store.cjs');
 const {PGlite}=require('@electric-sql/pglite');
 const contract=loader()('@/lib/friend-recommendation');
+const senderClient=loader()('@/lib/friend-recommendation-client');
+const senderBody={requestKey:id(90),prompt:'fit',items:[{kind:'open_card',cardId:id(12)}]};
+const senderLink=()=>({path:'/s/'+'a'.repeat(43),expiresAt:new Date(Date.now()+3600000).toISOString()});
+test('sender validates local link paths and expiry including exact deadline',()=>{
+  const now=Date.now(),link=senderLink();
+  assert.equal(senderClient.isFriendLinkCurrent(link,now),true);
+  for(const bad of [null,{...link,path:'https://evil.invalid'},{...link,path:'//evil.invalid'},{...link,expiresAt:'bad'},{...link,expiresAt:new Date(now).toISOString()}])assert.equal(senderClient.isFriendLinkCurrent(bad,now),false);
+});
+for(const stage of ['fetch','body'])test('sender timeout bounds '+stage+' and aborts without changing the retry key',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});let request;
+  t.mock.method(globalThis,'fetch',async(_url,init)=>{request=init;return stage==='fetch'?new Promise(()=>{}):{ok:true,json:()=>new Promise(()=>{})};});
+  const pending=senderClient.requestFriendLink(senderBody,new AbortController().signal);
+  const rejected=assert.rejects(pending,/응답이 늦어지고 있어요/);
+  t.mock.timers.tick(senderClient.FRIEND_SHARE_REQUEST_TIMEOUT_MS);await rejected;
+  assert.equal(request.signal.aborted,true);assert.equal(JSON.parse(request.body).requestKey,id(90));
+});
+test('sender close aborts an otherwise unresponsive request; pre-aborted calls never fetch',async t=>{
+  let calls=0;t.mock.method(globalThis,'fetch',()=>{calls++;return new Promise(()=>{});});
+  const abort=new AbortController(),pending=senderClient.requestFriendLink(senderBody,abort.signal);
+  const rejected=assert.rejects(pending,/취소/);abort.abort();await rejected;
+  await assert.rejects(senderClient.requestFriendLink(senderBody,abort.signal),/취소/);assert.equal(calls,1);
+});
+test('sender rejects malformed, foreign and expired successful responses',async t=>{
+  let value;t.mock.method(globalThis,'fetch',async()=>Response.json(value));
+  for(const bad of [null,{}, {...senderLink(),path:'https://evil.invalid'}, {...senderLink(),expiresAt:null}, {...senderLink(),expiresAt:'invalid'}]){
+    value=bad;await assert.rejects(senderClient.requestFriendLink(senderBody,new AbortController().signal),/추천 링크를 확인하지 못했어요/);
+  }
+  value={...senderLink(),expiresAt:'2020-01-01T00:00:00Z'};
+  await assert.rejects(senderClient.requestFriendLink(senderBody,new AbortController().signal),e=>e.status===410);
+  value=senderLink();assert.deepEqual(await senderClient.requestFriendLink(senderBody,new AbortController().signal),value);
+});
+test('sender preserves server safety and rate-limit errors; no automatic creation retry',async t=>{
+  for(const status of [401,403,409,410,429,503]){
+    let calls=0;const mock=t.mock.method(globalThis,'fetch',async()=>{calls++;return Response.json({error:'추천할 수 없어요.'},{status});});
+    await assert.rejects(senderClient.requestFriendLink(senderBody,new AbortController().signal),e=>e.status===status&&e.message==='추천할 수 없어요.');
+    assert.equal(calls,1);mock.mock.restore();
+  }
+});
 async function share(f){const service=f.load('@/lib/friend-recommendation-server');return service.createFriendLink(f.admin,id(1),id(90),'fit',[{kind:'open_card',cardId:id(12)}]);}
 test('contract rejects external return paths, malformed IDs, duplicate/four selections',()=>{
   for(const value of ['https://evil.invalid','//evil','/s/'+ 'a'.repeat(43)+'?next=//evil',null])assert.equal(contract.friendReturnPath(value),null);
