@@ -19,7 +19,9 @@ async function fixture() {
     create table dating_1on1_match_proposals(id uuid primary key,source_user_id uuid,candidate_user_id uuid,source_card_id uuid,candidate_card_id uuid,
       state text default 'mutual_accepted',contact_exchange_status text default 'awaiting_applicant_payment',contact_exchange_requested_at timestamptz,
       contact_exchange_paid_at timestamptz,contact_exchange_paid_by_user_id uuid,contact_exchange_approved_at timestamptz,
-      contact_exchange_approved_by_user_id uuid,contact_exchange_note text,updated_at timestamptz,created_at timestamptz default now());
+      contact_exchange_approved_by_user_id uuid,contact_exchange_note text,updated_at timestamptz,created_at timestamptz default now(),
+      source_phone_share_consented_at timestamptz,candidate_phone_share_consented_at timestamptz,admin_sent_by_user_id uuid,
+      source_selected_at timestamptz,candidate_responded_at timestamptz,source_final_responded_at timestamptz);
     create table toss_test_payment_orders(id uuid primary key,user_id uuid,product_type text default 'one_on_one_contact_exchange',product_ref_id uuid,
       status text default 'paid',amount int default 20000,approved_at timestamptz default now()-interval '2 days',payment_key text,cancel_amount int,canceled_at timestamptz,
       toss_order_id text,created_at timestamptz default now(),updated_at timestamptz);
@@ -305,6 +307,110 @@ function load(file, mocks = {}) {
   new Function('require','module','exports',js)(n => n in mocks ? mocks[n] : n.startsWith('@/') ? load(n.slice(2)+'.ts',mocks) : require(n),mod,mod.exports);
   return mod.exports;
 }
+test('home, mypage and API all protect the full 72-hour claim window', () => {
+  const now = Date.parse('2026-10-28T12:00:00Z'), hour = 3600000;
+  for (const [file, constant, name] of [
+    ['components/dating/OneOnOneHomePanel.tsx', 'ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS', 'canCancelOneOnOneMatchPreview'],
+    ['app/mypage/page.tsx', 'ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS', 'canCancelOneOnOneMatch'],
+    ['app/api/dating/1on1/matches/[id]/route.ts', 'CONTACT_EXCHANGE_CANCEL_DELAY_MS', 'canCancelApprovedContactExchange'],
+  ]) {
+    const ast = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const variable = ast.statements.find(n => ts.isVariableStatement(n) && n.declarationList.declarations.some(d => d.name.getText(ast) === constant));
+    const fn = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name);
+    assert.ok(variable); assert.ok(fn);
+    const js = ts.transpileModule(variable.getText(ast) + '\n' + fn.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+    const check = new Function('Date', js + `\nreturn ${name};`)({ parse: Date.parse, now: () => now });
+    for (const [elapsed, allowed] of [[0,false], [48*hour,false], [71*hour,false], [72*hour-1,false], [72*hour,true], [73*hour,true]]) {
+      const row = { state:'mutual_accepted', contact_exchange_status:'approved', contact_exchange_approved_at:new Date(now-elapsed).toISOString() };
+      assert.equal(check(row, now), allowed, `${file}: ${elapsed}ms`);
+    }
+    for (const at of [null, '', 'invalid', new Date(now+hour).toISOString()]) {
+      assert.equal(check({state:'mutual_accepted',contact_exchange_status:'approved',contact_exchange_approved_at:at},now),false);
+    }
+    assert.equal(check({state:'mutual_accepted',contact_exchange_status:'awaiting_applicant_payment'},now),true,'unpaid match cancellation unchanged');
+    if (!file.includes('/api/')) {
+      assert.equal(check({state:'admin_canceled',contact_exchange_status:'canceled'},now),false,'ended matches cannot cancel again');
+      assert.equal(check({state:'source_selected',contact_exchange_status:'none'},now),false);
+      assert.ok(read(file).split(`${name}(`).length >= 3, 'UI still calls the tested guard');
+    }
+  }
+});
+
+function cancellationApi(f, userId = id(1)) {
+  let notifications = 0;
+  const api = load('app/api/dating/1on1/matches/[id]/route.ts', {
+    'next/server': { NextResponse: { json: (body,init) => Response.json(body,init) } },
+    '@/lib/supabase/request': { getRequestAuthContext: async () => ({user:userId ? {id:userId} : null}) },
+    '@/lib/supabase/server': { createAdminClient: () => client(f) },
+    '@/lib/dating-1on1': {}, '@/lib/dating-email-templates': {}, '@/lib/dating-1on1-metrics': {},
+    '@/lib/dating-blocks': {}, '@/lib/dating-contact-blocks': {}, '@/lib/dating-swipe': {},
+    '@/lib/dating-1on1-sms': {}, '@/lib/dating-1on1-delivery-guard': {}, '@/lib/dating-1on1-age': {},
+    '@/lib/dating-age': {},
+    '@/lib/dating-notifications': { notifyDatingUser: async () => { notifications++; } },
+  });
+  return {
+    post: (matchId=id(10), origin='https://local.invalid') => api.POST(new Request('https://local.invalid/api', {
+      method:'POST', headers:{host:'local.invalid',origin,'content-type':'application/json'}, body:JSON.stringify({action:'cancel_mutual'}),
+    }), {params:Promise.resolve({id:matchId})}),
+    notifications: () => notifications,
+  };
+}
+
+test('actual cancellation API and PostgreSQL enforce 72h for both parties without changing payment or exchange timestamps', t => withDb(async f => {
+  const now = Date.parse('2026-10-28T12:00:00Z');
+  t.mock.timers.enable({apis:['Date'],now});
+  const paymentBefore = (await f.q('select * from toss_test_payment_orders')).rows;
+  for (const user of [id(1),id(2)]) {
+    const api = cancellationApi(f,user);
+    for (const elapsed of [48*3600000, 72*3600000-1]) {
+      await f.q("update dating_1on1_match_proposals set state='mutual_accepted',contact_exchange_status='approved',contact_exchange_approved_at=$1 where id=$2",[new Date(now-elapsed).toISOString(),id(10)]);
+      const before = (await f.q('select * from dating_1on1_match_proposals where id=$1',[id(10)])).rows[0];
+      const blocked = await api.post();
+      assert.equal(blocked.status,409);const body=await blocked.json();
+      assert.equal(body.code,'MATCH_CANCEL_NOT_READY');assert.match(body.error,/72시간/);
+      assert.deepEqual((await f.q('select * from dating_1on1_match_proposals where id=$1',[id(10)])).rows[0],before);
+      assert.equal(api.notifications(),0);
+    }
+    await f.q('update dating_1on1_match_proposals set contact_exchange_approved_at=$1 where id=$2',[new Date(now-72*3600000).toISOString(),id(10)]);
+    const before = (await f.q('select * from dating_1on1_match_proposals where id=$1',[id(10)])).rows[0];
+    assert.equal((await api.post()).status,200);
+    const after = (await f.q('select * from dating_1on1_match_proposals where id=$1',[id(10)])).rows[0];
+    assert.deepEqual(after,{...before,state:'admin_canceled',contact_exchange_status:'canceled',updated_at:new Date(now)});
+    assert.equal((await api.post()).status,409,'duplicate cancellation rejected');assert.equal(api.notifications(),1);
+  }
+  assert.deepEqual((await f.q('select * from toss_test_payment_orders')).rows,paymentBefore);
+}));
+
+test('cancellation retains authorization, origin and unpaid-match behavior', () => withDb(async f => {
+  assert.equal((await cancellationApi(f,null).post()).status,401);
+  assert.equal((await cancellationApi(f,id(3)).post()).status,403);
+  assert.equal((await cancellationApi(f).post(id(10),'https://evil.invalid')).status,403);
+  assert.equal((await cancellationApi(f).post(id(999))).status,404);
+  assert.equal((await cancellationApi(f).post(id(20))).status,200,'unpaid mutual match can still cancel immediately');
+  await f.q('update dating_1on1_match_proposals set contact_exchange_approved_at=null where id=$1',[id(10)]);
+  assert.equal((await cancellationApi(f).post()).status,409,'missing exchange timestamp fails closed');
+}));
+
+test('an already-canceled paid match remains claimable during 48-72h, including after the other profile is removed', () => withDb(async f => {
+  await f.activate();
+  await f.q("update dating_1on1_match_proposals set state='admin_canceled',contact_exchange_status='canceled',contact_exchange_approved_at=now()-interval '60 hours' where id=$1",[id(10)]);
+  await f.q('delete from dating_1on1_cards where id=$1',[id(2)]);
+  const member = load('app/api/dating/1on1/contact-care/route.ts', {
+    'next/server':{NextResponse:{json:(body,init)=>Response.json(body,init)}},
+    '@/lib/supabase/request':{getRequestAuthContext:async()=>({user:{id:id(1)}})},
+    '@/lib/supabase/server':{createAdminClient:()=>client(f)},
+    '@/lib/dating-contact-blocks':{},'@/lib/dating-1on1-phone-blocks':{},
+  });
+  const response = await member.GET(new Request('https://local.invalid/api'));
+  assert.equal(response.status,200);
+  const body = await response.json();
+  assert.equal(body.payments.length,1);assert.equal(body.payments[0].id,id(10));
+  assert.equal(body.payments[0].name,'상대 프로필');
+  assert.equal((await f.apply()).ok,true,'real SQL accepts a timely claim even when the match is canceled');
+  assert.equal((await f.status()).status,'pending');
+  assert.match(read('app/mypage/page.tsx'),/<ContactCarePanel key=\{summary\?\.profile.email \?\? "member"\} \/>/,'standalone claim entry stays outside individual cards');
+}));
+
 test('API guards: login, origin, malformed body, admin permissions; no DB before validation', async () => {
   let calls=0;
   const mocks={

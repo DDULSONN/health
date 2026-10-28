@@ -89,7 +89,7 @@ type OneOnOneMatchPreview = {
   created_at?: string | null;
 };
 
-const ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS = 48 * 60 * 60 * 1000;
+const ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS = 72 * 60 * 60 * 1000;
 
 function canCancelOneOnOneMatchPreview(match: OneOnOneMatchPreview) {
   if (match.state !== "mutual_accepted" && match.state !== "candidate_accepted") return false;

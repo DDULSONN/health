@@ -43,7 +43,8 @@ const ACTIONS = new Set<MatchAction>([
   "source_reject",
   "cancel_mutual",
 ]);
-const CONTACT_EXCHANGE_CANCEL_DELAY_MS = 48 * 60 * 60 * 1000;
+// Keep the match available throughout the 72-hour contact-care claim window.
+const CONTACT_EXCHANGE_CANCEL_DELAY_MS = 72 * 60 * 60 * 1000;
 
 function canCancelApprovedContactExchange(row: DatingOneOnOneMatchRow, nowMs: number) {
   if (row.contact_exchange_status !== "approved") return true;
@@ -347,7 +348,7 @@ export async function POST(
       return NextResponse.json({ error: "이미 처리된 매칭입니다.", code: "MATCH_ALREADY_HANDLED" }, { status: 409 });
     }
     if (!canCancelApprovedContactExchange(row, nowMs)) {
-      return NextResponse.json({ error: "아직 매칭을 취소할 수 없습니다.", code: "MATCH_CANCEL_NOT_READY" }, { status: 409 });
+      return NextResponse.json({ error: "번호교환 후 72시간이 지나야 매칭을 취소할 수 있어요. 도움이 필요하면 신고 또는 고객센터를 이용해 주세요.", code: "MATCH_CANCEL_NOT_READY" }, { status: 409 });
     }
 
     const updateRes = await admin

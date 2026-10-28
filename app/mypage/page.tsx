@@ -1046,7 +1046,7 @@ type MyOneOnOneMatch = {
   contact_nudge?: OneOnOneContactNudgeSummary | null;
 };
 
-const ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS = 48 * 60 * 60 * 1000;
+const ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS = 72 * 60 * 60 * 1000;
 
 function canCancelOneOnOneMatch(match: Pick<MyOneOnOneMatch, "state" | "contact_exchange_status" | "contact_exchange_approved_at">) {
   if (match.state !== "mutual_accepted" && match.state !== "candidate_accepted") return false;

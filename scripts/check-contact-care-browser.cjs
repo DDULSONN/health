@@ -113,13 +113,18 @@ async function main(){
     installed=false;await page.reload();await member.locator('summary').click();await member.getByRole('alert').waitFor();
     assert.equal(await member.getByRole('button',{name:'교환권 신청',exact:true}).count(),0);
     // The current site-wide notice takes precedence; never stack two modal notices.
-    const releaseNow=Date.parse('2026-10-23T00:01:00+09:00');
+    // Follow the current announcement window instead of a past release date.
+    const announcement=fs.readFileSync(path.join(root,'lib/site-announcement.ts'),'utf8');
+    const starts=Date.parse(announcement.match(/startsAt: "([^"]+)"/)?.[1]??'');
+    const ends=Date.parse(announcement.match(/endsAt: "([^"]+)"/)?.[1]??'');
+    assert.ok(Number.isFinite(starts)&&Number.isFinite(ends)&&ends>starts);
+    const releaseNow=starts+1000;
     await page.clock.setFixedTime(new Date(releaseNow));noticeStarted=releaseNow;installed=true;active=true;
     const beforeGlobalNotice=policyReads;
     await page.goto(origin+'/?notice');await page.waitForTimeout(700);
     assert.equal(await page.getByRole('dialog').count(),0,'site-wide notice suppresses the older launch popup');
     assert.equal(policyReads,beforeGlobalNotice,'suppressed popup skips policy fetch');
-    const noticeNow=Date.parse('2026-10-26T00:00:00+09:00');
+    const noticeNow=ends+1000;
     await page.clock.setFixedTime(new Date(noticeNow));noticeStarted=noticeNow;installed=false;
     await page.reload();await page.waitForTimeout(700);assert.equal(await page.getByRole('dialog').count(),0,'disabled policy never announces availability');
     installed=true;active=true;await page.reload();await page.getByRole('dialog').waitFor();

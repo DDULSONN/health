@@ -1,9 +1,10 @@
 {
   "baseCommit": "2cfd6e256fb4faf650f40b8146507fe44e1cac88",
+  "contactCancelReview": "Compared with 197bc3c: My Page changes only ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS from 48 to 72 hours. Matching, checkout, phone disclosure and support entry handlers unchanged. check-contact-care covers both UI guards, real cancellation API/SQL boundaries and canceled-match claim access.",
   "friendShareReview": "Compared with bd9d118: additive sharing buttons/settings/admin tab only; existing matching and payment handlers unchanged. New UI/API/privacy gates and signup return covered by check-friend-recommendation and browser tests.",
   "reviewedUxBaseline": "Legacy navigation, completion and inline feedback reviewed against ac955ce. Candidate-hide controls reviewed against e45dd22: all 116 existing My Page handlers unchanged. Home hides reviewed against 91ff9fd: existing handlers unchanged; only unsent proposals are filtered. Hidden-slot notices reviewed against 0b02832: only the hide-success text changes in these pages. Covered by check-candidate-hides, check-home-candidate-hides, recommendation hide-slot tests and real-page home/mypage hide/restore/reload/refresh browser tests.",
   "files": {
-    "app/mypage/page.tsx": "f1ebe7e487e7c39f6cdb0e0c970763895acaf3e32353eb0e927d2c69241b4718",
+    "app/mypage/page.tsx": "8aedfb0cf2df6dfd367a2aacc0b3fcd90f9e73fc366bb2686577702b8bc190f2",
     "app/community/dating/cards/page.tsx": "6fafe920fb4f42a272b7e5c42deed38bcbb3a6b1cf1994b9abc97e4f38a117d5",
     "app/community/dating/cards/[id]/page.tsx": "3869e13f9080c4201b7b52d3629355ae99592c61907d034a35053f34f0d7f0d2",
     "app/community/dating/cards/[id]/apply/page.tsx": "0cd9ce1751a63f5bebd5ff6dd679bfd7910878dc7c51e539b970de5faa416cf0",
