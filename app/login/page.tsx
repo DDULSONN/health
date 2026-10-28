@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { friendReturnPath } from "@/lib/friend-recommendation";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
@@ -513,7 +514,7 @@ function LoginContent() {
 
       {!isRecoveryFlow && (
         <div className="mt-6 text-sm text-neutral-600">
-          처음 오셨나요? <Link href="/signup" className="text-emerald-700 underline">이메일로 회원가입</Link>
+          처음 오셨나요? <Link href={friendReturnPath(next) ? `/signup?share_return=${encodeURIComponent(next)}` : "/signup"} className="text-emerald-700 underline">이메일로 회원가입</Link>
         </div>
       )}
 

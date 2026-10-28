@@ -66,7 +66,10 @@ test('OTP mutations, profile submission and upload handlers remain byte-identica
     ['app/onboarding/dating/page.tsx', '  const importOpenCard =', '\n  if (checking)', 'fd9d533dd719c82c1c5e111971352b9934bb4be2fd3173252df9d62185c3caac'],
   ]) {
     const slice = source => { assert.ok(source.includes(start)); return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); };
-    assert.equal(createHash('sha256').update(slice(read(file))).digest('hex'), hash, file);
+    // Only the separately tested post-success friend destination is new. The
+    // submission, OTP, upload, completion conditions and payloads remain pinned.
+    const source = read(file).replace('router.replace(friendReturnPath(new URLSearchParams(window.location.search).get("share_return")) ?? ONE_ON_ONE_CANDIDATES_HREF)', 'router.replace(ONE_ON_ONE_CANDIDATES_HREF)');
+    assert.equal(createHash('sha256').update(slice(source)).digest('hex'), hash, file);
   }
 });
 
@@ -82,7 +85,9 @@ test('signup safety UI changes preserve the exact email/OAuth auth request paylo
   let checked = 0;
   const visit = node => {
     if (ts.isCallExpression(node) && expected.has(node.expression.getText(ast))) {
-      assert.equal(createHash('sha256').update(node.arguments[0].getText(ast)).digest('hex'), expected.get(node.expression.getText(ast)));
+      // Optional exact /s/token return only; actual email/OAuth browser tests cover it.
+      const args = node.arguments[0].getText(ast).replace('buildCanonicalCallbackUrl(signupNext,', 'buildCanonicalCallbackUrl(SIGNUP_NEXT,');
+      assert.equal(createHash('sha256').update(args).digest('hex'), expected.get(node.expression.getText(ast)));
       checked++;
     }
     ts.forEachChild(node, visit);

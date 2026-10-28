@@ -181,6 +181,9 @@ for (const [name, hash] of Object.entries(movedFunctions)) test('extraction pres
     const notice = '              <OneOnOneCandidateRegionNotice widened={card?.recommendation_region_widened} />\n';
     assert.equal(code.split(notice).length, 2);
     code = code.replace(notice, '');
+    const share = '          {card?.id && impressionTicket ? <FriendRecommendButton kind="one_on_one" cardId={card.id} ticket={impressionTicket} label={name} /> : null}\n';
+    assert.equal(code.split(share).length, 2);
+    code = code.replace(share, ''); // Isolated sharing control; existing actions stay pinned.
   }
   const ast = ts.createSourceFile('panel.tsx', code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const node = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name); assert.ok(node);

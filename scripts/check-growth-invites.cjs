@@ -12,7 +12,8 @@ const prefix = 'gymtools:growth:v1:';
 const baselines = {
  // Signup-journey copy/read recovery only; unchanged mutations also pinned in check-onboarding-user.cjs.
  // Reviewed job/photo guidance only; no new required fields or persistence changes.
- 'app/onboarding/dating/page.tsx': '974822c2530d485308960aa984743008bb3a622cfe9276cebc1320ac570131b6',
+ // Reviewed exact /s/token authentication + post-success return; mutation hashes stay pinned separately.
+ 'app/onboarding/dating/page.tsx': '176bb0bd5d71e45100f25a137c39f271b40a2a1209dc5b20379ba50a061a4c14',
  'app/dating/1on1/page.tsx': '4594d2f8d889979fc2a10ea59cf701a5ec5c67ad23900d68bb9ab77d298102bc',
  // Bounded raw/lite/blur upload and error text; save-after-all-upload contract
  // and unchanged-photo preservation exercised by check-dating-trust-ux-browser.cjs.

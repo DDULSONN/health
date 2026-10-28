@@ -71,6 +71,9 @@ if (require.main === module) {
       const notice = '              <OneOnOneCandidateRegionNotice widened={card?.recommendation_region_widened} />\n';
       assert.equal(source.split(notice).length, 2);
       source = source.replace(notice, '');
+      const share = '          {card?.id && impressionTicket ? <FriendRecommendButton kind="one_on_one" cardId={card.id} ticket={impressionTicket} label={name} /> : null}\n';
+      assert.equal(source.split(share).length, 2);
+      source = source.replace(share, ''); // Separate sharing flow tested in check-friend-recommendation.
     }
     assert.equal(fingerprint(source, name), expected);
   });

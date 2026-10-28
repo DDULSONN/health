@@ -1,0 +1,91 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {fixture,loader,id}=require('./fixtures/friend-recommendation-store.cjs');
+const {PGlite}=require('@electric-sql/pglite');
+const contract=loader()('@/lib/friend-recommendation');
+async function share(f){const service=f.load('@/lib/friend-recommendation-server');return service.createFriendLink(f.admin,id(1),id(90),'fit',[{kind:'open_card',cardId:id(12)}]);}
+test('contract rejects external return paths, malformed IDs, duplicate/four selections',()=>{
+  for(const value of ['https://evil.invalid','//evil','/s/'+ 'a'.repeat(43)+'?next=//evil',null])assert.equal(contract.friendReturnPath(value),null);
+  assert.equal(contract.friendReturnPath('/s/'+'a'.repeat(43)),'/s/'+'a'.repeat(43));
+  const item={kind:'open_card',cardId:id(12)};for(const value of [null,[],[item,item],[item,item,item,item],[{...item,cardId:'../'}]])assert.equal(contract.friendSelections(value),null);
+  assert.equal(contract.friendSelections([item]).length,1);
+});
+test('guest projection has no identity, introduction, contact, storage path or exact region',async()=>{const f=fixture(),link=await share(f);f.state.viewer=null;const route=f.load('@/app/api/dating/friend-shares/[token]/route');const response=await route.GET(f.request('/'),{params:Promise.resolve({token:link.token})});assert.equal(response.status,200);const data=await response.json();assert.equal(data.access,'guest');assert.deepEqual(Object.keys(data.items[0]).sort(),['id','kind','ageBand','area','photos'].sort());assert.equal(data.items[0].area,'서울');assert.doesNotMatch(JSON.stringify(data),/추천회원|강남|profile.jpg|private_handle|산책|phone_e164|user_id/);assert.match(response.headers.get('cache-control'),/no-store/);});
+test('only verified member sees detail; unverified member still gets guest fields',async()=>{const f=fixture(),link=await share(f),s=f.load('@/lib/friend-recommendation-server');let page=await s.readFriendLink(f.admin,link.token,id(3));assert.equal(page.detailed,true);assert.equal(s.projectFriendItem(link.token,page.items[0].item,page.items[0].card,true).detail.name,'추천회원');f.tables.profiles[2].phone_verified=false;page=await s.readFriendLink(f.admin,link.token,id(3));assert.equal(page.detailed,false);});
+for(const mode of ['off','off-on','revoked','expired','deleted-profile','banned','deleted-auth','auth-ban','internal','hidden-card','expired-card','policy-off'])test('link gate: '+mode,async()=>{const f=fixture(),link=await share(f),s=f.load('@/lib/friend-recommendation-server');
+  if(mode.startsWith('off')){await f.admin.rpc('set_dating_friend_share_preference',{p_user:id(2),p_enabled:false});if(mode==='off-on')await f.admin.rpc('set_dating_friend_share_preference',{p_user:id(2),p_enabled:true});}
+  if(mode==='revoked')f.tables.dating_friend_shares[0].revoked_at=new Date().toISOString();if(mode==='expired')f.tables.dating_friend_shares[0].expires_at='2020-01-01';
+  if(mode==='deleted-profile')f.tables.profiles.splice(1,1);if(mode==='banned')f.tables.profiles[1].is_banned=true;if(mode==='deleted-auth')f.state.authMissing.add(id(2));if(mode==='auth-ban')f.state.authBanned.add(id(2));if(mode==='internal')f.state.internal.add(id(2));
+  if(mode==='hidden-card')f.tables.dating_cards[0].status='hidden';if(mode==='expired-card')f.tables.dating_cards[0].expires_at='2020-01-01';if(mode==='policy-off')f.tables.dating_friend_share_policy[0].enabled=false;
+  await assert.rejects(s.readFriendLink(f.admin,link.token,id(3)));
+});
+for(const table of ['dating_user_blocks','dating_1on1_admin_user_blocks','dating_1on1_phone_blocks','dating_contact_blocks'])test('safety lookup failure denies rather than treating blocks as empty: '+table,async()=>{const f=fixture(),link=await share(f);f.state.failTable=table;await assert.rejects(f.load('@/lib/friend-recommendation-server').readFriendLink(f.admin,link.token,id(3)));});
+for(const pair of [[1,2],[2,1],[3,2],[2,3],[3,1]])test('both directions blocked: '+pair,async()=>{const f=fixture(),link=await share(f);f.tables.dating_user_blocks.push({id:id(80),blocker_user_id:id(pair[0]),blocked_user_id:id(pair[1])});await assert.rejects(f.load('@/lib/friend-recommendation-server').readFriendLink(f.admin,link.token,id(3)));});
+test('create requires auth/origin, cannot revoke another sender link, refuses guessed private candidate',async()=>{const f=fixture(),route=f.load('@/app/api/dating/friend-shares/route');f.state.viewer=null;assert.equal((await route.POST(f.request('/',{items:[]}))).status,401);f.state.viewer=id(1);assert.equal((await route.POST(f.request('/',{},'https://evil.invalid'))).status,403);const link=await share(f);f.state.viewer=id(3);assert.equal((await route.POST(f.request('/',{action:'revoke',id:link.id}))).status,200);assert.equal(f.tables.dating_friend_shares[0].revoked_at,null);await assert.rejects(f.load('@/lib/friend-recommendation-server').createFriendLink(f.admin,id(1),id(91),'fit',[{kind:'one_on_one',cardId:id(22)}]),/후보 목록/);});
+test('admin only, bounded page, no bearer token in monitoring',async()=>{const f=fixture(),link=await share(f),route=f.load('@/app/api/admin/friend-shares/route');assert.equal((await route.GET(f.request('/'))).status,403);f.state.admin=true;const res=await route.GET(f.request('/'));const data=await res.json();assert.equal(data.items[0].nickname,'보낸회원');assert.equal(data.items[0].items[0].nickname,'추천회원 (계정: 추천회원)');assert.doesNotMatch(JSON.stringify(data),new RegExp(link.token));assert.ok(f.state.calls.some(c=>c.table==='dating_friend_shares'&&c.limit===21));assert.equal((await route.POST(f.request('/',{id:link.id,note:'운영 확인'}))).status,200);assert.ok(f.tables.dating_friend_shares[0].revoked_at);});
+test('opening link never sends request; only explicit verified request delegates to existing matching endpoint',async()=>{const f=fixture(),link=await share(f),route=f.load('@/app/api/dating/friend-shares/[token]/request/route');f.state.viewer=id(3);const context={params:Promise.resolve({token:link.token})};assert.equal(f.state.matchCalls,0);const open=await route.POST(f.request('/',{itemId:link.items[0].id}),context);assert.equal(open.status,200);assert.match((await open.json()).href,/\/apply$/);assert.equal(f.state.matchCalls,0);});
+test('real photo route returns raster blur for guests; revoked links cannot reload pixels',async()=>{const f=fixture(),link=await share(f),route=f.load('@/app/api/dating/friend-shares/[token]/photos/[itemId]/[index]/route');f.state.viewer=null;const context={params:Promise.resolve({token:link.token,itemId:link.items[0].id,index:'0'})};const response=await route.GET(f.request('/'),context);assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/webp');const metadata=await require('sharp')(Buffer.from(await response.arrayBuffer())).metadata();assert.ok(metadata.width<=120);f.tables.dating_friend_shares[0].revoked_at=new Date().toISOString();assert.equal((await route.GET(f.request('/'),context)).status,410);});
+async function sqlFixture(run){const db=new PGlite();try{await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create table profiles(user_id uuid,phone_verified bool,is_banned bool);alter default privileges in schema public grant all on tables to anon,authenticated,service_role;`);await db.query('insert into auth.users values($1),($2)',[id(1),id(2)]);await db.query('insert into profiles values($1,true,false),($2,true,false)',[id(1),id(2)]);const sql=fs.readFileSync(path.join(__dirname,'../supabase/sql/friend_recommendations.sql'),'utf8');await db.exec(sql);await db.exec(sql);const items=[{id:id(70),kind:'open_card',card_id:id(12),user_id:id(2),revision:0,label:'후보'}];const create=(key=id(90),selection=items)=>db.query('select (create_dating_friend_share($1,$2,$3,$4,$5)).*',[id(1),key,'a'.repeat(31)+key.slice(-12),'fit',JSON.stringify(selection)]);await run({db,create,items});}finally{await db.close();}}
+
+test('one-on-one share needs own profile only for explicit request, preserves recipient return',async()=>{
+  const f=fixture(),s=f.load('@/lib/friend-recommendation-server');
+  f.tables.dating_1on1_cards.push({id:id(22),user_id:id(2),name:'추천이름',sex:'male',birth_year:1996,status:'approved',phone:'+821012340002',region:'서울',photo_paths:[]});
+  const link=await s.createFriendLink(f.admin,id(1),id(90),'fit',[{kind:'one_on_one',cardId:id(22),ticket:`ticket:${id(1)}:${id(22)}`}]);
+  assert.equal((await s.readFriendLink(f.admin,link.token,id(3))).detailed,true);
+  f.state.viewer=id(3);const route=f.load('@/app/api/dating/friend-shares/[token]/request/route'),context={params:Promise.resolve({token:link.token})},body={itemId:link.items[0].id};
+  const missing=await route.POST(f.request('/',body),context);assert.equal(missing.status,409);assert.equal(new URL((await missing.json()).profileHref,'https://local.invalid').searchParams.get('share_return'),'/s/'+link.token);assert.equal(f.state.matchCalls,0);
+  f.tables.dating_1on1_cards.push({id:id(33),user_id:id(3),status:'approved'});
+  assert.equal((await route.POST(f.request('/',body),context)).status,400);assert.equal(f.state.matchCalls,0);
+  assert.equal((await route.POST(f.request('/',{...body,confirm:true}),context)).status,200);assert.equal(f.state.matchCalls,1);assert.deepEqual(f.state.lastMatch,{source_card_id:id(33),candidate_card_id:id(22)});
+  f.tables.dating_user_blocks.push({id:id(99),blocker_user_id:id(2),blocked_user_id:id(3)});
+  assert.equal((await route.POST(f.request('/',{...body,confirm:true}),context)).status,410);assert.equal(f.state.matchCalls,1);
+});
+
+test('link creation accepts PostgREST composite object or one-row array without malformed success',async()=>{
+  for(const array of [false,true]){const f=fixture(),rpc=f.admin.rpc;f.admin.rpc=async(name,args)=>{const result=await rpc(name,args);return name==='create_dating_friend_share'&&array?{...result,data:[result.data]}:result;};assert.ok((await share(f)).token);}
+  const f=fixture();f.admin.rpc=async()=>({data:null,error:null});await assert.rejects(share(f),/추천 링크를 확인하지 못했어요/);
+});
+
+test('paid-card sharing follows existing registration apply route, without charging or applying',async()=>{
+  const f=fixture(),s=f.load('@/lib/friend-recommendation-server');f.tables.dating_paid_cards.push({...f.tables.dating_cards[0],id:id(23),user_id:id(2),status:'approved',nickname:'유료후보',gender:'male'});
+  const link=await s.createFriendLink(f.admin,id(1),id(90),'hello',[{kind:'paid_card',cardId:id(23)}]);f.state.viewer=id(3);
+  const response=await f.load('@/app/api/dating/friend-shares/[token]/request/route').POST(f.request('/',{itemId:link.items[0].id}),{params:Promise.resolve({token:link.token})});
+  assert.equal((await response.json()).href,`/dating/paid/${id(23)}/apply`);assert.equal(f.state.matchCalls,0);
+});
+
+for(const direction of ['forward','reverse'])test('Instagram contact block works '+direction,async()=>{
+  const f=fixture(),link=await share(f);f.tables.dating_cards.push({...f.tables.dating_cards[0],id:id(13),owner_user_id:id(3),instagram_id:'recipient_handle'});
+  const hash=f.load('@/lib/dating-contact-blocks').hashDatingContactBlockValue;
+  f.tables.dating_contact_blocks.push({id:id(80),user_id:id(direction==='forward'?3:2),block_type:'instagram',value_hash:hash('instagram',direction==='forward'?'private_handle':'recipient_handle')});
+  await assert.rejects(f.load('@/lib/friend-recommendation-server').readFriendLink(f.admin,link.token,id(3)));
+});
+
+test('photo proxy rejects another owner path and invalid traversal without downloading',async()=>{
+  const f=fixture(),link=await share(f),route=f.load('@/app/api/dating/friend-shares/[token]/photos/[itemId]/[index]/route');let downloads=0;f.admin.storage.from=()=>({download:async()=>{downloads++;throw Error('must not download');}});
+  for(const path of [`cards/${id(4)}/private.webp`,`cards/${id(2)}/../private.webp`,`cards/${id(2)}/%2e%2e/private.webp`]){
+    f.tables.dating_cards[0].photo_paths=[path];const res=await route.GET(f.request('/'),{params:Promise.resolve({token:link.token,itemId:link.items[0].id,index:'0'})});assert.equal(res.status,404);
+  }assert.equal(downloads,0);
+});
+
+test('photo blur changes during download deny stale clear image',async()=>{
+  const f=fixture(),link=await share(f),route=f.load('@/app/api/dating/friend-shares/[token]/photos/[itemId]/[index]/route'),original=f.admin.storage.from;
+  f.admin.storage.from=(bucket)=>({download:async path=>{const file=await original(bucket).download(path);f.tables.dating_cards[0].photo_visibility='blur';return file;}});
+  f.state.viewer=id(3);assert.equal((await route.GET(f.request('/'),{params:Promise.resolve({token:link.token,itemId:link.items[0].id,index:'0'})})).status,410);
+});
+
+test('shared details redact common direct-contact forms, not only separate contact fields',async()=>{
+  const f=fixture(),link=await share(f),s=f.load('@/lib/friend-recommendation-server');f.tables.dating_cards[0].strengths_text='메일 member@example.com / 010.1234.5678 / @handle.name';
+  const result=await s.readFriendLink(f.admin,link.token,id(3));const projected=s.projectFriendItem(link.token,result.items[0].item,result.items[0].card,true);
+  assert.doesNotMatch(projected.detail.strengths,/member|example|1234|handle/);
+});
+
+test('private return path survives safe authentication and nested phone redirects',()=>{
+  const safe=loader()('@/lib/safe-internal-path').safeInternalPath,back='/s/'+'z'.repeat(43);
+  assert.equal(safe(back),back);const phone='/phone-verification?next='+encodeURIComponent(back);assert.equal(new URL('https://example.invalid'+safe(phone)).searchParams.get('next'),back);
+  const signup=fs.readFileSync(path.join(__dirname,'../app/signup/page.tsx'),'utf8'),onboarding=fs.readFileSync(path.join(__dirname,'../app/onboarding/dating/page.tsx'),'utf8');
+  assert.match(signup,/buildCanonicalCallbackUrl\(signupNext/);assert.match(onboarding,/router.replace\(friendReturnPath/);
+  const layout=fs.readFileSync(path.join(__dirname,'../app/layout.tsx'),'utf8');assert.match(layout,/decodeURIComponent\(privateLocation\)/);assert.match(layout,/ga-disable-/);
+});
+test('SQL disabled on install, private client grants, activation and duplicate retry',()=>sqlFixture(async({db,create,items})=>{await assert.rejects(create(),/unavailable/);for(const role of ['anon','authenticated']){await db.exec('set role '+role);await assert.rejects(db.query('select * from dating_friend_shares'),/permission denied/);await assert.rejects(create(),/permission denied/);await db.exec('reset role');}await db.exec('update dating_friend_share_policy set enabled=true');const first=await create();const again=await create(undefined,[{...items[0],id:id(71)}]);assert.equal(first.rows[0].id,again.rows[0].id);assert.equal((await db.query('select count(*)::int n from dating_friend_shares')).rows[0].n,1);await assert.rejects(create(undefined,[{...items[0],card_id:id(13)}]),/request conflict/);}));
+test('SQL OFF bumps revision once, ON cannot revive links, stale creation fails',()=>sqlFixture(async({db,create,items})=>{await db.exec('update dating_friend_share_policy set enabled=true');await create();await db.query('select set_dating_friend_share_preference($1,false)',[id(2)]);await db.query('select set_dating_friend_share_preference($1,false)',[id(2)]);await assert.rejects(create(id(91)),/profile unavailable/);await db.query('select set_dating_friend_share_preference($1,true)',[id(2)]);assert.equal(Number((await db.query('select revision from dating_friend_share_preferences')).rows[0].revision),1);await assert.rejects(create(id(91)),/profile changed/);await create(id(91),[{...items[0],revision:1}]);}));
+test('SQL active-link limit holds, retry does not consume another link',()=>sqlFixture(async({db,create})=>{await db.exec('update dating_friend_share_policy set enabled=true');for(let n=90;n<100;n++)await create(id(n));await create(id(90));await assert.rejects(create(id(100)),/share limit/);}));

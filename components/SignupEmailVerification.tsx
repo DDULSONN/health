@@ -3,21 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { friendReturnPath } from "@/lib/friend-recommendation";
 import {
   clearPendingSignup, isConfirmedSignupUser, isSignupEmailRateLimit, readSignupUserWithTimeout,
   rememberSignupEmail, resendSecondsLeft, savePendingSignup, SIGNUP_RESEND_DELAY_MS, type PendingSignup,
 } from "@/lib/signup-verification";
 
 const NEXT = "/onboarding/dating";
-const VERIFIED_NEXT = `/phone-verification?next=${encodeURIComponent(NEXT)}`;
 
-export default function SignupEmailVerification({ pending, callbackUrl, onResent, onChangeEmail }: {
+export default function SignupEmailVerification({ pending, callbackUrl, nextPath, onResent, onChangeEmail }: {
   pending: PendingSignup;
   callbackUrl: string;
+  nextPath?: string;
   onResent: (pending: PendingSignup) => void;
   onChangeEmail: () => void;
 }) {
   const router = useRouter();
+  const next = friendReturnPath(nextPath) ?? NEXT;
   const [secondsLeft, setSecondsLeft] = useState(() => resendSecondsLeft(pending.resendAvailableAt));
   const [checking, setChecking] = useState(false);
   const [resending, setResending] = useState(false);
@@ -51,8 +53,8 @@ export default function SignupEmailVerification({ pending, callbackUrl, onResent
   const login = useCallback(() => {
     rememberSignupEmail(pending.email);
     // Existing login flow still verifies the email/session and applies the phone gate.
-    router.replace(`/login?tab=password&next=${encodeURIComponent(NEXT)}`);
-  }, [pending.email, router]);
+    router.replace(`/login?tab=password&next=${encodeURIComponent(next)}`);
+  }, [pending.email, router, next]);
 
   const checkVerification = useCallback(async (manual = false) => {
     if (checkLock.current || navigated.current) return;
@@ -68,7 +70,7 @@ export default function SignupEmailVerification({ pending, callbackUrl, onResent
       if (isConfirmedSignupUser(data.user, pending.email)) {
         navigated.current = true;
         clearPendingSignup();
-        router.replace(VERIFIED_NEXT);
+        router.replace(`/phone-verification?next=${encodeURIComponent(next)}`);
       } else if (manual && !data.user) {
         login(); // Another browser/device may have verified it; never claim it is unverified.
       } else if (manual) {
@@ -84,7 +86,7 @@ export default function SignupEmailVerification({ pending, callbackUrl, onResent
       checkLock.current = false;
       if (mounted.current) setChecking(false);
     }
-  }, [login, pending.email, router]);
+  }, [login, pending.email, router, next]);
 
   useEffect(() => {
     const checkOnReturn = () => { if (document.visibilityState === "visible") void checkVerification(); };

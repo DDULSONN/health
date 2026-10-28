@@ -9,7 +9,7 @@ const sleepGate = () => { let release; const promise = new Promise(resolve => { 
   const { origin, server, output } = await startPreview(); let browser, passed = 0;
   try {
     browser = await chromium.launch({ headless: true });
-    async function fixture({ width = 390, pending = false, storage = '', state = {} } = {}) {
+    async function fixture({ width = 390, pending = false, storage = '', state = {}, entry = '/signup' } = {}) {
       const context = await browser.newContext({ viewport: { width, height: 844 } });
       const page = await context.newPage(); page.setDefaultTimeout(10000);
       const errors = [], calls = [], config = { user: null, ...state };
@@ -51,7 +51,7 @@ const sleepGate = () => { let release; const promise = new Promise(resolve => { 
         }
         assert.equal(req.method(), 'GET'); return route.continue();
       });
-      await page.goto(origin + '/signup');
+      await page.goto(origin + entry);
       return { context, page, config, calls, errors, count: action => calls.filter(c => c.action === action).length };
     }
     async function run(name, options, test) {
@@ -83,6 +83,18 @@ const sleepGate = () => { let release; const promise = new Promise(resolve => { 
         await f.page.screenshot({ path: path.join(output, `signup-waiting-${width}.png`), fullPage: true });
       });
     }
+    const friendBack = '/s/' + 'z'.repeat(43);
+    await run('shared profile email signup and confirmed return preserve link, never force onboarding', { entry: '/signup?share_return='+encodeURIComponent(friendBack) }, async f => {
+      await fill(f.page); await submit(f.page); await ready(f.page);
+      assert.equal(new URL(f.calls.find(c=>c.action==='signup').body.options.emailRedirectTo).searchParams.get('next'),friendBack);
+      f.config.user=confirmed;await f.page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+      await f.page.waitForFunction(()=>window.fixtureRedirect?.startsWith('/phone-verification?'));
+      assert.equal(new URL(await f.page.evaluate(()=>window.fixtureRedirect),origin).searchParams.get('next'),friendBack);
+    });
+    await run('shared profile OAuth preserves exact link', { entry: '/signup?share_return='+encodeURIComponent(friendBack) }, async f => {
+      await Promise.all([f.page.waitForResponse(r=>r.url().includes('/__fixture/auth/oauth')),f.page.getByRole('button',{name:'Google로 계속하기',exact:true}).click()]);
+      assert.equal(new URL(f.calls.find(c=>c.action==='oauth').body.options.redirectTo).searchParams.get('next'),friendBack);
+    });
     await run('double submit and competing OAuth while referral validation is pending', {}, async f => {
       await fill(f.page); await f.page.getByRole('button', { name: '추천 코드가 있나요?' }).click();
       await f.page.locator('#signup-referral-code').fill('ABCDEFGH');

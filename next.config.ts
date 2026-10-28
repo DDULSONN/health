@@ -35,7 +35,7 @@ const withPWA = withPWAInit({
     {
       // 앱 페이지는 오프라인 진입 가능하도록 최소 캐시, API/관리자/인증 경로는 제외
       urlPattern:
-        /^https?:\/\/[^/]+\/(?!api\/|admin(?:\/|$)|login(?:\/|$)|mypage(?:\/|$)|community(?:\/|$)|dating(?:\/|$)|certify(?:\/|$)|bodybattle(?:\/|$)|notifications(?:\/|$)).*/i,
+        /^https?:\/\/[^/]+\/(?!s(?:\/|$)|api\/|admin(?:\/|$)|login(?:\/|$)|signup(?:\/|$)|auth(?:\/|$)|phone-verification(?:\/|$)|onboarding(?:\/|$)|mypage(?:\/|$)|community(?:\/|$)|dating(?:\/|$)|certify(?:\/|$)|bodybattle(?:\/|$)|notifications(?:\/|$)).*/i,
       handler: "NetworkFirst",
       options: {
         cacheName: "pages-network-first",
@@ -66,6 +66,14 @@ const nextConfig: NextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=(), usb=(), serial=(), bluetooth=()",
           },
+        ],
+      },
+      {
+        source: "/s/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Referrer-Policy", value: "no-referrer" },
         ],
       },
     ];

@@ -62,6 +62,7 @@ assert.equal(server.readSignupEmailConsentToken(token, { ...user, app_metadata: 
     if (id.endsWith("supabase/client")) return { createClient: () => supabase };
     if (id.startsWith("@/components/")) return () => null;
     if (id.endsWith("/signup-verification")) return load("lib/signup-verification.ts");
+    if (id.endsWith("/friend-recommendation")) return load("lib/friend-recommendation.ts");
     if (id.endsWith("/signup-email-consent")) return copy;
     if (id.endsWith("/growth-analytics")) return load("lib/growth-analytics.ts");
     if (id.endsWith("/nickname")) return { normalizeNickname: (s) => s, validateNickname: () => null };

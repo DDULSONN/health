@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import FriendRecommendButton from "@/components/dating/sharing/FriendRecommendButton";
 import { hideReportedMatches, hideReportedRecommendations } from "@/lib/dating-report-visibility";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import dynamic from "next/dynamic";
@@ -3999,6 +4000,7 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
             {viewerLoggedIn ? "지원하기" : "로그인 후 지원"}
           </Link>
           <p className="text-center text-[11px] leading-4 text-neutral-500">지원권 차감 없음</p>
+          {viewerLoggedIn ? <FriendRecommendButton kind="paid_card" cardId={card.id} label={card.nickname} /> : null}
         </div>
       </div>
     </div>
@@ -4096,6 +4098,7 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
 
         {card.strengths_text ? <p className="mt-3 line-clamp-2 text-sm leading-5 text-neutral-700">{card.strengths_text}</p> : null}
         {ideal ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-neutral-500">{ideal}</p> : null}
+        {viewerLoggedIn ? <div className="text-right"><FriendRecommendButton kind="open_card" cardId={card.id} label={card.display_nickname} /></div> : null}
 
         <div className="mt-auto grid gap-2 pt-4">
           <Link

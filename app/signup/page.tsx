@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { friendReturnPath } from "@/lib/friend-recommendation";
 import SignupProgress from "@/components/dating/SignupProgress";
 import SignupStories from "@/components/SignupStories";
 import SignupEmailVerification from "@/components/SignupEmailVerification";
@@ -51,6 +52,8 @@ function mapSocialAuthError(providerLabel: string, message: string) {
 
 export default function SignupPage() {
   const router = useRouter();
+  const [signupNext, setSignupNext] = useState(SIGNUP_NEXT);
+  useEffect(() => { setSignupNext(friendReturnPath(new URLSearchParams(window.location.search).get("share_return")) ?? SIGNUP_NEXT); }, []);
   const [step, setStep] = useState<SignupStep>("form");
   const [email, setEmail] = useState("");
   const [nickname, setNickname] = useState("");
@@ -213,7 +216,7 @@ export default function SignupPage() {
             ...(consentToken ? { signup_email_consent_token: consentToken } : {}),
             ...(cleanReferralCode ? { referral_code: cleanReferralCode } : {}),
           },
-          emailRedirectTo: buildCanonicalCallbackUrl(SIGNUP_NEXT, cleanReferralCode),
+          emailRedirectTo: buildCanonicalCallbackUrl(signupNext, cleanReferralCode),
         },
       });
 
@@ -306,7 +309,7 @@ export default function SignupPage() {
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: buildCanonicalCallbackUrl(SIGNUP_NEXT, cleanReferralCode, consentToken),
+          redirectTo: buildCanonicalCallbackUrl(signupNext, cleanReferralCode, consentToken),
         },
       });
       if (authError) {
@@ -545,7 +548,8 @@ export default function SignupPage() {
       {step === "pending_verify" && pendingVerification && (
         <SignupEmailVerification
           pending={pendingVerification}
-          callbackUrl={buildCanonicalCallbackUrl(SIGNUP_NEXT, pendingVerification.referralCode)}
+          nextPath={signupNext}
+          callbackUrl={buildCanonicalCallbackUrl(signupNext, pendingVerification.referralCode)}
           onResent={setPendingVerification}
           onChangeEmail={() => {
             clearPendingSignup();
@@ -562,14 +566,14 @@ export default function SignupPage() {
         <div className="space-y-2">
           <button
             type="button"
-            onClick={() => router.replace(`/login?tab=password&next=${encodeURIComponent(SIGNUP_NEXT)}`)}
+            onClick={() => router.replace(`/login?tab=password&next=${encodeURIComponent(signupNext)}`)}
             className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium"
           >
             로그인하러 가기
           </button>
           <button
             type="button"
-            onClick={() => router.replace(`/login?tab=password&reset=1&next=${encodeURIComponent(SIGNUP_NEXT)}`)}
+            onClick={() => router.replace(`/login?tab=password&reset=1&next=${encodeURIComponent(signupNext)}`)}
             className="w-full min-h-[48px] rounded-xl border border-neutral-300 text-neutral-700 font-medium"
           >
             비밀번호 찾기
@@ -579,7 +583,7 @@ export default function SignupPage() {
 
       {step !== "pending_verify" && <p className="mt-6 text-sm text-neutral-600">
         이미 계정이 있나요?{" "}
-        <Link href={`/login?tab=password&next=${encodeURIComponent(SIGNUP_NEXT)}`} className="text-emerald-700 underline">
+        <Link href={`/login?tab=password&next=${encodeURIComponent(signupNext)}`} className="text-emerald-700 underline">
           로그인
         </Link>
       </p>}

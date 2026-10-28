@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import FriendRecommendButton from "@/components/dating/sharing/FriendRecommendButton";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import DatingReportButton, { type DatingReportTargetType, type DatingReportResult } from "@/components/DatingReportButton";
 import OneOnOneRefreshControl, { type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
@@ -822,6 +823,7 @@ function OneOnOneCandidateCard({
             ) : null}
           </div>
           {note ? <p className="mt-2 text-xs font-normal leading-5 text-neutral-600">{note}</p> : null}
+          {card?.id && impressionTicket ? <FriendRecommendButton kind="one_on_one" cardId={card.id} ticket={impressionTicket} label={name} /> : null}
           {reportTarget?.id ? <div className="mt-2 flex justify-end"><DatingReportButton
             targetType={reportTarget.type} targetId={reportTarget.id} label={name} onReported={onReported}
           /></div> : null}

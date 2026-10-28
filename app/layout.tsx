@@ -107,6 +107,13 @@ export default function RootLayout({
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){window.dataLayer.push(arguments);}
+            var privateLocation = window.location.href + document.referrer;
+            for (var decodePass = 0; decodePass < 3; decodePass++) {
+              try { privateLocation = decodeURIComponent(privateLocation); } catch (_) { break; }
+            }
+            if (/\\/s\\/|share_return/.test(privateLocation)) {
+              window['ga-disable-${googleAnalyticsId}'] = true;
+            }
             gtag('js', new Date());
             gtag('config', '${googleAnalyticsId}');
           `}

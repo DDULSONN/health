@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { friendReturnPath } from "@/lib/friend-recommendation";
 import SignupProgress from "@/components/dating/SignupProgress";
 import { readOnboardingUser } from "@/lib/onboarding-user";
 import { recordGrowthProfileCreated } from "@/lib/growth-analytics";
@@ -275,7 +276,9 @@ export default function DatingOnboardingPage() {
     (async () => {
       const nextEntry = onboardingEntry(window.location.search);
       const wantsInstantOpenCard = nextEntry === "instant_open_card";
-      const onboardingPath = onboardingEntryHref(nextEntry);
+      const shareReturn = friendReturnPath(new URLSearchParams(window.location.search).get("share_return"));
+      const entryPath = onboardingEntryHref(nextEntry);
+      const onboardingPath = shareReturn && !wantsInstantOpenCard ? `${entryPath}${entryPath.includes("?") ? "&" : "?"}share_return=${encodeURIComponent(shareReturn)}` : entryPath;
       setEntry(nextEntry);
       setContinueToInstantOpenCard(wantsInstantOpenCard);
       try {
@@ -592,7 +595,7 @@ export default function DatingOnboardingPage() {
         setInfo(`${successes.join(" · ")} 등록 완료! 지금 추천 후보를 확인할 수 있어요.`);
         setProgress("추천 후보 불러오는 중");
         await new Promise<void>((resolve) => window.setTimeout(resolve, 650));
-        router.replace(ONE_ON_ONE_CANDIDATES_HREF);
+        router.replace(friendReturnPath(new URLSearchParams(window.location.search).get("share_return")) ?? ONE_ON_ONE_CANDIDATES_HREF);
       }
     } catch (uploadError) {
       trackOnboardingEvent(draftUserId, failureStage, failureStage === "upload_failed"

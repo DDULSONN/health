@@ -28,6 +28,7 @@ import OneOnOneCandidateRegionNotice from "@/components/dating/OneOnOneCandidate
 import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
+import FriendRecommendButton from "@/components/dating/sharing/FriendRecommendButton";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import CandidateImpression from "@/components/dating/CandidateImpression";
 import { CandidateHideButton, CandidateHidesPanel } from "@/components/dating/CandidateHides";
@@ -71,6 +72,8 @@ const AdminRegistrationSexCounts = dynamic(() => import("@/components/admin/Admi
 const AdminActiveOneOnOneCounts = dynamic(() => import("@/components/admin/AdminActiveOneOnOneCounts"));
 const AdminUserContactExchangesPanel = dynamic(() => import("@/components/admin/AdminUserContactExchangesPanel"));
 const AdminContactCarePanel = dynamic(() => import("@/components/admin/AdminContactCarePanel"));
+const AdminFriendSharesPanel = dynamic(() => import("@/components/admin/AdminFriendSharesPanel"));
+const FriendShareSettings = dynamic(() => import("@/components/dating/sharing/FriendShareSettings"));
 const ContactCarePanel = dynamic(() => import("@/components/dating/ContactCarePanel"));
 const AdminOnboardingFunnelPanel = dynamic(() => import("@/components/admin/AdminOnboardingFunnelPanel"));
 
@@ -1193,6 +1196,7 @@ type AdminAcceptedRecentApplication = {
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminOpenCardSexFilter = "all" | "male" | "female";
 type AdminManageTab =
+  | "friend_shares"
   | "site_dashboard"
   | "public_reactions"
   | "payment_center"
@@ -9047,6 +9051,7 @@ export default function MyPage() {
           <h2 className="text-lg font-bold text-neutral-950">설정</h2>
           <p className="mt-1 text-xs text-neutral-500">차단, 인증, 문의와 계정 설정을 관리합니다.</p>
         </div>
+        <div className="mb-4"><FriendShareSettings /></div>
         {settingsDataLoading ? (
           <p className="mb-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
             차단 및 인증 내역을 불러오는 중입니다.
@@ -10558,6 +10563,7 @@ export default function MyPage() {
                                     sourceCardId={item.id} candidateId={card.id} ticket={autoRecommendationGroup?.impression_ticket}
                                     disabled={processing || refreshingAutoRecommendations || processingOneOnOneFavoriteKeys.includes(actionKey)}
                                     onHidden={handleHideOneOnOneCandidate} />
+                                  {autoRecommendationGroup?.impression_ticket ? <FriendRecommendButton kind="one_on_one" cardId={card.id} ticket={autoRecommendationGroup.impression_ticket} label={card.name} /> : null}
                                   <SmallDatingReportButton
                                     disabled={reportingDatingTargetKeys.includes(`one_on_one_card:${card.id}`)}
                                     onClick={() => void handleDatingUserReport("one_on_one_card", card.id, "1:1 추천 후보")}
@@ -11563,6 +11569,8 @@ export default function MyPage() {
                 ? "소개팅 통계 · 가입·작성 현황 (관리자)"
                 : adminManageTab === "public_reactions"
                 ? "짐툴 외부 반응 (관리자)"
+                : adminManageTab === "friend_shares"
+                ? "친구 추천 기록 (관리자)"
                 : adminManageTab === "mail_center"
                 ? "회원 메일 발송 (관리자)"
                 : adminManageTab === "one_on_one_candidates"
@@ -11596,7 +11604,7 @@ export default function MyPage() {
               >
                 관리자 잠금 해제
               </Link>
-              {adminManageTab !== "public_reactions" && adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && adminManageTab !== "one_on_one_name_review" && adminManageTab !== "one_on_one_abuse_review" && adminManageTab !== "employment_verify" && adminManageTab !== "one_on_one_candidates" && (
+              {adminManageTab !== "friend_shares" && adminManageTab !== "public_reactions" && adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && adminManageTab !== "one_on_one_name_review" && adminManageTab !== "one_on_one_abuse_review" && adminManageTab !== "employment_verify" && adminManageTab !== "one_on_one_candidates" && (
               <button
                 type="button"
                 disabled={
@@ -11863,6 +11871,10 @@ export default function MyPage() {
             >
               1:1 후보 발송
             </button>
+            <button type="button" onClick={() => setAdminManageTab("friend_shares")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${adminManageTab === "friend_shares" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"}`}>
+              친구 추천 기록
+            </button>
             <button
               type="button"
               onClick={() => setAdminManageTab("one_on_one_contact")}
@@ -11953,6 +11965,7 @@ export default function MyPage() {
           </div>
 
           {adminManageTab === "public_reactions" && <AdminPublicReactionsPanel />}
+          {adminManageTab === "friend_shares" && <AdminFriendSharesPanel />}
           {adminManageTab === "app_testers" && <AdminAppTestersPanel />}
           {adminManageTab === "nickname_review" && <AdminNicknameReviewPanel />}
           {adminManageTab === "one_on_one_name_review" && <AdminOneOnOneNameReviewPanel />}
