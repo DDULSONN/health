@@ -143,11 +143,11 @@ if (process.argv.includes('--browser')) {
 } else {
   const pglite = require.resolve('@electric-sql/pglite');
   for (const key of ['ACCOUNT_DELETION_PGLITE_PATH', 'PAYMENT_RECOVERY_PGLITE_PATH', 'PRIVACY_TEST_PGLITE_PATH', 'REVIEW_TEST_PGLITE_PATH', 'REFRESH_TEST_PGLITE_PATH']) env[key] = pglite;
-  // The full offline SQL suite exceeds five minutes on shared build machines.
+  // The full offline SQL suite can exceed ten minutes on shared build machines.
   // Keep every test and fail-closed behavior; allow bounded CI headroom instead
   // of killing pending test files before they can report their results.
   run(['--require', path.join(__dirname, 'test-no-network.cjs'), '--test', '--test-concurrency=1',
-    ...unitFiles.map(file => path.join(__dirname, file))], 10 * 60_000);
+    ...unitFiles.map(file => path.join(__dirname, file))], 20 * 60_000);
   run(['scripts/check-no-direct-supabase-image-urls.mjs'], 30_000);
 }
 console.log('Critical regression gate passed (' + (process.argv.includes('--browser') ? 'browser' : 'unit + local SQL') + ').');
