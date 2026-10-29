@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import ApplicationCompleteNotice from "@/components/dating/ApplicationCompleteNotice";
+import CompactPaidOffer from "@/components/dating/CompactPaidOffer";
 import dynamic from "next/dynamic";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
@@ -546,18 +547,18 @@ export default function DatingCardApplyPage() {
               </Link>
             )}
             {errorCode === "DAILY_APPLY_LIMIT" && (
-              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                <p className="text-sm font-semibold text-neutral-900">지원권을 모두 사용했어요</p>
-                <p className="mt-1 text-xs leading-5 text-neutral-600">지원권 5장 · 5,000원. 충전 후 이 상대에게 지원을 이어갈 수 있어요. 작성 내용은 이 탭에 1시간 동안 임시 보관되며, 최종 지원은 직접 확인해주세요.</p>
-                <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-2 space-y-2">
+                <CompactPaidOffer title="지원권을 모두 사용했어요" description="지원권 5장 · 5,000원. 충전 후 이 상대에게 지원을 이어갈 수 있어요." itemId="apply_credits" amount={5000} placement="open_card_apply_empty">
                   <button
                     type="button"
                     onClick={() => void handleRequestApplyCredits()}
                     disabled={creditRequesting}
-                    className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-medium text-white disabled:opacity-50 hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
+                    className="inline-flex min-h-[44px] items-center text-xs font-semibold text-rose-600 disabled:opacity-50 hover:text-rose-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                   >
                     {creditRequesting ? "결제창 준비 중..." : "지원권 5장 충전 · 5,000원"}
                   </button>
+                </CompactPaidOffer>
+                <p className="text-[11px] leading-5 text-neutral-500">작성 내용은 이 탭에 1시간 동안 임시 보관돼요. 충전 후 최종 지원은 직접 확인해 주세요.</p>
                   <a
                     href={OPEN_KAKAO_URL}
                     target="_blank"
@@ -566,7 +567,6 @@ export default function DatingCardApplyPage() {
                   >
                     오픈카톡 문의
                   </a>
-                </div>
                 <div className="mt-2"><ReferralInvitePanel compact placement="credits_empty" /></div>
               </div>
             )}

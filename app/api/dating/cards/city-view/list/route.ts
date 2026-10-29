@@ -258,10 +258,12 @@ export async function GET(req: Request) {
 
   const includedProvinces = [...new Set(items.map((item) => extractProvinceFromRegion(item.region) ?? "").filter(Boolean))];
   let purchasePreview: { newCount: number } | null = null;
-  if (activeGrant.preview) {
+  {
     try {
       const usedIds = await getPreviousCityViewSnapshotIds(admin, user.id, province, true);
-      for (const id of [...activeGrant.snapshotCardIds, ...activeGrant.snapshotSeenCardIds]) usedIds.add(id);
+      // Include this response's paid-slot replenishment, not just its old snapshot.
+      // Candidates already returned below must not be advertised as new again.
+      for (const id of [...activeGrant.snapshotCardIds, ...activeGrant.snapshotSeenCardIds, ...selectedCardIds]) usedIds.add(id);
       const purchaseCardIds = buildRegionFirstCityViewCardIds(
         [...eligibleRows.filter((row) => !usedIds.has(row.id)), ...eligibleRows.filter((row) => usedIds.has(row.id))],
         province,

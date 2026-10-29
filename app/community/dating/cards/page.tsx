@@ -8,6 +8,7 @@ import dynamic from "next/dynamic";
 import type { OneOnOneHomeState } from "@/components/dating/OneOnOneHomePanel";
 import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
 import InstantOpenCardHint from "@/components/dating/InstantOpenCardHint";
+import OpenCardExtras from "@/components/dating/OpenCardExtras";
 import { canOfferInstantOpenCard } from "@/lib/paid-application-prefill";
 import { usePaidRegistrationStatus } from "@/lib/use-paid-registration-status";
 import { PAID_REGISTRATION_MANAGE_HREF } from "@/lib/paid-registration-status";
@@ -3062,18 +3063,7 @@ function OpenCardsContent() {
           </Link>
         </section>
       ) : null}
-      {showOpenCardSection ? (
-        <nav className="mb-4 grid grid-cols-2 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-[0_5px_16px_rgba(15,23,42,0.035)]" aria-label="오픈카드 유료 기능">
-          <Link href="/dating/apply-credits" className="flex min-h-[62px] flex-col justify-center border-r border-neutral-100 px-3 text-center transition hover:bg-neutral-50">
-            <span className="text-xs font-black text-neutral-900">지원권 구매</span>
-            <span className="mt-1 text-[10px] font-medium text-neutral-400">추가 5장</span>
-          </Link>
-          <Link href="/dating/nearby-view" className="flex min-h-[62px] flex-col justify-center px-3 text-center transition hover:bg-neutral-50">
-            <span className="text-xs font-black text-neutral-900">가까운 이상형</span>
-            <span className="mt-1 text-[10px] font-medium text-neutral-400">지역별 확인</span>
-          </Link>
-        </nav>
-      ) : null}
+      {showOpenCardSection ? <OpenCardExtras userId={viewerSessionReady && viewerLoggedIn && viewerPhoneVerified && !viewerSessionError ? draftUserId : null} /> : null}
       {showOpenCardSection && homeAdLink ? (
         <a
           href={homeAdLink.linkUrl}
@@ -3129,7 +3119,7 @@ function OpenCardsContent() {
               {openCardPresenceReady && hasAnyOpenCardProfile && !showInstantOpenCardHint ? (
                 <Link
                   href={instantOpenCardHref}
-                  className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-[#f0003d] px-4 text-sm font-semibold text-white transition hover:bg-[#d90037] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+                  className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-neutral-200 px-3 text-xs font-semibold text-neutral-600 transition hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                 >
                   {instantOpenCardLabel}
                 </Link>

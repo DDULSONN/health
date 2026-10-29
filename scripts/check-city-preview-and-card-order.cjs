@@ -83,9 +83,18 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
   grant.preview = false;
   body = await (await list.GET(new Request("https://local.test/?province=서울"))).json();
   assert.equal(body.items.length, 30, "Paid and legacy benefits retain 30");
+  assert.equal(body.purchasePreview.newCount, 5, "Paid offer excludes newly replenished cards already returned in this response");
+  const writesBeforeHistoryFailure = writes;
+  purchaseHistoryFails = true;
+  const paidWithoutOffer = await (await list.GET(new Request("https://local.test/?province=서울"))).json();
+  assert.equal(paidWithoutOffer.items.length, 30, "Optional history failure never blocks paid access");
+  assert.equal(paidWithoutOffer.purchasePreview, null);
+  assert.equal(writes, writesBeforeHistoryFailure + 1, "Only pre-existing snapshot upkeep writes, never a purchase");
+  purchaseHistoryFails = false;
   grant.snapshotCardIds = ids;
   body = await (await list.GET(new Request("https://local.test/?province=서울"))).json();
   assert.equal(body.items.length, 35, "Accumulated paid candidates must not be truncated to 30");
+  assert.equal(body.purchasePreview.newCount, 0, "Exhausted paid pool never advertises new candidates");
   const publicSource = fs.readFileSync(path.join(root, "app/api/dating/cards/public/route.ts"), "utf8");
   assert.equal((publicSource.match(/\.order\("published_at"/g) ?? []).length, 2);
   assert.ok(!publicSource.includes('.order("created_at"'));
@@ -196,6 +205,10 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
   const { renderToStaticMarkup } = require("react-dom/server");
   let offerCount = 25;
   let stateIndex = 0;
+  const compactOffer = load("components/dating/CompactPaidOffer.tsx", id => {
+    if (id.endsWith("use-paid-offer-tracking")) return { usePaidOfferTracking: () => ({ ref: { current: null }, selected: () => {} }) };
+    return require(id);
+  }).default;
   const nearbyPage = load("app/dating/nearby-view/page.tsx", (id) => {
     if (id === "react") return {
       ...React, useMemo: (fn) => fn(), useEffect: () => {}, useLayoutEffect: () => {}, useCallback: (fn) => fn, useRef: (value) => ({ current: value }),
@@ -203,10 +216,11 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
     };
     if (id === "react/jsx-runtime") return require(id);
     if (id === "next/link") return ({ href, children }) => React.createElement("a", { href }, children);
+    if (id.endsWith("CompactPaidOffer")) return compactOffer;
     return () => null;
   }).default;
   let html = renderToStaticMarkup(React.createElement(nearbyPage));
-  assert.match(html, /후보 25명이 더 있어요/);
+  assert.match(html, /아직 안 본 후보 25명 더 보기/);
   assert.match(html, /가까운 후보 더 보기 · 5,000원/);
   assert.match(html, /다른 지역 포함/);
   offerCount = 0; stateIndex = 0;

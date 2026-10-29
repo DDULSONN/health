@@ -81,6 +81,7 @@ async function mount() { states = []; refs = []; render(); for (const effect of 
     if (id.endsWith("supabase/server")) return { createAdminClient: () => paymentDb };
     if (id.endsWith("request-origin")) return { ensureAllowedMutationOrigin: () => null };
     if (id.endsWith("all-pass-profile-offer-server")) return { AllPassOfferError: class extends Error {} };
+    if (id.endsWith("contact-intro-offer-server")) return { ContactIntroError: class extends Error {} };
     if (id.endsWith("payment-guidance")) return { normalizeFailureOrderId: () => null };
     if (id.endsWith("dating-city-view")) return { getCityViewTargetSex: async () => "female", normalizeDatingCityViewSex: (value) => value === "female" || value === "male" ? value : null };
     if (id.endsWith("dating-purchase-fulfillment")) return { getCityViewPurchasePreview: async () => { if (previewFails) throw new Error("lookup failed"); return { newCount }; } };

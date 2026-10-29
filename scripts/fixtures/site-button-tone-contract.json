@@ -3,12 +3,13 @@
   "contactCancelReview": "Compared with 197bc3c: My Page changes only ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS from 48 to 72 hours. Matching, checkout, phone disclosure and support entry handlers unchanged. check-contact-care covers both UI guards, real cancellation API/SQL boundaries and canceled-match claim access.",
   "friendShareReview": "Compared with bd9d118: additive sharing buttons/settings/admin tab only; existing matching and payment handlers unchanged. New UI/API/privacy gates and signup return covered by check-friend-recommendation and browser tests.",
   "friendBasketReview": "Compared with 60e02f6: home only imports and renders FriendRecommendationBasketButton for authenticated open-card/one-on-one tabs. All existing handlers are unchanged. Compact basket, mixed-card selection, max-three limit, duplicate retry keys, removal and session reset covered by check-friend-basket-browser on Chromium and WebKit.",
+  "contextualOffersReview": "Home navigation is compact with quota-zero offers only for verified known users. Existing home handlers unchanged. Apply page replaces only DAILY_APPLY_LIMIT presentation, retaining checkout lock, draft, return URL and submission handlers. Covered by check-contextual-paid-offers(-browser), check-apply-credit-checkout, check-city-preview-and-card-order, check-profile-writing-browser and check-revenue-journey-browser. Existing matching, fulfillment and phone-disclosure rules are unchanged.",
   "reviewedUxBaseline": "Legacy navigation, completion and inline feedback reviewed against ac955ce. Candidate-hide controls reviewed against e45dd22: all 116 existing My Page handlers unchanged. Home hides reviewed against 91ff9fd: existing handlers unchanged; only unsent proposals are filtered. Hidden-slot notices reviewed against 0b02832: only the hide-success text changes in these pages. Covered by check-candidate-hides, check-home-candidate-hides, recommendation hide-slot tests and real-page home/mypage hide/restore/reload/refresh browser tests.",
   "files": {
     "app/mypage/page.tsx": "8aedfb0cf2df6dfd367a2aacc0b3fcd90f9e73fc366bb2686577702b8bc190f2",
-    "app/community/dating/cards/page.tsx": "839469c7f10cdfd709d3e70b0cdf0c38d36ccbc4be0ec50a96338e4d214b2109",
+    "app/community/dating/cards/page.tsx": "cb219e9ab66d58546f41bdd7483c7a128d1d2ab38294d62e714aadfdecfed61f",
     "app/community/dating/cards/[id]/page.tsx": "3869e13f9080c4201b7b52d3629355ae99592c61907d034a35053f34f0d7f0d2",
-    "app/community/dating/cards/[id]/apply/page.tsx": "0cd9ce1751a63f5bebd5ff6dd679bfd7910878dc7c51e539b970de5faa416cf0",
+    "app/community/dating/cards/[id]/apply/page.tsx": "26f2c7ae8093e79dca36e165e9476d210b26f239b6ac5ccd5fc64da65f27c9c9",
     "components/dating/DatingPlusOffers.tsx": "177929a327362af7ab958d33cdd9f3404652532dc4c2d6366f64844458efe432",
     "components/dating/IncomingSwipeLikeActions.tsx": "fc594c01e84421e2c5afeabe9f21025f2ccc941a6067fb00243cdbbd9471ac3e",
     "components/DatingReportButton.tsx": "56bb0a5448350a173189faeb43857978910684627118972a8c00c38644b981ba"

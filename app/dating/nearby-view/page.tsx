@@ -5,6 +5,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
+import CompactPaidOffer from "@/components/dating/CompactPaidOffer";
+import { readNearbyPurchaseCount } from "@/lib/contextual-paid-offers";
+import { trackCheckoutStarted, trackPaidOfferSelected } from "@/lib/payment-analytics";
 
 type ProvinceStat = {
   province: string;
@@ -246,7 +249,8 @@ export default function NearbyViewPage() {
       const body = (await res.json()) as CityViewListResponse;
       if (requestId !== listRequestIdRef.current) return;
       setItems(Array.isArray(body.items) ? body.items : []);
-      setPurchasePreview(body.purchasePreview ? { province, newCount: body.purchasePreview.newCount } : null);
+      const newCount = readNearbyPurchaseCount(body.purchasePreview);
+      setPurchasePreview(newCount !== null ? { province, newCount } : null);
       setCardLimit(typeof body.limit === "number" && body.limit > 0 ? body.limit : 30);
       if (body.targetSex === "male" || body.targetSex === "female") {
         setActiveSex(body.targetSex);
@@ -331,6 +335,10 @@ export default function NearbyViewPage() {
       }
       checkoutInFlightRef.current = true;
       setCheckoutProvince(province);
+      const analytics = { itemId: "city_view", itemName: "가까운 이상형", amount: 5000, placement: requireNewCandidates ? "nearby_more" : "nearby_region" };
+      if (!requireNewCandidates) {
+        try { trackPaidOfferSelected(analytics); } catch { /* optional analytics */ }
+      }
       try {
         const res = await fetch("/api/payments/toss/create", {
           method: "POST",
@@ -349,6 +357,7 @@ export default function NearbyViewPage() {
           return;
         }
 
+        try { trackCheckoutStarted(analytics); } catch { /* optional analytics */ }
         window.location.href = body.checkoutUrl;
       } catch {
         alert(withPaymentCardNotice("결제 요청 처리 중 오류가 발생했습니다."));
@@ -486,14 +495,6 @@ export default function NearbyViewPage() {
                       >
                         아래 카드 확인 ↓
                       </button>
-                      {!(selectedProvince === stat.province && cardLimit === 10) ? <button
-                        type="button"
-                        onClick={() => void requestCheckout(stat.province, true)}
-                        disabled={!status.loggedIn || Boolean(checkoutProvince)}
-                        className="inline-flex min-h-[36px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "최대 30명 더 보기"}
-                      </button> : null}
                       <span className="text-xs font-medium text-emerald-700">24시간 열람중 · 아래에서 확인</span>
                     </>
                   ) : (
@@ -514,7 +515,7 @@ export default function NearbyViewPage() {
                         disabled={!status.loggedIn || Boolean(checkoutProvince)}
                         className="inline-flex min-h-[36px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "30명 열기 5,000원"}
+                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "최대 30명 열기 · 5,000원"}
                       </button>
                       {isPending ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700">기존 요청 대기</span> : null}
                     </>
@@ -592,19 +593,18 @@ export default function NearbyViewPage() {
                 })
               }
             />
-            {cardLimit === 10 && purchasePreview?.province === selectedProvince ? (
-              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+            {status.loggedIn && purchasePreview?.province === selectedProvince ? (
+              <div>
                 {purchasePreview.newCount > 0 ? (
-                  <>
-                    <p className="text-sm font-semibold text-neutral-900">아직 열람하지 않은 후보 {purchasePreview.newCount}명이 더 있어요</p>
-                    <p className="mt-2 text-xs leading-5 text-neutral-600">{selectedProvince} 우선 · 다른 지역 포함 · 5,000원 · 결제 후 24시간 · 지원권 1장 포함</p>
-                    <p className="mt-1 text-xs leading-5 text-neutral-500">최대 30명 열람에 새 후보 {purchasePreview.newCount}명이 포함돼요. 후보 상태에 따라 인원은 달라질 수 있어요.</p>
-                    {purchasePreview.newCount < 30 ? <p className="mt-1 text-xs text-neutral-500">새 후보 외에 이전에 열람한 후보가 포함될 수 있어요.</p> : null}
-                    <button type="button" onClick={() => void requestCheckout(selectedProvince, true)} disabled={Boolean(checkoutProvince)} className="mt-3 min-h-[44px] w-full rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+                  <CompactPaidOffer title={`아직 안 본 후보 ${purchasePreview.newCount}명 더 보기`} description={<>
+                    <p>{selectedProvince} 우선 · 다른 지역 포함 · 24시간 · 지원권 1장 포함</p>
+                    <p>{purchasePreview.newCount < 30 ? "이전에 본 후보가 포함될 수 있어요. " : ""}후보 상태에 따라 인원은 달라질 수 있어요.</p>
+                  </>} itemId="city_view" amount={5000} placement="nearby_more">
+                    <button type="button" onClick={() => void requestCheckout(selectedProvince, true)} disabled={Boolean(checkoutProvince)} className="inline-flex min-h-[44px] shrink-0 items-center text-xs font-semibold text-rose-600 hover:text-rose-700 disabled:opacity-50">
                       {checkoutProvince ? "결제창 준비 중..." : "가까운 후보 더 보기 · 5,000원"}
                     </button>
-                  </>
-                ) : <p className="text-sm text-neutral-600">현재 새로 열람할 후보가 없어요. 나중에 다시 확인해주세요.</p>}
+                  </CompactPaidOffer>
+                ) : <p className="text-xs leading-5 text-neutral-500">현재 새로 열람할 후보가 없어요. 나중에 다시 확인해주세요.</p>}
               </div>
             ) : null}
           </div>

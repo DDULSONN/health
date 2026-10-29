@@ -21,7 +21,11 @@ const makeDraft = extra => ({ version: 1, userId: 'fixture-member', savedAt: Dat
       await context.route('**/*', async route => {
         const req = route.request(), url = new URL(req.url()); assert.equal(url.origin, origin, 'external request prohibited');
         requests.push({ method: req.method(), path: url.pathname });
-        assert.ok(req.method() === 'GET' || url.pathname === '/api/analytics/onboarding', 'no real mutation');
+        assert.ok(req.method() === 'GET' || ['/api/analytics/onboarding', '/api/analytics/payment-funnel'].includes(url.pathname), 'no real mutation');
+        if (url.pathname === '/api/analytics/payment-funnel') {
+          assert.ok(['city_view', 'paid_card', 'apply_credits'].includes(req.postDataJSON().itemId));
+          await route.fulfill({ status: 204 }); return;
+        }
         await route.continue();
       });
       await context.addInitScript(d => localStorage.setItem('gymtools:dating-onboarding-draft:v1:fixture-member', JSON.stringify(d)), makeDraft());
@@ -74,6 +78,10 @@ const makeDraft = extra => ({ version: 1, userId: 'fixture-member', savedAt: Dat
       }, { d, scenario });
       await context.route('**/*', async route => {
         const req = route.request(), url = new URL(req.url()); assert.equal(url.origin, origin);
+        if (url.pathname === '/api/analytics/payment-funnel') {
+          assert.ok(['city_view', 'paid_card', 'apply_credits'].includes(req.postDataJSON().itemId));
+          await route.fulfill({ status: 204 }); return;
+        }
         assert.equal(req.method(), 'GET');
         if (scenario === 'status-failure' && url.pathname === '/api/dating/cards/my') { await route.fulfill({ status: 503, json: {} }); return; }
         if ((scenario === 'already-registered' || scenario === 'completed-target') && url.pathname === '/api/dating/cards/my') {
