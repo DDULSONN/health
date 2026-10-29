@@ -70,6 +70,7 @@ const unitFiles = [
   'check-contact-checkout-integration.cjs',
   'check-contact-presentation.cjs',
   'check-contact-care.cjs',
+  'check-contact-care-client.cjs',
   'check-payment-recovery.cjs',
   'check-payment-measurement.cjs',
   'check-revenue-journey.cjs',
@@ -87,6 +88,7 @@ const unitFiles = [
   'check-profiles-authority-write-guard.cjs',
 ];
 const browserFiles = [
+  'check-contact-care-recovery-browser.cjs',
   'check-friend-notice-browser.cjs',
   'check-friend-recommendation-browser.cjs',
   'check-candidate-hides-browser.cjs',

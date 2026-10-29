@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { fetchClientJson } from "@/lib/client-json-request";
 import { contactCareApplicationIssue, type ContactCareStatus } from "@/lib/contact-care";
 import { oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
+import { CareTransportError, careAttemptRecorded, careClientError, fetchCareJson, snapshotCareEvidence, type CareAttempt } from "@/lib/contact-care-client";
 
 const inputClass = "mt-1 w-full min-w-0 rounded-lg border border-neutral-300 bg-white p-2 text-sm text-neutral-900";
 const buttonClass = "min-h-[44px] rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-800 disabled:opacity-50";
@@ -22,10 +23,13 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   const [confirmed, setConfirmed] = useState(false);
   const [reason, setReason] = useState("no_response");
   const [files, setFiles] = useState<File[]>([]);
+  const [preparingFiles, setPreparingFiles] = useState(false);
   const [target, setTarget] = useState("");
   const [now, setNow] = useState(Date.now);
   const applicationHintId = useId();
   const pending = useRef(false);
+  const fileSelection = useRef(0);
+  const unresolved = useRef<CareAttempt | null>(null);
   const alive = useRef(true);
   const controller = useRef<AbortController | null>(null);
   const details = useRef<HTMLDetailsElement | null>(null);
@@ -64,14 +68,29 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
     pending.current = true; setBusy(true); setError("");
     controller.current = new AbortController();
     try {
-      const { response, body } = await fetchClientJson<ContactCareStatus & { error?: string }>("/api/dating/1on1/contact-care", { cache: "no-store", signal: controller.current.signal }, 12000);
+      const { response, body } = await fetchCareJson<ContactCareStatus & { error?: string }>({ cache: "no-store", signal: controller.current.signal }, 12000);
       if (!response.ok || !body || !Array.isArray(body.payments) || !Array.isArray(body.matches)) throw Error(body?.error || "교환권 내역을 확인하지 못했어요.");
-      if (alive.current) { setData(body); setStale(false); setPayment(body.payments.find(p => p.id === matchId || p.id === body.claim?.match_id)?.order_id ?? ""); setTarget(""); }
-    } catch (e) { if (alive.current) { setStale(true); setError(e instanceof Error && e.name !== "AbortError" ? e.message : "조회가 지연돼요. 다시 확인해 주세요."); } }
+      if (alive.current) {
+        setData(body); setStale(false);
+        const eligible = body.payments.filter(p => !matchId || p.id === matchId);
+        setPayment(previous => eligible.some(p => p.order_id === previous) ? previous
+          : eligible.find(p => p.id === matchId || p.id === body.claim?.match_id)?.order_id ?? "");
+        setTarget(previous => body.matches.some(m => m.id === previous) ? previous : "");
+        const attempt = unresolved.current;
+        if (attempt) {
+          const recorded = careAttemptRecorded(body, attempt);
+          setInfo(recorded ? attempt.action === "apply" ? "신청이 접수된 것을 확인했어요. 이곳에서 결과를 확인해 주세요."
+            : "교환권 사용을 확인했어요. 아래 ‘연락처 확인’에서 확인해 주세요."
+            : "내역을 다시 불러왔어요. 아직 완료 내역이 확인되지 않아요. 입력 내용은 유지했으니 확인 후 다시 진행해 주세요.");
+          if (recorded && attempt.action === "apply") { fileSelection.current++; setFiles([]); setConfirmed(false); }
+          unresolved.current = null;
+        }
+      }
+    } catch (e) { if (alive.current) { setStale(true); setInfo(""); setError(`${careClientError(e)} ‘내역 다시 확인’을 눌러 주세요. 작성한 내용은 유지돼요.`); } }
     finally { pending.current = false; if (alive.current) setBusy(false); }
   };
   const send = async (action: "apply" | "redeem" | "redeem_manual") => {
-    if (pending.current || stale || !data) return;
+    if (pending.current || preparingFiles || stale || !data) return;
     const selected = data.payments.find(p => p.order_id === payment);
     if (action === "apply") {
       const issue = contactCareApplicationIssue({ selected, first, reason, explanation, evidenceCount: files.length, confirmed, stale,
@@ -81,24 +100,33 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
     if (action !== "apply" && (!target || !window.confirm("교환권 1장으로 이 상대와 서로의 연락처를 공개할까요? 결제는 진행되지 않습니다."))) return;
     pending.current = true; setBusy(true); setError(""); setInfo("");
     let refresh = false;
+    const attempt: CareAttempt = { action, matchId: action === "apply" ? selected!.id : target, orderId: action === "apply" ? payment : undefined };
     controller.current = new AbortController();
     try {
       const payload = action === "apply" ? { action, matchId: selected!.id, orderId: payment, firstContactAt: new Date(first).toISOString(), explanation, reason, revision: data.claim?.id ?? null, confirmed }
         : { action, matchId: target, confirmed: true };
       const form = new FormData();
       if (action === "apply") { form.set("payload", JSON.stringify(payload)); files.forEach(file => form.append("evidence", file)); }
-      const { response, body } = await fetchClientJson<{ ok?: boolean; error?: string }>("/api/dating/1on1/contact-care", {
+      const { response, body } = await fetchCareJson<{ ok?: boolean; error?: string }>({
         method: "POST", headers: action !== "apply" ? { "Content-Type": "application/json" } : undefined,
         body: action === "apply" ? form : JSON.stringify(payload), signal: controller.current.signal,
       }, action === "apply" ? 45000 : 15000);
-      if (!response.ok || !body?.ok) throw Error(body?.error || "처리 결과를 확인하지 못했어요. 내역을 다시 조회해 주세요.");
+      if (response.status >= 500 || !body || (response.ok && body.ok !== true)) throw new CareTransportError("response");
+      if (!response.ok) throw Error(body.error || "처리 결과를 확인하지 못했어요. 내역을 다시 조회해 주세요.");
       if (alive.current) {
         setInfo(action === "apply" ? "캡처와 함께 접수했어요. 관리자 확인 후 이곳에 결과가 표시돼요." : "교환권으로 번호 교환을 완료했어요. 아래 ‘연락처 확인’에서 확인해 주세요.");
-        if (action === "apply") { setFiles([]); setConfirmed(false); }
+        if (action === "apply") { fileSelection.current++; setFiles([]); setConfirmed(false); }
         setStale(true);
         refresh = true;
       }
-    } catch (e) { if (alive.current) { setStale(true); setError(e instanceof Error && e.name !== "AbortError" ? e.message : "응답이 늦어 결과 확인이 필요해요. 내역을 다시 조회해 주세요."); } }
+    } catch (e) { if (alive.current) {
+      setStale(true);
+      if (e instanceof CareTransportError) {
+        unresolved.current = attempt;
+        setInfo("연결이 원활하지 않아 처리 내역을 다시 확인하고 있어요. 중복 요청은 보내지 않아요.");
+        refresh = true;
+      } else setError(careClientError(e));
+    } }
     finally { pending.current = false; if (alive.current) setBusy(false); }
     // Reconcile ambiguous responses without retrying a mutation.
     if (alive.current && refresh) void load();
@@ -168,18 +196,26 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
         <label className="block">신청 사유<select className={inputClass} value={reason} disabled={busy || stale} onChange={e => setReason(e.target.value)}><option value="no_response">교환 직후 무응답·잠수</option><option value="scam">스캠·사칭 의심</option></select></label>
         <label className="block">첫 연락을 보낸 시각<input type="datetime-local" className={inputClass} value={first} onChange={e => setFirst(e.target.value)} required disabled={busy || stale} /></label>
         <label className="block">연락 방법과 상황<textarea className={inputClass} minLength={10} maxLength={500} rows={3} value={explanation} onChange={e => setExplanation(e.target.value)} required disabled={busy || stale} placeholder="예: 카카오톡으로 먼저 인사했지만 아직 답장이 없습니다. 전화번호 등 개인정보는 적지 마세요." /></label>
-        <label className="block">대화 캡처 (1~3장 · 합계 3MB 이하)<input className="mt-2 block w-full min-w-0 text-xs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy || stale} onChange={e => {
+        <label className="block">대화 캡처 (1~3장 · 합계 3MB 이하)<input className="mt-2 block w-full min-w-0 text-xs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy || stale} onChange={async e => {
+          const input = e.currentTarget;
           const chosen = Array.from(e.target.files ?? []);
-          if (chosen.length > 3 || chosen.reduce((sum, f) => sum + f.size, 0) > 3_000_000 || chosen.some(f => !["image/jpeg", "image/png", "image/webp"].includes(f.type))) {
-            setFiles([]); e.target.value = ""; setError("JPG·PNG·WebP 캡처 1~3장, 합계 3MB 이하로 선택해 주세요."); return;
+          const selection = ++fileSelection.current;
+          setFiles([]); setPreparingFiles(true); setError("");
+          try {
+            const copies = await snapshotCareEvidence(chosen);
+            if (alive.current && fileSelection.current === selection) setFiles(copies);
+          } catch (error) {
+            if (alive.current && fileSelection.current === selection) { input.value = ""; setError(careClientError(error)); }
+          } finally {
+            if (alive.current && fileSelection.current === selection) setPreparingFiles(false);
           }
-          setFiles(chosen); setError("");
         }} /></label>
+        {preparingFiles ? <p role="status">첨부한 캡처를 확인하고 있어요.</p> : null}
         {files.length ? <p>{files.length}장 선택됨 · {files.map(f => f.name).join(", ")}</p> : null}
         <p className="text-[11px] leading-5">상대 식별에 필요한 부분과 연락 날짜·시간을 남기고, 전체 전화번호·사진·무관한 대화는 가려 주세요. 캡처는 본인과 관리자만 열람하며 상대에게 공개하지 않아요.</p>
         <label className="flex min-h-[44px] items-start gap-2"><input type="checkbox" className="mt-1" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} disabled={busy || stale} required /><span>제출 내용은 사실이며 필요한 부분만 첨부했어요. 관리자가 캡처를 확인한 뒤 지급 여부를 결정하는 점을 확인했어요.</span></label>
         {applicationIssue ? <p id={applicationHintId} role="status" className="text-[11px] leading-5 text-neutral-600">{applicationIssue}</p> : null}
-        <button className={buttonClass} aria-describedby={applicationIssue ? applicationHintId : undefined} disabled={busy || !!applicationIssue}>{claim?.status === "needs_info" ? "추가 자료 제출" : "교환권 신청"}</button>
+        <button className={buttonClass} aria-describedby={applicationIssue ? applicationHintId : undefined} disabled={busy || preparingFiles || !!applicationIssue}>{claim?.status === "needs_info" ? "추가 자료 제출" : "교환권 신청"}</button>
       </form> : null}
       <p className="text-[11px] leading-5">결과는 이곳에서 확인해 주세요. 캡처는 검토 종료 후 30일까지만 열람할 수 있어요. 잘못된 번호·사이트 오류·환불 문의는 고객센터에서 별도로 확인해요.</p>
       <a href="https://open.kakao.com/o/s2gvTdhi" target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center underline">고객센터 문의</a>
