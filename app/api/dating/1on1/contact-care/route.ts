@@ -127,11 +127,30 @@ export async function POST(req: Request) {
       if (res.error) throw res.error;
       return careJson(res.data);
     }
-    if (!["redeem", "redeem_manual"].includes(body.action) || body.confirmed !== true) return careJson({ error: "교환권 사용을 확인해 주세요." }, 400);
-    const match = await admin.from("dating_1on1_match_proposals").select("source_user_id,candidate_user_id").eq("id", body.matchId).maybeSingle();
+    const checkingCheckout = body.action === "check_checkout";
+    if (!checkingCheckout && (!["redeem", "redeem_manual"].includes(body.action) || body.confirmed !== true)) return careJson({ error: "교환권 사용을 확인해 주세요." }, 400);
+    const match = await admin.from("dating_1on1_match_proposals").select("source_user_id,candidate_user_id,state,contact_exchange_status,contact_exchange_approved_at,contact_exchange_paid_at").eq("id", body.matchId).maybeSingle();
     if (match.error) throw match.error;
     if (!match.data || ![match.data.source_user_id, match.data.candidate_user_id].includes(user.id)) return careJson({ error: "해당 매칭을 이용할 수 없어요." }, 404);
     const ids = [match.data.source_user_id, match.data.candidate_user_id];
+    if (checkingCheckout) {
+      // A status check can retire provider-confirmed terminal checkout attempts,
+      // but must NEVER call redemption or release contacts, even when retried.
+      const [claim, manual] = await Promise.all([
+        admin.from("contact_care_claims").select("status,used_at,match_id").eq("user_id", user.id).maybeSingle(),
+        careManualBalance(admin, user.id),
+      ]);
+      if (claim.error) throw claim.error;
+      if (!manual.remaining && !(claim.data?.status === "approved" && !claim.data.used_at && claim.data.match_id !== body.matchId)) {
+        return careError(new Error("CARE_NO_CREDIT"));
+      }
+      if (match.data.state !== "mutual_accepted" || !["none", "awaiting_applicant_payment"].includes(match.data.contact_exchange_status) ||
+        match.data.contact_exchange_approved_at || match.data.contact_exchange_paid_at) {
+        // The following ordinary GET removes changed/paid matches from the UI.
+        return careJson({ ok: true, checkoutCleared: true });
+      }
+      return careJson({ ok: true, checkoutCleared: await reconcileExpiredCareCheckout(admin, body.matchId, ids) });
+    }
     const profiles = await admin.from("profiles").select("user_id,phone_e164").in("user_id", ids);
     if (profiles.error) throw profiles.error;
     const phones = ids.map(id => normalizeDatingContactPhone(profiles.data?.find(p => p.user_id === id)?.phone_e164 ?? ""));

@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { fetchClientJson } from "@/lib/client-json-request";
-import { contactCareApplicationIssue, type ContactCareStatus } from "@/lib/contact-care";
+import { CONTACT_CARE_MESSAGES, contactCareApplicationIssue, type ContactCareStatus } from "@/lib/contact-care";
 import { oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import { CareTransportError, careAttemptRecorded, careClientError, fetchCareJson, snapshotCareEvidence, type CareAttempt } from "@/lib/contact-care-client";
 
@@ -17,6 +17,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
   const [stale, setStale] = useState(false);
+  const [checkoutMatch, setCheckoutMatch] = useState<string | null>(null);
   const [payment, setPayment] = useState("");
   const [first, setFirst] = useState("");
   const [explanation, setExplanation] = useState("");
@@ -33,6 +34,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   const alive = useRef(true);
   const controller = useRef<AbortController | null>(null);
   const details = useRef<HTMLDetailsElement | null>(null);
+  const recheck = useRef<() => void>(() => {});
   useEffect(() => { alive.current = true; return () => { alive.current = false; controller.current?.abort(); }; }, []);
   useEffect(() => {
     if (matchId || guideOnly) return;
@@ -46,7 +48,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   }, [matchId, guideOnly]);
   useEffect(() => {
     if (!expanded) return;
-    // Only an open panel updates its clock; no API polling or collapsed-card timers.
+    // Only an open panel updates its application deadline clock.
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [expanded]);
@@ -68,6 +70,18 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
     pending.current = true; setBusy(true); setError("");
     controller.current = new AbortController();
     try {
+      let checkoutCleared = false;
+      if (checkoutMatch && checkoutMatch === target) {
+        const check = await fetchCareJson<{ ok?: boolean; checkoutCleared?: boolean; error?: string }>({
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "check_checkout", matchId: checkoutMatch }), signal: controller.current.signal,
+        }, 12000);
+        if (!check.response.ok || check.body?.ok !== true || typeof check.body.checkoutCleared !== "boolean") {
+          if (alive.current && check.response.status >= 400 && check.response.status < 500) setCheckoutMatch(null);
+          throw Error(check.body?.error || "결제 상태를 확인하지 못했어요. 잠시 후 내역을 다시 확인해 주세요.");
+        }
+        checkoutCleared = check.body.checkoutCleared;
+      }
       const { response, body } = await fetchCareJson<ContactCareStatus & { error?: string }>({ cache: "no-store", signal: controller.current.signal }, 12000);
       if (!response.ok || !body || !Array.isArray(body.payments) || !Array.isArray(body.matches)) throw Error(body?.error || "교환권 내역을 확인하지 못했어요.");
       if (alive.current) {
@@ -76,6 +90,12 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
         setPayment(previous => eligible.some(p => p.order_id === previous) ? previous
           : eligible.find(p => p.id === matchId || p.id === body.claim?.match_id)?.order_id ?? "");
         setTarget(previous => body.matches.some(m => m.id === previous) ? previous : "");
+        if (checkoutMatch && (checkoutCleared || !body.matches.some(m => m.id === checkoutMatch))) {
+          setCheckoutMatch(null);
+          setInfo(body.matches.some(m => m.id === checkoutMatch)
+            ? "결제 대기가 해소됐어요. 상대를 확인한 뒤 ‘이 매칭에 교환권 사용’을 눌러 주세요. 아직 교환권은 사용하지 않았어요."
+            : "매칭 상태가 바뀌었어요. 새로 불러온 내역을 확인해 주세요.");
+        }
         const attempt = unresolved.current;
         if (attempt) {
           const recorded = careAttemptRecorded(body, attempt);
@@ -89,8 +109,19 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
     } catch (e) { if (alive.current) { setStale(true); setInfo(""); setError(`${careClientError(e)} ‘내역 다시 확인’을 눌러 주세요. 작성한 내용은 유지돼요.`); } }
     finally { pending.current = false; if (alive.current) setBusy(false); }
   };
+  useEffect(() => { recheck.current = () => { void load(); }; });
+  useEffect(() => {
+    if (!expanded || !checkoutMatch || checkoutMatch !== target) return;
+    // Only a known blocked checkout is checked, at most once a minute while
+    // visible. No background/whole-site polling, redemption or payment call.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible" && !pending.current) recheck.current();
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, [expanded, checkoutMatch, target]);
   const send = async (action: "apply" | "redeem" | "redeem_manual") => {
     if (pending.current || preparingFiles || stale || !data) return;
+    if (action !== "apply" && target === checkoutMatch) return;
     const selected = data.payments.find(p => p.order_id === payment);
     if (action === "apply") {
       const issue = contactCareApplicationIssue({ selected, first, reason, explanation, evidenceCount: files.length, confirmed, stale,
@@ -107,11 +138,15 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
         : { action, matchId: target, confirmed: true };
       const form = new FormData();
       if (action === "apply") { form.set("payload", JSON.stringify(payload)); files.forEach(file => form.append("evidence", file)); }
-      const { response, body } = await fetchCareJson<{ ok?: boolean; error?: string }>({
+      const { response, body } = await fetchCareJson<{ ok?: boolean; error?: string; code?: string }>({
         method: "POST", headers: action !== "apply" ? { "Content-Type": "application/json" } : undefined,
         body: action === "apply" ? form : JSON.stringify(payload), signal: controller.current.signal,
       }, action === "apply" ? 45000 : 15000);
       if (response.status >= 500 || !body || (response.ok && body.ok !== true)) throw new CareTransportError("response");
+      if (response.status === 409 && body.code === "CARE_CHECKOUT" && action !== "apply") {
+        if (alive.current) { setCheckoutMatch(attempt.matchId); setStale(false); }
+        return;
+      }
       if (!response.ok) throw Error(body.error || "처리 결과를 확인하지 못했어요. 내역을 다시 조회해 주세요.");
       if (alive.current) {
         setInfo(action === "apply" ? "캡처와 함께 접수했어요. 관리자 확인 후 이곳에 결과가 표시돼요." : "교환권으로 번호 교환을 완료했어요. 아래 ‘연락처 확인’에서 확인해 주세요.");
@@ -156,6 +191,10 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
       {busy ? <p role="status">확인 중...</p> : null}
       {error ? <p role="alert" className="text-red-700">{error}</p> : null}
       {info ? <p role="status" className="text-emerald-700">{info}</p> : null}
+      {checkoutMatch && checkoutMatch === target ? <div role="status" className="space-y-2 rounded-lg bg-neutral-50 p-3">
+        <p>{CONTACT_CARE_MESSAGES.CARE_CHECKOUT}</p>
+        <p className="text-[11px]">이 화면을 열어두면 1분 간격으로 다시 확인해요. 별도 결제는 하지 마세요.</p>
+      </div> : null}
       <button type="button" className={buttonClass} disabled={busy} onClick={() => void load()}>내역 다시 확인</button>
       {!guideOnly && !matchId && data && (manualRemaining > 0 || !!data.manual_history?.length) ? <div className="space-y-2 rounded-lg bg-neutral-50 p-3">
         <p className="font-semibold text-neutral-900">추가 지급 교환권 {manualRemaining}장 · 사용 전까지 유지</p>
@@ -165,7 +204,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
             <option value="">쌍방 수락한 상대 선택</option>{data.matches.map(m => <option key={m.id} value={m.id}>{m.name} · {m.id.slice(0, 8)}</option>)}
           </select></label>
           {!data.matches.length ? <p>지금 교환 가능한 쌍방 수락 매칭이 없어요. 교환권은 그대로 남아요.</p> : null}
-          <button type="button" className={buttonClass} disabled={busy || stale || !target} onClick={() => void send("redeem_manual")}>이 매칭에 교환권 사용</button>
+          <button type="button" className={buttonClass} disabled={busy || stale || !target || target === checkoutMatch} onClick={() => void send("redeem_manual")}>이 매칭에 교환권 사용</button>
         </> : null}
         {data.manual_history?.length ? <details><summary className="min-h-[44px] cursor-pointer content-center">최근 교환권 사용 내역</summary>
           <ul>{data.manual_history.map(item => <li key={item.used_match_id}><a className="inline-flex min-h-[44px] items-center underline" href={oneOnOneMatchHref(item.used_match_id)}>{date(item.used_at)} · 연락처 확인</a></li>)}</ul>
@@ -182,7 +221,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
             <option value="">쌍방 수락한 상대 선택</option>{data!.matches.map(m => <option key={m.id} value={m.id}>{m.name} · {m.id.slice(0, 8)}</option>)}
           </select></label>
           {!data!.matches.length ? <p>지금 교환 가능한 쌍방 수락 매칭이 없어요. 교환권은 그대로 남아요.</p> : null}
-          <button type="button" className={buttonClass} disabled={busy || stale || !target} onClick={() => void send("redeem")}>이 매칭에 교환권 사용</button>
+          <button type="button" className={buttonClass} disabled={busy || stale || !target || target === checkoutMatch} onClick={() => void send("redeem")}>이 매칭에 교환권 사용</button>
         </> : null}
         {claim.used_at ? <a className="inline-flex min-h-[44px] items-center underline" href={oneOnOneMatchHref(claim.used_match_id)}>연락처 확인</a> : null}
       </div> : null}

@@ -75,7 +75,7 @@ async function fixture() {
 }
 async function withDb(fn) { const f = await fixture(); try { await fn(f); } finally { await f.db.close(); } }
 
-async function careCheckoutFixture(f, { manual = false, provider } = {}) {
+async function careCheckoutFixture(f, { manual = false, provider, user = id(1) } = {}) {
   if (manual) await grantManual(f); else await f.ready();
   await f.q(`insert into toss_test_payment_orders(id,user_id,product_ref_id,status,approved_at,toss_order_id)
     values($1,$2,$3,'ready',null,'expired_checkout_001')`, [id(101),id(3),id(20)]);
@@ -83,7 +83,7 @@ async function careCheckoutFixture(f, { manual = false, provider } = {}) {
   const db = { ...base, rpc: async (...args) => { rpcCalls++; return base.rpc(...args); } };
   const api = load('app/api/dating/1on1/contact-care/route.ts', {
     'next/server': { NextResponse: { json: (body,init) => Response.json(body,init) } },
-    '@/lib/supabase/request': { getRequestAuthContext: async () => ({ user: { id:id(1) } }) },
+    '@/lib/supabase/request': { getRequestAuthContext: async () => ({ user: user ? { id:user } : null }) },
     '@/lib/supabase/server': { createAdminClient: () => db },
     '@/lib/dating-contact-blocks': { normalizeDatingContactPhone:p=>p,hashDatingContactBlockValue:(_,p)=>p.endsWith('1111')?'hash1':'hash3' },
     '@/lib/dating-1on1-phone-blocks': { hashOneOnOneBlockedPhone:p=>p.endsWith('1111')?'legacy1':'legacy3' },
@@ -93,14 +93,58 @@ async function careCheckoutFixture(f, { manual = false, provider } = {}) {
     } },
   });
   return {
-    post: (overrides={}) => api.POST(new Request('https://local.invalid/api', { method:'POST',
-      headers:{host:'local.invalid',origin:'https://local.invalid','content-type':'application/json'},
+    get: () => api.GET(new Request('https://local.invalid/api')),
+    post: (overrides={},origin='https://local.invalid') => api.POST(new Request('https://local.invalid/api', { method:'POST',
+      headers:{host:'local.invalid',origin,'content-type':'application/json'},
       body:JSON.stringify({action:manual?'redeem_manual':'redeem',matchId:id(20),confirmed:true,...overrides}),
     })),
     order: async () => (await f.q('select * from toss_test_payment_orders where id=$1',[id(101)])).rows[0],
     calls: () => calls, rpcCalls: () => rpcCalls,
   };
 }
+
+async function careUnchangedSnapshot(f) {
+  return Promise.all(['contact_care_claims','contact_care_manual_vouchers','dating_1on1_match_proposals'].map(table=>f.q(`select * from ${table} order by id`)));
+}
+for (const manual of [false,true]) test(`checkout status recheck never redeems or reveals contacts (${manual?'manual':'claim'})`,()=>withDb(async f=>{
+  let state='READY';const api=await careCheckoutFixture(f,{manual,provider:async orderId=>({orderId,status:state,totalAmount:20000,approvedAt:null})});
+  assert.equal((await api.post()).status,409);
+  const before=await careUnchangedSnapshot(f),beforeOrder=await api.order(),rpcCalls=api.rpcCalls();
+  const check=()=>api.post({action:'check_checkout',confirmed:false});
+  assert.deepEqual(await (await check()).json(),{ok:true,checkoutCleared:false});
+  assert.deepEqual(await api.order(),beforeOrder);
+  state='EXPIRED';assert.deepEqual(await (await check()).json(),{ok:true,checkoutCleared:true});
+  assert.equal((await api.order()).status,'canceled');
+  assert.deepEqual(await careUnchangedSnapshot(f),before);assert.equal(api.rpcCalls(),rpcCalls);
+  const providerCalls=api.calls();assert.deepEqual(await (await check()).json(),{ok:true,checkoutCleared:true});
+  assert.equal(api.calls(),providerCalls,'already retired checkout needs no provider read');
+  assert.equal((await api.get()).status,200);assert.equal(api.calls(),providerCalls,'ordinary GET is read-only');
+  assert.equal((await api.post()).status,200,'explicit consent still required to spend/reveal');
+  assert.equal((await (await api.post()).json()).alreadyUsed,true);
+}));
+
+for (const user of [null,id(4)]) test('checkout check rejects unauthenticated/nonparticipant '+user,()=>withDb(async f=>{
+  const api=await careCheckoutFixture(f,{user}),before=await api.order();
+  assert.equal((await api.post({action:'check_checkout'})).status,user?404:401);
+  assert.equal(api.calls(),0);assert.equal(api.rpcCalls(),0);assert.deepEqual(await api.order(),before);
+}));
+test('checkout recheck requires own unused voucher, valid target and same origin',()=>withDb(async f=>{
+  const api=await careCheckoutFixture(f),before=await api.order();
+  assert.equal((await api.post({action:'check_checkout'},'https://foreign.invalid')).status,403);
+  assert.equal((await api.post({action:'check_checkout',matchId:'bad'})).status,400);
+  assert.equal((await api.post({action:'check_checkout',matchId:id(999)})).status,404);
+  await f.q("update contact_care_claims set status='rejected'");
+  assert.equal((await (await api.post({action:'check_checkout'})).json()).code,'CARE_NO_CREDIT');
+  assert.equal(api.calls(),0);assert.equal(api.rpcCalls(),0);assert.deepEqual(await api.order(),before);
+}));
+for (const state of ['candidate_rejected','paid']) test('changed '+state+' match is not touched by checkout recheck',()=>withDb(async f=>{
+  const api=await careCheckoutFixture(f);
+  await f.q(state==='paid'?"update dating_1on1_match_proposals set contact_exchange_status='approved',contact_exchange_paid_at=now(),contact_exchange_approved_at=now() where id=$1":"update dating_1on1_match_proposals set state='candidate_rejected' where id=$1",[id(20)]);
+  const before=await careUnchangedSnapshot(f),beforeOrder=await api.order();
+  assert.deepEqual(await (await api.post({action:'check_checkout'})).json(),{ok:true,checkoutCleared:true});
+  assert.equal(api.calls(),0);assert.equal(api.rpcCalls(),0);
+  assert.deepEqual(await careUnchangedSnapshot(f),before);assert.deepEqual(await api.order(),beforeOrder);
+}));
 
 for (const manual of [false,true]) test(`expired checkout recovery -> locked redemption is idempotent (${manual?'manual':'claim'})`, () => withDb(async f => {
   const before = await f.q('select * from toss_test_payment_orders');
@@ -123,6 +167,8 @@ for (const variant of careProviderUnsafe) test('checkout stays blocked for provi
   const api = await careCheckoutFixture(f,{provider:async orderId=>({orderId,status:'EXPIRED',totalAmount:20000,approvedAt:null,...variant})});
   assert.equal((await api.post()).status,409);assert.equal((await api.order()).status,'ready');
   assert.equal((await f.status()).used_at,null);assert.equal(api.rpcCalls(),1);
+  assert.deepEqual(await (await api.post({action:'check_checkout'})).json(),{ok:true,checkoutCleared:false});
+  assert.equal((await api.order()).status,'ready');assert.equal((await f.status()).used_at,null);assert.equal(api.rpcCalls(),1);
 }));
 
 for (const status of ['ABORTED','EXPIRED']) test('unapproved terminal provider state '+status+' allows voucher without another payment', () => withDb(async f => {

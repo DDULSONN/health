@@ -88,6 +88,7 @@ const unitFiles = [
   'check-profiles-authority-write-guard.cjs',
 ];
 const browserFiles = [
+  'check-contact-care-checkout-browser.cjs',
   'check-contact-care-recovery-browser.cjs',
   'check-friend-notice-browser.cjs',
   'check-friend-recommendation-browser.cjs',

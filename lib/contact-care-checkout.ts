@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONTACT_CARE_UUID } from "@/lib/contact-care";
 import { getTossPaymentByOrderId } from "@/lib/toss-payments";
 
-// Called ONLY after the existing redemption RPC rejects with CARE_CHECKOUT.
+// Called after CARE_CHECKOUT, or by a participant with an unused voucher asking
+// to recheck that checkout. A status check never invokes the redemption RPC.
 // Never infer expiry from elapsed time, cancel a provider payment, or grant a
 // voucher here. The unchanged RPC rechecks every condition under its row locks.
 export async function reconcileExpiredCareCheckout(
