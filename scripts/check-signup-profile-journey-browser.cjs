@@ -78,7 +78,9 @@ const { startPreview } = require('./preview-profile-writing.cjs');
       await page.getByRole('button', { name: '인증번호 받기' }).waitFor();
       assert.deepEqual(f.posts, []); assert.deepEqual(f.errors, []); passed++; await f.context.close();
     }
-    for (const outcome of ['success', 'duplicate', 'wrong-code', 'already-verified']) {
+    for (const scenario of ['success', 'duplicate', 'wrong-code', 'already-verified', 'success-share', 'already-verified-share']) {
+      const outcome = scenario.replace(/-share$/, '');
+      const expectedNext = scenario.endsWith('-share') ? '/s/' + 'z'.repeat(43) + '#candidate-00000000-0000-4000-8000-000000000071' : '/onboarding/dating?target=one_on_one';
       const f = await fixture(320), { page } = f; const requests = [];
       if (outcome === 'already-verified') await page.route('**/api/mypage/summary?*', route => route.fulfill({ json: { profile: { phone_verified: true } } }));
       await page.route('**/api/mypage/phone-verification/*', async route => {
@@ -88,9 +90,9 @@ const { startPreview } = require('./preview-profile-writing.cjs');
           : { pendingPhone: '+821000000000', resendAfterSec: 60 } });
         return route.fulfill({ status: outcome === 'wrong-code' ? 400 : 200, json: outcome === 'wrong-code' ? { error: '인증번호를 확인해 주세요.' } : { phone_verified: true } });
       });
-      await page.goto(origin + phonePath);
+      await page.goto(origin + '/phone-verification?next=' + encodeURIComponent(expectedNext));
       if (outcome === 'already-verified') {
-        await page.waitForFunction(() => window.fixtureRedirect === '/onboarding/dating?target=one_on_one');
+        await page.waitForFunction(next => window.fixtureRedirect === next, expectedNext);
         assert.equal(requests.length, 0);
       } else {
         await page.getByRole('textbox', { name: '휴대폰 번호' }).fill('01000000000');
@@ -106,7 +108,7 @@ const { startPreview } = require('./preview-profile-writing.cjs');
           assert.ok(await page.getByRole('button', { name: /초 후 재발송/ }).isDisabled());
           assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
           await page.getByRole('button', { name: '확인', exact: true }).click();
-          if (outcome === 'success') await page.waitForFunction(() => window.fixtureRedirect === '/onboarding/dating?target=one_on_one');
+          if (outcome === 'success') await page.waitForFunction(next => window.fixtureRedirect === next, expectedNext);
           else { await page.getByRole('alert').waitFor(); assert.equal(await page.evaluate(() => window.fixtureRedirect), undefined); }
           assert.deepEqual(requests[1].body, { phone: '+821000000000', token: '123456' }); assert.equal(requests.length, 2);
         }

@@ -42,11 +42,86 @@ test('sender preserves server safety and rate-limit errors; no automatic creatio
   }
 });
 async function share(f){const service=f.load('@/lib/friend-recommendation-server');return service.createFriendLink(f.admin,id(1),id(90),'fit',[{kind:'open_card',cardId:id(12)}]);}
+
+test('own links expose only bounded saved labels, never private item data or recipient actions',async()=>{
+  const f=fixture(),link=await share(f),route=f.load('@/app/api/dating/friend-shares/route');
+  f.tables.dating_friend_shares.push({...link,id:id(81),user_id:id(3)}, {...link,id:id(82),revoked_at:new Date().toISOString()}, {...link,id:id(83),expires_at:'2020-01-01'});
+  const response=await route.GET(f.request('/'));assert.equal(response.status,200);
+  const data=await response.json();assert.equal(data.links.length,1);
+  assert.deepEqual(Object.keys(data.links[0]).sort(),['id','token','created_at','expires_at','candidates'].sort());
+  assert.deepEqual(data.links[0].candidates,[{kind:'open_card',label:'추천회원'}]);
+  assert.doesNotMatch(JSON.stringify(data),/card_id|user_id|revision|phone|ticket|signup|recipient|view_count/);
+  assert.match(response.headers.get('cache-control'),/no-store/);
+  assert.ok(f.state.calls.some(c=>c.table==='dating_friend_shares'&&c.limit===10));
+  assert.ok(f.state.calls.every(c=>!c.write));assert.equal(f.state.matchCalls,0);
+  f.state.viewer=null;assert.equal((await route.GET(f.request('/'))).status,401);
+});
+
+test('own link labels tolerate malformed historical items without exposing raw data',async()=>{
+  const f=fixture(),route=f.load('@/app/api/dating/friend-shares/route');await share(f);
+  for(const items of [null,{},[null,{kind:'unknown',label:'bad'},{kind:'one_on_one',label:'가'.repeat(90),user_id:id(8)}]]){
+    f.tables.dating_friend_shares[0].items=items;const data=await (await route.GET(f.request('/'))).json();
+    assert.deepEqual(data.links[0].candidates,Array.isArray(items)?[{kind:'one_on_one',label:'가'.repeat(30)}]:[]);
+  }
+});
+
+test('own link settings parser is bounded, legacy-compatible and excludes unsolicited fields',()=>{
+  const row={id:id(90),token:'a'.repeat(43),created_at:'2026-10-01T00:00:00Z',expires_at:'2026-10-02T00:00:00Z'};
+  assert.deepEqual(senderClient.parseFriendShareSettings({enabled:true,links:[row]}),{enabled:true,links:[{...row,candidates:[]}]});
+  const clean=senderClient.parseFriendShareSettings({enabled:false,links:[{...row,secret:'no',candidates:[{kind:'open_card',label:'가'.repeat(50),phone:'no'},null,{kind:'invalid',label:'no'}]}]});
+  assert.deepEqual(clean.links[0].candidates,[{kind:'open_card',label:'가'.repeat(30)}]);assert.equal(clean.links[0].secret,undefined);
+  for(const data of [null,{}, {enabled:'true',links:[]},{enabled:true,links:Array(11).fill(row)}, ...[{id:'bad'},{token:'../'},{expires_at:'bad'},{created_at:null}].map(bad=>({enabled:true,links:[{...row,...bad}]}))])assert.throws(()=>senderClient.parseFriendShareSettings(data),/확인하지 못했어요/);
+});
+
+test('remaining time handles exact expiry, invalid dates and minute boundaries',()=>{
+  const now=Date.parse('2026-10-29T00:00:00Z'),remaining=ms=>contract.friendLinkRemaining(new Date(now+ms).toISOString(),now);
+  assert.equal(remaining(0),'만료됨');assert.equal(remaining(-1),'만료됨');assert.equal(contract.friendLinkRemaining('bad',now),'만료됨');
+  assert.equal(remaining(1),'1분 남음');assert.equal(remaining(60001),'2분 남음');assert.match(remaining(3600001),/1시간 1분 남음/);
+});
+
+for(const action of [null,{action:'revoke',id:id(90)},{action:'preference',enabled:false}])for(const stage of ['fetch','body'])test(`settings bounds ${action?.action||'read'} ${stage} without replay`,async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});let calls=0,request;
+  t.mock.method(globalThis,'fetch',async(_url,init)=>{calls++;request=init;return stage==='fetch'?new Promise(()=>{}):{ok:true,json:()=>new Promise(()=>{})};});
+  const pending=senderClient.requestFriendShareSettings(action,new AbortController().signal),rejected=assert.rejects(pending,action?/처리 결과를 확인하지 못했어요/:/응답이 늦어지고 있어요/);
+  t.mock.timers.tick(senderClient.FRIEND_SHARE_REQUEST_TIMEOUT_MS);await rejected;assert.equal(calls,1);assert.equal(request.signal.aborted,true);assert.equal(request.cache,'no-store');
+});
+
+test('settings explicit abort, network failure and failed writes are never retried',async t=>{
+  let calls=0;const abort=new AbortController();t.mock.method(globalThis,'fetch',async()=>{calls++;throw TypeError('Failed to fetch');});
+  await assert.rejects(senderClient.requestFriendShareSettings(null,abort.signal),/연결을 확인/);
+  await assert.rejects(senderClient.requestFriendShareSettings({action:'preference',enabled:false},abort.signal),/처리 결과/);
+  abort.abort();await assert.rejects(senderClient.requestFriendShareSettings(null,abort.signal),/취소/);assert.equal(calls,2);
+});
 test('contract rejects external return paths, malformed IDs, duplicate/four selections',()=>{
   for(const value of ['https://evil.invalid','//evil','/s/'+ 'a'.repeat(43)+'?next=//evil',null])assert.equal(contract.friendReturnPath(value),null);
   assert.equal(contract.friendReturnPath('/s/'+'a'.repeat(43)),'/s/'+'a'.repeat(43));
   const item={kind:'open_card',cardId:id(12)};for(const value of [null,[],[item,item],[item,item,item,item],[{...item,cardId:'../'}]])assert.equal(contract.friendSelections(value),null);
   assert.equal(contract.friendSelections([item]).length,1);
+});
+test('candidate focus survives return paths but arbitrary fragments/queries remain forbidden',()=>{
+  const token='a'.repeat(43),back=`/s/${token}#candidate-${id(71)}`;
+  assert.equal(contract.friendReturnPath(back),back);
+  assert.equal(contract.friendCandidateReturnPath(token,id(71)),back);
+  const href=new URL(contract.friendProfileWriteHref(token,id(71)),'https://local.invalid');
+  assert.equal(href.pathname,'/onboarding/dating');assert.equal(href.searchParams.get('target'),'one_on_one');assert.equal(href.searchParams.get('share_return'),back);
+  for(const suffix of ['#','#other','#candidate-nope','#candidate-'+id(71)+'#other','#candidate-'+id(71)+'?next=//evil','?x=1#candidate-'+id(71),'#candidate-%2f%2fevil'])assert.equal(contract.friendReturnPath('/s/'+token+suffix),null);
+  const safe=loader()('@/lib/safe-internal-path').safeInternalPath;
+  assert.equal(safe(back),back);assert.equal(new URL('https://local.invalid'+safe('/phone-verification?next='+encodeURIComponent(back))).searchParams.get('next'),back);
+});
+for(const status of [null,'hidden','rejected','submitted','reviewing','approved'])test('recipient profile hint matches request eligibility: '+status,async()=>{
+  const f=fixture(),s=f.load('@/lib/friend-recommendation-server');
+  f.tables.dating_1on1_cards.push({id:id(22),user_id:id(2),name:'추천이름',sex:'male',birth_year:1996,status:'approved',region:'서울',photo_paths:[]});
+  const link=await s.createFriendLink(f.admin,id(1),id(90),'fit',[{kind:'one_on_one',cardId:id(22),ticket:`ticket:${id(1)}:${id(22)}`}]);
+  if(status)f.tables.dating_1on1_cards.push({id:id(33),user_id:id(3),status});
+  f.state.viewer=id(3);const response=await f.load('@/app/api/dating/friend-shares/[token]/route').GET(f.request('/'),{params:Promise.resolve({token:link.token})});
+  assert.equal(response.status,200);const data=await response.json();assert.equal(data.oneOnOneProfile,['submitted','reviewing','approved'].includes(status)?'ready':'needed');
+  assert.equal(f.state.matchCalls,0);assert.ok(f.state.calls.every(c=>!c.write));assert.doesNotMatch(JSON.stringify(data),new RegExp(id(33)));
+  f.state.viewer=null;const guest=await f.load('@/app/api/dating/friend-shares/[token]/route').GET(f.request('/'),{params:Promise.resolve({token:link.token})});assert.equal((await guest.json()).oneOnOneProfile,undefined);
+});
+test('open-card link does not query or require a recipient one-on-one profile',async()=>{
+  const f=fixture(),link=await share(f);f.state.viewer=id(3);f.state.failTable='dating_1on1_cards';
+  const response=await f.load('@/app/api/dating/friend-shares/[token]/route').GET(f.request('/'),{params:Promise.resolve({token:link.token})});
+  assert.equal(response.status,200);assert.equal((await response.json()).oneOnOneProfile,undefined);assert.equal(f.state.matchCalls,0);
 });
 test('guest projection has no identity, introduction, contact, storage path or exact region',async()=>{const f=fixture(),link=await share(f);f.state.viewer=null;const route=f.load('@/app/api/dating/friend-shares/[token]/route');const response=await route.GET(f.request('/'),{params:Promise.resolve({token:link.token})});assert.equal(response.status,200);const data=await response.json();assert.equal(data.access,'guest');assert.deepEqual(Object.keys(data.items[0]).sort(),['id','kind','ageBand','area','photos'].sort());assert.equal(data.items[0].area,'서울');assert.doesNotMatch(JSON.stringify(data),/추천회원|강남|profile.jpg|private_handle|산책|phone_e164|user_id/);assert.match(response.headers.get('cache-control'),/no-store/);});
 test('only verified member sees detail; unverified member still gets guest fields',async()=>{const f=fixture(),link=await share(f),s=f.load('@/lib/friend-recommendation-server');let page=await s.readFriendLink(f.admin,link.token,id(3));assert.equal(page.detailed,true);assert.equal(s.projectFriendItem(link.token,page.items[0].item,page.items[0].card,true).detail.name,'추천회원');f.tables.profiles[2].phone_verified=false;page=await s.readFriendLink(f.admin,link.token,id(3));assert.equal(page.detailed,false);});
@@ -71,7 +146,7 @@ test('one-on-one share needs own profile only for explicit request, preserves re
   const link=await s.createFriendLink(f.admin,id(1),id(90),'fit',[{kind:'one_on_one',cardId:id(22),ticket:`ticket:${id(1)}:${id(22)}`}]);
   assert.equal((await s.readFriendLink(f.admin,link.token,id(3))).detailed,true);
   f.state.viewer=id(3);const route=f.load('@/app/api/dating/friend-shares/[token]/request/route'),context={params:Promise.resolve({token:link.token})},body={itemId:link.items[0].id};
-  const missing=await route.POST(f.request('/',body),context);assert.equal(missing.status,409);assert.equal(new URL((await missing.json()).profileHref,'https://local.invalid').searchParams.get('share_return'),'/s/'+link.token);assert.equal(f.state.matchCalls,0);
+  const missing=await route.POST(f.request('/',body),context);assert.equal(missing.status,409);assert.equal(new URL((await missing.json()).profileHref,'https://local.invalid').searchParams.get('share_return'),'/s/'+link.token+'#candidate-'+link.items[0].id);assert.equal(f.state.matchCalls,0);
   f.tables.dating_1on1_cards.push({id:id(33),user_id:id(3),status:'approved'});
   assert.equal((await route.POST(f.request('/',body),context)).status,400);assert.equal(f.state.matchCalls,0);
   assert.equal((await route.POST(f.request('/',{...body,confirm:true}),context)).status,200);assert.equal(f.state.matchCalls,1);assert.deepEqual(f.state.lastMatch,{source_card_id:id(33),candidate_card_id:id(22)});

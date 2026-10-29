@@ -58,9 +58,10 @@ const { chromium } = require('./test-browser-runtime.cjs');
       assert.equal(await page.getByRole('switch').getAttribute('aria-checked'), 'true');
       await page.goto(server.origin + '/notice');
       await page.getByRole('button', { name: '프로필 보기', exact: true }).click();
-      await page.getByRole('button', { name: '친구에게 추천', exact: true }).click();
-      await page.getByRole('button', { name: '추천 링크 만들기' }).waitFor();
       assert.deepEqual(writes, [], 'Viewing or dismissing notice must not write preferences, links or matches');
+      await page.getByRole('button', { name: '친구에게 추천', exact: true }).click();
+      await page.getByRole('button', { name: '친구에게 보내기' }).waitFor();
+      assert.deepEqual(writes, [server.origin + '/api/dating/friend-shares'], 'Only the explicit recommendation action prepares one link');
       await context.close();
       console.log(`PASS notice layout / Korean / Escape / close / focus / settings / explore ${width}x${height}`);
     }

@@ -10,7 +10,16 @@ export type FriendSelection = { kind: FriendKind; cardId: string; ticket?: strin
 export const FRIEND_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const FRIEND_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 export function friendReturnPath(value: unknown): string | null {
-  return typeof value === "string" && /^\/s\/[A-Za-z0-9_-]{43}$/.test(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const [path, anchor, ...extra] = value.split("#");
+  return /^\/s\/[A-Za-z0-9_-]{43}$/.test(path) && extra.length === 0 &&
+    (anchor === undefined || (anchor.startsWith("candidate-") && FRIEND_UUID.test(anchor.slice(10)))) ? value : null;
+}
+export function friendCandidateReturnPath(token: string, itemId: string): string {
+  return friendReturnPath(`/s/${token}#candidate-${itemId}`) ?? "/community/dating/cards";
+}
+export function friendProfileWriteHref(token: string, itemId: string): string {
+  return `/onboarding/dating?target=one_on_one&share_return=${encodeURIComponent(friendCandidateReturnPath(token, itemId))}`;
 }
 export function friendSelections(value: unknown): FriendSelection[] | null {
   if (!Array.isArray(value) || value.length < 1 || value.length > 3) return null;
@@ -37,4 +46,15 @@ export type FriendPublicItem = {
   // Present only after login, verified phone, and server-side safety checks.
   detail?: { name: string; age: number; height: number | null; job: string; intro: string; strengths: string; preference: string };
 };
-export type FriendPublicPage = { prompt: string; expiresAt: string; access: "guest" | "verify" | "member"; items: FriendPublicItem[] };
+export type FriendPublicPage = { prompt: string; expiresAt: string; access: "guest" | "verify" | "member"; items: FriendPublicItem[]; oneOnOneProfile?: "ready" | "needed" };
+
+export type OwnFriendLink = {
+  id: string; token: string; created_at: string; expires_at: string;
+  candidates: { kind: FriendKind; label: string }[];
+};
+export function friendLinkRemaining(expiresAt: string, now: number): string {
+  const remaining = Date.parse(expiresAt) - now;
+  if (!Number.isFinite(remaining) || remaining <= 0) return "만료됨";
+  const minutes = Math.ceil(remaining / 60_000);
+  return minutes >= 60 ? `${Math.floor(minutes / 60)}시간${minutes % 60 ? ` ${minutes % 60}분` : ""} 남음` : `${minutes}분 남음`;
+}

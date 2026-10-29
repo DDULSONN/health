@@ -12,11 +12,21 @@ export async function GET(req: Request) {
     await friendMember(admin, user.id, false);
     const [pref, links] = await Promise.all([
       friendPreference(admin, user.id),
-      admin.from("dating_friend_shares").select("id,token,prompt,created_at,expires_at,revoked_at").eq("user_id", user.id)
+      admin.from("dating_friend_shares").select("id,token,prompt,items,created_at,expires_at,revoked_at").eq("user_id", user.id)
         .is("revoked_at", null).gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false }).limit(10),
     ]);
     if (links.error) throw links.error;
-    return friendJson({ enabled: pref.enabled, links: links.data ?? [] });
+    return friendJson({ enabled: pref.enabled, links: (links.data ?? []).map(link => ({
+      id: link.id, token: link.token, created_at: link.created_at, expires_at: link.expires_at,
+      // Only the sender's saved labels. Never expose user/card IDs, photos,
+      // phone numbers, bearer tickets, or recipient signup/request activity.
+      candidates: (Array.isArray(link.items) ? link.items : []).slice(0, 3).flatMap((item: unknown) => {
+        if (!item || typeof item !== "object") return [];
+        const entry = item as Record<string, unknown>;
+        return ["open_card", "paid_card", "one_on_one"].includes(String(entry.kind)) && typeof entry.label === "string"
+          ? [{ kind: entry.kind, label: entry.label.slice(0, 30) }] : [];
+      }),
+    })) });
   } catch (error) { return friendFailure(error); }
 }
 export async function POST(req: Request) {

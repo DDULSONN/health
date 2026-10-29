@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import FriendRecommendButton from "@/components/dating/sharing/FriendRecommendButton";
+import FriendRecommendButton, { FriendRecommendationBasketButton } from "@/components/dating/sharing/FriendRecommendButton";
 import { hideReportedMatches, hideReportedRecommendations } from "@/lib/dating-report-visibility";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import dynamic from "next/dynamic";
@@ -3536,6 +3536,8 @@ function OpenCardsContent() {
           </button>
         </div>
       ) : null}
+
+      {viewerLoggedIn && (showOpenCardSection || showOneOnOneSection) ? <FriendRecommendationBasketButton /> : null}
 
       {showOneOnOneSection ? (
         <OneOnOneHomePanel

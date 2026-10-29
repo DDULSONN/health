@@ -64,7 +64,8 @@ async function main() {
       else if (url.pathname === '/api/dating/1on1/cards' && failOne) { await route.fulfill({ status:500, json:{error:'테스트 등록 실패'} }); return; }
       await route.fulfill({ json:body });
     });
-    await page.goto(origin);
+    const friendBack = '/s/' + 'z'.repeat(43) + '#candidate-00000000-0000-4000-8000-000000000071';
+    await page.goto(origin + '/?share_return=' + encodeURIComponent(friendBack));
     const next = () => page.locator('[data-onboarding-next]').click();
     await next();
     await page.waitForFunction(() => document.activeElement?.id === 'onboarding-field-sex');
@@ -109,7 +110,8 @@ async function main() {
     // Retrying preserves the successful open card and cannot submit it again.
     failOne = false;
     await page.getByRole('button',{name:'남은 등록 다시 시도',exact:true}).evaluate(el => { el.click(); el.click(); });
-    await page.waitForFunction(() => window.fixtureRedirect?.includes('one_on_one'));
+    await page.waitForFunction(back => window.fixtureRedirect === back, friendBack);
+    assert.equal(writes.filter(w => w.url.includes('/matches/')).length,0,'Profile completion returns to candidate but never sends a request');
     assert.equal(writes.filter(w => w.url === '/api/dating/cards/my').length,1);
     assert.equal(writes.filter(w => w.url === '/api/dating/1on1/cards').length,2);
     assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(k => k.includes('dating-onboarding-draft')).length),0);

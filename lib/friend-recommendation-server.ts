@@ -10,6 +10,15 @@ import { hashOneOnOneBlockedPhone, normalizePhoneForOneOnOneBlock } from "@/lib/
 import { hashDatingContactBlockValue, normalizeDatingContactInstagram } from "@/lib/dating-contact-blocks";
 
 export type FriendAdmin = ReturnType<typeof createAdminClient>;
+// Same active-profile rule for the display hint and the actual request. The
+// hint grants no permission: the request route always checks again.
+export async function friendRequestProfile(admin: FriendAdmin, userId: string) {
+  const own = await admin.from("dating_1on1_cards").select("id").eq("user_id", userId)
+    .in("status", ["submitted", "reviewing", "approved"]).order("created_at", { ascending: false })
+    .order("id", { ascending: false }).limit(1).maybeSingle();
+  if (own.error) throw own.error;
+  return own.data;
+}
 export type FriendItem = { id: string; kind: FriendKind; card_id: string; user_id: string; revision: number; label: string };
 export type FriendLink = { id: string; user_id: string | null; token: string; prompt: FriendPrompt; items: FriendItem[]; created_at: string; expires_at: string; revoked_at: string | null };
 export type FriendMember = { user_id: string; nickname: string | null; phone_e164: string | null; phone_verified: boolean; is_banned: boolean | null; instagramIds?: string[] };

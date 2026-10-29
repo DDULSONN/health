@@ -7,6 +7,11 @@ async function start(port=0){const f=fixture(),out=fs.mkdtempSync(path.join(os.t
   const css=(await require('postcss')([require('@tailwindcss/postcss')({base:root})]).process('@import "tailwindcss" source(none);\n@source "./components/dating/sharing";\n@source "./components/admin/AdminFriendSharesPanel.tsx";\n@source "./scripts/fixtures/friend-recommendation-browser.tsx";',{from:path.join(root,'friend-preview.css')})).css;
   const server=http.createServer(async(req,res)=>{try{const origin=`http://127.0.0.1:${server.address().port}`,url=new URL(req.url,origin);if(req.headers.host!==new URL(origin).host){res.writeHead(403);return res.end();}res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');
     if(url.pathname==='/app.js'){res.setHeader('Content-Type','text/javascript');return res.end(fs.readFileSync(path.join(out,'app.js')));}if(url.pathname==='/style.css'){res.setHeader('Content-Type','text/css');return res.end(css);}
+    if(url.pathname==='/basket'){
+      for(const n of [5,6,7])if(!f.tables.profiles.some(row=>row.user_id===id(n)))f.tables.profiles.push({user_id:id(n),nickname:'가상회원'+n,phone_e164:`+82101234000${n}`,phone_verified:true,is_banned:false});
+      if(!f.tables.dating_cards.some(card=>card.id===id(13)))f.tables.dating_cards.push({...f.tables.dating_cards[0],id:id(13),owner_user_id:id(5),display_nickname:'산책친구',photo_paths:[]});
+      for(const [n,owner,name]of [[24,6,'러닝친구'],[25,7,'주말친구']])if(!f.tables.dating_1on1_cards.some(card=>card.id===id(n)))f.tables.dating_1on1_cards.push({id:id(n),user_id:id(owner),name,sex:'male',birth_year:1996,status:'approved',phone:`+82101234000${owner}`,region:'서울',intro_text:'산책과 운동을 좋아해요.',photo_paths:[]});
+    }
     if(url.pathname.startsWith('/api/')){
       const role=(req.headers.cookie||'').match(/fixture_role=(sender|recipient|target|admin|guest)/)?.[1]||'guest';f.state.viewer={sender:id(1),recipient:id(3),target:id(2),admin:id(4),guest:null}[role];f.state.admin=role==='admin';
       let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>20000)throw Error('body too large');}

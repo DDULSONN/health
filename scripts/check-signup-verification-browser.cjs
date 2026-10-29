@@ -83,7 +83,7 @@ const sleepGate = () => { let release; const promise = new Promise(resolve => { 
         await f.page.screenshot({ path: path.join(output, `signup-waiting-${width}.png`), fullPage: true });
       });
     }
-    const friendBack = '/s/' + 'z'.repeat(43);
+    const friendBack = '/s/' + 'z'.repeat(43) + '#candidate-00000000-0000-4000-8000-000000000001';
     await run('shared profile email signup and confirmed return preserve link, never force onboarding', { entry: '/signup?share_return='+encodeURIComponent(friendBack) }, async f => {
       await fill(f.page); await submit(f.page); await ready(f.page);
       assert.equal(new URL(f.calls.find(c=>c.action==='signup').body.options.emailRedirectTo).searchParams.get('next'),friendBack);
