@@ -462,6 +462,37 @@
   overflow: hidden;
 }
 
+.reviewActions {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.reviewLogin {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #706a73;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
+.reviewActions .primaryCta {
+  background: #f00046;
+  font-size: 0.875rem;
+  font-weight: 650;
+  min-height: 48px;
+}
+
+.reviewActions a:focus-visible {
+  outline: 2px solid #f00046;
+  outline-offset: 3px;
+}
+
+.reviewSection .browseLink { margin-top: 0; justify-self: start; }
+
 .reviewHeader {
   display: flex;
   align-items: center;

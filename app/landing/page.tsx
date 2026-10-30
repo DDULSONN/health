@@ -5,7 +5,7 @@ import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/
 import { createAdminClient } from "@/lib/supabase/server";
 import LandingSeenMarker from "./LandingSeenMarker";
 import styles from "./LandingPage.module.css";
-import { LANDING_REVIEWS as reviewProofs } from "@/lib/landing-reviews";
+import LandingStories from "@/components/LandingStories";
 
 export const dynamic = "force-dynamic";
 
@@ -172,29 +172,12 @@ export default async function LandingPage() {
           </header>
 
           <section className={styles.reviewSection} aria-label="이용자 후기">
-            <div className={styles.reviewHeader}>
-              <strong>실제 리뷰</strong>
+            <LandingStories />
+            <div className={styles.reviewActions}>
+              <Link className={styles.primaryCta} href="/signup">가입하고 프로필 만들기</Link>
+              <Link className={styles.reviewLogin} href="/login?tab=password&amp;next=%2Fonboarding%2Fdating">이미 가입했어요</Link>
             </div>
-            <div className={styles.reviewRail}>
-              <div className={styles.reviewTrack}>
-                <span className={styles.reviewSpacer} aria-hidden="true" />
-                {[...reviewProofs, ...reviewProofs].map((review, index) => (
-                  <article className={styles.reviewCard} key={`${review.src}-${index}`}>
-                    <Image
-                      className={styles.reviewImage}
-                      src={review.src}
-                      alt={`짐툴 실제 리뷰 스크린샷 ${(index % reviewProofs.length) + 1}`}
-                      width={review.width}
-                      height={review.height}
-                      sizes="(max-width: 820px) 74vw, 320px"
-                    />
-                  </article>
-                ))}
-              </div>
-            </div>
-            <p className={styles.reviewNote}>
-              리뷰 속 유기견은 인스타그램 크리에이터 일반사람이 쓰는 표현으로, 헬스는 열심히 하지만 아직 연애는 못 하고 있는 사람을 뜻하는 농담이에요.
-            </p>
+            <Link className={styles.browseLink} href="/community/dating/cards">먼저 둘러보기</Link>
           </section>
 
           <div className={styles.heroBody}>
@@ -225,17 +208,6 @@ export default async function LandingPage() {
                 </ol>
                 <p>이용할 서비스를 선택해 등록해요. 1:1 프로필을 완성하면 추천 후보에게 바로 요청할 수 있어요.</p>
               </section>
-              <div className={styles.ctaRow}>
-                <Link className={styles.primaryCta} href="/signup">
-                  가입하고 프로필 만들기
-                </Link>
-                <Link className={styles.secondaryCta} href="/login?tab=password&amp;next=%2Fonboarding%2Fdating">
-                  이미 가입했어요
-                </Link>
-              </div>
-              <Link className={styles.browseLink} href="/community/dating/cards">
-                먼저 둘러보기
-              </Link>
             </div>
 
             <div className={styles.visualPanel} aria-label="오픈카드 미리보기">

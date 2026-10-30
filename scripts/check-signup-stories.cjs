@@ -18,11 +18,11 @@ test('signup reuses exactly three existing public WebPs under 90 KiB total', () 
   }
   assert.ok(bytes < 90 * 1024, `${bytes} exceeds image budget`);
 });
-test('all original landing reviews stay in the same order and remain duplicated for its rail', () => {
+test('all original landing reviews stay in the same order and remain available from the landing gallery', () => {
   assert.deepEqual(LANDING_REVIEWS.map(r => r.src), Array.from({ length: 10 }, (_, i) => `/landing/reviews/review-${String(i + 1).padStart(2, '0')}.webp`));
   const source = read('app/landing/page.tsx');
-  assert.match(source, /LANDING_REVIEWS as reviewProofs/);
-  assert.ok(source.includes('[...reviewProofs, ...reviewProofs]'));
+  assert.match(source, /<LandingStories \/>/);
+  assert.match(read('components/LandingStories.tsx'), /LANDING_REVIEWS\.map/);
 });
 test('signup stories render after login link, outside form, and only during the signup form state', () => {
   const source = read('app/signup/page.tsx');

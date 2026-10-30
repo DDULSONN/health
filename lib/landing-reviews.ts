@@ -14,3 +14,11 @@ export const LANDING_REVIEWS = [
 
 // Small set: about 80 KiB total, reused for thumbnails and the enlarged view.
 export const SIGNUP_REVIEWS = [LANDING_REVIEWS[5], LANDING_REVIEWS[1], LANDING_REVIEWS[7]];
+
+// Verbatim excerpts checked against the already-published screenshots above.
+// Keep the source attached; do not invent identities, ratings or success statistics.
+export const FEATURED_LANDING_REVIEWS = [
+  { review: LANDING_REVIEWS[7], quote: "마음에 맞는 사람을 만나게 됐습니다!!" },
+  { review: LANDING_REVIEWS[3], quote: "첨엔 조금 걱정했는데 좋은사람같아요!" },
+  { review: LANDING_REVIEWS[4], quote: "지방 살아도 이게 되네요 ㅠㅠ 지인들한테도 추천했어요 !!" },
+] as const;
