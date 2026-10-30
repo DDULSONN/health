@@ -128,6 +128,7 @@ const browserFiles = [
   'check-contact-intro-browser.cjs',
   'check-admin-contact-exchanges-browser.cjs',
   'check-admin-contact-review-browser.cjs',
+  'check-admin-today-profiles-browser.cjs',
   'check-profile-writing-browser.cjs',
   'check-funnel-recovery-browser.cjs',
 ];

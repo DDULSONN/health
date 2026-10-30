@@ -14,6 +14,7 @@ import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { createAdminClient } from "@/lib/supabase/server";
+import { getTodayProfilePage, koreaTodayRange, TODAY_PROFILE_SOURCES, TodayProfileInputError } from "@/lib/admin-today-profiles";
 
 export const maxDuration = 60;
 
@@ -42,6 +43,7 @@ type ReviewActionPayload = {
   locked?: unknown;
   snapshot?: unknown;
   confirmationId?: unknown;
+  allowUnscanned?: unknown;
 };
 
 type ReviewedCandidateCard = CandidateCard & { review: CardReview };
@@ -853,13 +855,14 @@ function currentReviewRow(row: Record<string, unknown>, card: CandidateCard | nu
   } };
 }
 
-async function hydrateReviewRows(admin: AdminClient, rows: Record<string, unknown>[], confirmations = new Map<string, ReviewConfirmation>(), confirmationAvailable = true) {
+async function hydrateReviewRows(admin: AdminClient, rows: Record<string, unknown>[], confirmations = new Map<string, ReviewConfirmation>(), confirmationAvailable = true, currentCards?: Map<string, CandidateCard | null>) {
   return Promise.all(
     rows.map(async (savedRow) => {
       let row = savedRow;
       const sourceType = normalizeSource(row.source_type);
       const cardId = cleanText(row.card_id, 100);
-      const current = sourceType === "all" || !cardId ? null : await loadCandidateById(admin, sourceType, cardId).catch(() => null);
+      const current = currentCards ? currentCards.get(reviewConfirmationKey(sourceType, cardId)) ?? null
+        : sourceType === "all" || !cardId ? null : await loadCandidateById(admin, sourceType, cardId).catch(() => null);
       row = currentReviewRow(row, current).row;
       const snapshot = readReviewSnapshot(row.raw_result);
       const raw = (row.raw_result ?? {}) as Record<string, unknown>;
@@ -933,6 +936,27 @@ async function handleReviewConfirmation(admin: AdminClient, adminUserId: string,
   ]);
   if (saved.error) throw saved.error;
   if (!card?.userId) return NextResponse.json({ ok: false, message: "현재 프로필을 찾지 못해 정상 확인하지 않았습니다." }, { status: 404 });
+  if (!saved.data && body.allowUnscanned === true && TODAY_PROFILE_SOURCES.some(type => type === source)) {
+    const range = koreaTodayRange();
+    const created = Date.parse(card.createdAt ?? "");
+    if (!(created >= Date.parse(range.start) && created < Date.parse(range.end))) {
+      return NextResponse.json({ ok: false, message: "오늘 목록을 새로 불러온 뒤 확인해 주세요." }, { status: 409 });
+    }
+    const review = withReviewSnapshot(card, ruleReview(card));
+    const [row] = buildReviewRows(adminUserId, [{ ...card, review }]);
+    const actual = readReviewSnapshot(review.raw);
+    if (!actual || actual.contentFingerprint !== expected.contentFingerprint || actual.findingsFingerprint !== expected.findingsFingerprint) {
+      const [item] = await hydrateReviewRows(admin, [row]);
+      return NextResponse.json({ ok: false, code: "REVIEW_CHANGED", sourceType: source, cardId, item: { ...item, reviewNotSaved: true },
+        message: "내용이 바뀌어 최신 프로필로 갱신했습니다. 확인한 뒤 정상 확인을 다시 눌러 주세요." }, { status: 409 });
+    }
+    // Explicit confirmation only. Insert, never overwrite another admin's/AI's concurrent review.
+    const inserted = await admin.from("admin_dating_card_ai_reviews").insert(row)
+      .select("id,scanned_at,raw_result,suspicion_level,flags,summary,photo_flags,text_flags").single();
+    if (inserted.error?.code === "23505") return NextResponse.json({ ok: false, message: "다른 검수 결과가 저장됐습니다. 오늘 목록을 새로 불러와 주세요." }, { status: 409 });
+    if (inserted.error) throw inserted.error;
+    saved.data = inserted.data;
+  }
   if (!saved.data) return NextResponse.json({ ok: false, message: "검수 결과를 찾지 못했습니다. 다시 검수해 주세요." }, { status: 409 });
   const prepared = currentReviewRow(saved.data, card);
   const snapshot = readReviewSnapshot(prepared.row.raw_result);
@@ -1299,6 +1323,39 @@ export async function GET(req: Request) {
   if (!guard.ok) return guard.response;
 
   const url = new URL(req.url);
+  if (url.searchParams.get("view") === "today") {
+    try {
+      const page = await getTodayProfilePage(guard.admin, url.searchParams.get("source") || "all", url.searchParams.get("cursor"));
+      const currentCards = new Map(await Promise.all(page.refs.map(async ref =>
+        [reviewConfirmationKey(ref.source, ref.id), await loadCandidateById(guard.admin, ref.source, ref.id)] as const)));
+      const saved = new Map<string, Record<string, unknown>>();
+      for (const source of TODAY_PROFILE_SOURCES) {
+        const ids = page.refs.filter(ref => ref.source === source).map(ref => ref.id);
+        if (!ids.length) continue;
+        const { data, error } = await guard.admin.from("admin_dating_card_ai_reviews")
+          .select("id,source_type,card_id,user_id,card_status,display_name,suspicion_level,flags,summary,photo_flags,text_flags,raw_result,scanned_at")
+          .eq("source_type", source).in("card_id", ids);
+        if (error) throw error;
+        for (const row of data ?? []) saved.set(reviewConfirmationKey(source, row.card_id), row);
+      }
+      let confirmations = new Map<string, ReviewConfirmation>();
+      let confirmationAvailable = true;
+      try { confirmations = await loadReviewConfirmations(guard.admin, page.refs); }
+      catch { confirmationAvailable = false; }
+      const rows = page.refs.filter(ref => currentCards.get(reviewConfirmationKey(ref.source, ref.id))).map(ref => {
+        const row = saved.get(reviewConfirmationKey(ref.source, ref.id));
+        return row ?? { source_type: ref.source, card_id: ref.id, reviewNotSaved: true };
+      });
+      const items = await hydrateReviewRows(guard.admin, rows, confirmations, confirmationAvailable, currentCards);
+      return NextResponse.json({ ok: true, items, day: page.day, asOf: page.asOf, counts: page.counts, total: page.total,
+        cursor: page.cursor, nextCursor: page.nextCursor, confirmationAvailable, warning: confirmationAvailable ? undefined : CONFIRMATION_UNAVAILABLE },
+      { headers: { "Cache-Control": "private, no-store" } });
+    } catch (error) {
+      if (error instanceof TodayProfileInputError) return NextResponse.json({ ok: false, message: error.message }, { status: 400 });
+      console.error("[admin card review] today profiles failed", error);
+      return NextResponse.json({ ok: false, message: "오늘 신규 프로필을 불러오지 못했습니다. 새로고침해 주세요." }, { status: 500 });
+    }
+  }
   const source = normalizeSource(url.searchParams.get("source"));
   const includeClear = url.searchParams.get("includeClear") === "true";
   const confirmedView = url.searchParams.get("view") === "confirmed";

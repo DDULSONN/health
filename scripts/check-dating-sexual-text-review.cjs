@@ -282,11 +282,21 @@ function database(seed, options = {}) {
   const admin = { from(table) {
     const q = { table, op: "select", filters: [], orders: [], from: 0, to: Infinity };
     const b = {};
-    b.select = () => b;
+    b.select = (_fields, config) => { q.head = config?.head; q.count = config?.count; return b; };
     b.in = (key, values) => { q.filters.push((row) => values.includes(row[key])); return b; };
     b.eq = (key, value) => { q.filters.push((row) => row[key] === value); return b; };
     b.is = b.eq;
+    for (const op of ['gte', 'lt', 'lte']) b[op] = (key, value) => {
+      q.filters.push(row => op === 'gte' ? Date.parse(row[key]) >= Date.parse(value) : op === 'lt' ? Date.parse(row[key]) < Date.parse(value) : Date.parse(row[key]) <= Date.parse(value));
+      return b;
+    };
     b.or = (expression) => {
+      if (expression.startsWith('created_at.lt.')) {
+        const match = expression.match(/^created_at\.lt\.(.+),and\(created_at\.eq\.(.+),id\.lt\.([\da-f-]+)\)$/i);
+        assert.ok(match); assert.equal(match[1], match[2]);
+        q.filters.push(row => Date.parse(row.created_at) < Date.parse(match[1]) || (Date.parse(row.created_at) === Date.parse(match[1]) && row.id < match[3]));
+        return b;
+      }
       assert.equal(expression, 'source_type.neq.one_on_one_application,raw_result->>provider.is.null,raw_result->>provider.neq.rules_cron');
       q.filters.push(row => row.source_type !== 'one_on_one_application' || row.raw_result?.provider !== 'rules_cron');
       return b;
@@ -295,11 +305,13 @@ function database(seed, options = {}) {
     b.range = (from, to) => { q.from = from; q.to = to; return b; };
     b.limit = (n) => { q.to = n - 1; return b; };
     b.maybeSingle = () => { q.single = true; return b; };
+    b.single = b.maybeSingle;
+    b.insert = row => { q.op = 'insert'; q.rows = [row]; return b; };
     b.upsert = (rows, config) => { q.op = "upsert"; q.rows = Array.isArray(rows) ? rows : [rows]; q.ignoreDuplicates = config?.ignoreDuplicates; return b; };
     b.update = (row) => { q.op = "update"; q.row = row; return b; };
     b.delete = () => { q.op = "delete"; return b; };
     b.then = (yes, no) => Promise.resolve().then(() => {
-      calls.push({ table, op: q.op });
+      calls.push({ table, op: q.op, limit: q.to + 1, head: q.head });
       if (options.fail?.(q)) return { data: null, error: { code: "XX000", message: "fixture database error" } };
       options.beforeExec?.(q, tables);
       if (q.op !== "select") {
@@ -315,18 +327,22 @@ function database(seed, options = {}) {
           tables[table] = tables[table].filter((row) => !removed.includes(row));
           return { data: removed, error: null };
         }
+        const written = [];
         for (const row of q.rows) {
           const existing = tables[table].find((entry) => entry.source_type === row.source_type && entry.card_id === row.card_id);
+          if (existing && q.op === 'insert') return { data: null, error: { code: '23505' } };
           if (existing && !q.ignoreDuplicates) Object.assign(existing, row);
           else if (existing) continue;
           else tables[table].push({ id: uid(100 + tables[table].length), ...row });
+          written.push(tables[table].find(entry => entry.source_type === row.source_type && entry.card_id === row.card_id));
         }
-        return { data: q.single ? q.rows[0] : q.rows, error: null };
+        return { data: q.single ? written[0] : written, error: null };
       }
       let rows = (tables[table] ?? []).filter((row) => q.filters.every((filter) => filter(row)));
+      const count = rows.length;
       for (const [key, config] of [...q.orders].reverse()) rows = rows.sort((a, b) => String(a[key]).localeCompare(String(b[key])) * (config?.ascending ? 1 : -1));
       rows = rows.slice(q.from, q.to + 1);
-      return { data: q.single ? rows[0] ?? null : rows, error: null };
+      return { data: q.head ? null : q.single ? rows[0] ?? null : rows, error: null, ...(q.count ? { count } : {}) };
     }).then(yes, no);
     return b;
   }, storage: { from() { throw new Error("Rules scan must not download photos"); } } };
@@ -360,6 +376,7 @@ function loadRoute(db, options = {}) {
     if (!(id in deps)) throw new Error('Unexpected shared review import: ' + id);
     return deps[id];
   });
+  deps['@/lib/admin-today-profiles'] = compile('lib/admin-today-profiles.ts', id => { throw Error('Unexpected daily helper dependency: ' + id); });
   return compile(options.cron ? "app/api/cron/dating-1on1-card-review/route.ts" : "app/api/admin/dating/card-ai-review/route.ts", (id) => {
     if (!(id in deps)) throw new Error("Unexpected import: " + id);
     return deps[id];
@@ -603,6 +620,98 @@ const confirmationRequest = (item, extra = {}) => new Request("https://fixture.i
   method: "PATCH", body: JSON.stringify({ action: "confirm_normal", sourceType: item.sourceType, cardId: item.cardId, snapshot: item.confirmationSnapshot, ...extra }),
 });
 const listRequest = (source, confirmed = false, offset = 0) => new Request(`https://fixture.invalid/?source=${source}&view=${confirmed ? "confirmed" : "pending"}&offset=${offset}`);
+const daily = compile('lib/admin-today-profiles.ts', id => { throw Error(id); });
+const dailyRequest = (source = 'all', cursor = null) => new Request(`https://fixture.invalid/?view=today&source=${source}${cursor ? '&cursor=' + encodeURIComponent(cursor) : ''}`);
+function dailyFixtures() {
+  const seed = fixtures('다정하고 약속을 지키며 대화를 좋아합니다.');
+  const start = daily.koreaTodayRange().start;
+  for (const table of ['dating_cards', 'dating_paid_cards', 'dating_1on1_cards']) for (const row of seed[table]) row.created_at = start;
+  return seed;
+}
+test('daily date boundary is Korean midnight, exclusive end, including UTC previous day', () => {
+  assert.deepEqual(daily.koreaTodayRange(new Date('2026-10-29T15:00:00Z')), { day: '2026-10-30', start: '2026-10-29T15:00:00.000Z', end: '2026-10-30T15:00:00.000Z' });
+  assert.equal(daily.koreaTodayRange(new Date('2026-10-29T14:59:59.999Z')).day, '2026-10-29');
+});
+test('daily view includes clear, hidden and unscanned cards but not applications, old edits or tomorrow', async () => {
+  const seed = dailyFixtures(), range = daily.koreaTodayRange();
+  seed.dating_cards.push({ ...seed.dating_cards[0], id: uid(30), created_at: new Date(Date.parse(range.start) - 1).toISOString(), updated_at: new Date().toISOString() });
+  seed.dating_cards.push({ ...seed.dating_cards[0], id: uid(31), created_at: range.end });
+  const db = database(seed), before = structuredClone(db.tables), response = await loadRoute(db).GET(dailyRequest());
+  const body = await response.json(); assert.equal(response.status, 200); assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
+  assert.equal(body.total, 4); assert.equal(body.items.length, 4);
+  assert.deepEqual(body.counts, { open_card: 1, paid_card: 1, one_on_one: 2 });
+  assert.ok(body.items.some(item => item.status === 'hidden')); assert.ok(body.items.every(item => item.reviewNotSaved && item.confirmationSnapshot && item.previewUrls.length === 2));
+  assert.deepEqual(db.tables, before); assert.ok(db.calls.every(call => call.op === 'select'));
+  assert.equal(body.nextCursor, null); assert.ok(body.cursor);
+});
+test('daily keyset paging traverses every source exactly once even after deletions and new registrations', async () => {
+  const now = new Date('2026-10-30T09:00:00Z'), range = daily.koreaTodayRange(now), seed = dailyFixtures();
+  const largeId = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  for (const [table, size] of [['dating_cards', 47], ['dating_paid_cards', 3], ['dating_1on1_cards', 23]]) seed[table] = Array.from({ length: size }, (_, i) => ({ ...seed[table][0], id: largeId(i + 1), created_at: range.start }));
+  const db = database(seed), seen = new Set(); let cursor = null, pages = 0;
+  do {
+    const page = await daily.getTodayProfilePage(db.admin, 'all', cursor, now);
+    assert.ok(page.refs.length <= 20);
+    for (const ref of page.refs) { const key = ref.source + ':' + ref.id; assert.ok(!seen.has(key), key); seen.add(key); }
+    if (!pages) {
+      db.tables.dating_cards = db.tables.dating_cards.filter(row => row.id !== page.refs[0].id);
+      db.tables.dating_cards.push({ ...seed.dating_cards[0], id: largeId(100), created_at: '2026-10-30T09:01:00Z' });
+    }
+    cursor = page.nextCursor; pages++;
+    assert.ok(pages < 10);
+  } while (cursor);
+  assert.equal(seen.size, 73); assert.equal(pages, 4);
+  assert.ok(db.calls.filter(call => !call.head).every(call => call.limit <= 21));
+});
+for (const source of ['open_card', 'paid_card', 'one_on_one']) test('daily source filter only returns ' + source, async () => {
+  const body = await (await loadRoute(database(dailyFixtures())).GET(dailyRequest(source))).json();
+  assert.ok(body.items.length > 0); assert.ok(body.items.every(item => item.sourceType === source));
+  assert.deepEqual(Object.keys(body.counts), [source]);
+});
+test('daily cursor rejects date rollover, tampering, source mismatch and injection', () => {
+  const now = new Date('2026-10-30T09:00:00Z'), cursor = daily.readTodayProfileCursor(null, 'all', now);
+  const encode = x => Buffer.from(JSON.stringify(x)).toString('base64url');
+  for (const broken of [{ ...cursor, day: '2026-10-29' }, { ...cursor, filter: 'one_on_one' }, { ...cursor, source: 'open_card_application' },
+    { ...cursor, asOf: '2026-10-31T00:00:00Z' }, { ...cursor, at: cursor.asOf, id: 'x),created_at.gte.2000' },
+    { ...cursor, at: '2026-10-30T08:00:00Z),id.gt.1', id: cardId }]) assert.throws(() => daily.readTodayProfileCursor(encode(broken), 'all', now), daily.TodayProfileInputError);
+});
+test('daily authorization runs before any data access and invalid source is rejected', async () => {
+  const db = database(dailyFixtures()); assert.equal((await loadRoute(db, { denied: true }).GET(dailyRequest())).status, 403); assert.equal(db.calls.length, 0);
+  assert.equal((await loadRoute(db).GET(dailyRequest('one_on_one_application'))).status, 400); assert.equal(db.calls.length, 0);
+});
+test('daily source failure fails the whole page instead of pretending missing profiles do not exist', async () => {
+  const db = database(dailyFixtures(), { fail: q => q.table === 'dating_paid_cards' });
+  const r = await loadRoute(db).GET(dailyRequest()); assert.equal(r.status, 500); assert.equal((await r.json()).items, undefined);
+});
+test('daily unscanned normal confirmation persists explicitly, survives reload and leaves all member data intact', async () => {
+  const db = database(dailyFixtures()), route = loadRoute(db), before = structuredClone(Object.fromEntries(Object.entries(db.tables).filter(([table]) => !table.startsWith('admin_'))));
+  const item = (await (await route.GET(dailyRequest('one_on_one'))).json()).items[0];
+  assert.equal(item.reviewNotSaved, true);
+  const reply = await route.PATCH(confirmationRequest(item, { allowUnscanned: true })); assert.equal(reply.status, 200);
+  const reloaded = (await (await route.GET(dailyRequest('one_on_one'))).json()).items.find(x => x.cardId === item.cardId);
+  assert.equal(reloaded.confirmationCurrent, true); assert.ok(reloaded.confirmationId); assert.ok(!reloaded.reviewNotSaved);
+  assert.deepEqual(Object.fromEntries(Object.entries(db.tables).filter(([table]) => !table.startsWith('admin_'))), before);
+});
+test('daily stale unscanned content requires another explicit confirmation and no silent writes', async () => {
+  const db = database(dailyFixtures()), route = loadRoute(db);
+  const item = (await (await route.GET(dailyRequest('open_card'))).json()).items[0];
+  db.tables.dating_cards[0].strengths_text = '소개글을 바꿨고 차분하게 이야기하는 편입니다.';
+  const reply = await route.PATCH(confirmationRequest(item, { allowUnscanned: true })); const body = await reply.json();
+  assert.equal(reply.status, 409); assert.equal(body.code, 'REVIEW_CHANGED'); assert.equal(body.item.reviewNotSaved, true);
+  assert.equal(db.tables.admin_dating_card_ai_reviews.length, 0); assert.equal(db.tables.admin_dating_review_confirmations.length, 0);
+});
+test('daily concurrent review insert is never overwritten by a normal confirmation', async () => {
+  const db = database(dailyFixtures(), { beforeExec: (q, tables) => { if (q.op === 'insert') tables.admin_dating_card_ai_reviews.push({ ...q.rows[0], id: uid(90), summary: 'other administrator review' }); } });
+  const route = loadRoute(db), item = (await (await route.GET(dailyRequest('open_card'))).json()).items[0];
+  assert.equal((await route.PATCH(confirmationRequest(item, { allowUnscanned: true }))).status, 409);
+  assert.equal(db.tables.admin_dating_card_ai_reviews[0].summary, 'other administrator review'); assert.equal(db.tables.admin_dating_review_confirmations.length, 0);
+});
+test('daily missing confirmation storage retains all cards but disables normal confirmation', async () => {
+  const db = database(dailyFixtures(), { fail: q => q.table === 'admin_dating_review_confirmations' });
+  const body = await (await loadRoute(db).GET(dailyRequest())).json();
+  assert.equal(body.items.length, 4); assert.equal(body.confirmationAvailable, false); assert.ok(body.warning);
+  assert.ok(body.items.every(item => !item.confirmationSnapshot));
+});
 const sourceTables = { open_card: "dating_cards", paid_card: "dating_paid_cards", one_on_one: "dating_1on1_cards",
   open_card_application: "dating_card_applications", paid_card_application: "dating_paid_card_applications", one_on_one_application: "dating_1on1_cards" };
 async function scanFixture(source = "one_on_one", options = {}) {

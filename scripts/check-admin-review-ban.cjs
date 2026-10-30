@@ -43,6 +43,7 @@ function ui(items, options = {}) {
       useRef: (initial) => refs[refIndex++] ??= { current: initial },
     };
     if (id === "react/jsx-runtime") return require(id);
+    if (id === "@/components/admin/AdminAutomaticProfileReviewPanel") return { default: () => null };
     throw new Error("Unexpected UI dependency: " + id);
   }, async (url, init) => {
     if (!init?.method) return Response.json({ ok: true, items });

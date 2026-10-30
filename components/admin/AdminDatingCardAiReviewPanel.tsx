@@ -53,6 +53,7 @@ type ReviewItem = {
   confirmationId?: string | null;
   confirmedAt?: string | null;
   confirmationCurrent?: boolean;
+  reviewNotSaved?: boolean;
 };
 
 type ScanResponse = {
@@ -67,6 +68,11 @@ type ScanResponse = {
   warning?: string;
   confirmedCount?: number;
   nextOffset?: number | null;
+  nextCursor?: string | null;
+  cursor?: string;
+  day?: string;
+  total?: number;
+  counts?: Record<string, number>;
 };
 
 type ActionResponse = {
@@ -232,13 +238,17 @@ export default function AdminDatingCardAiReviewPanel() {
   const banInFlight = useRef(false);
   const workInFlight = useRef(false);
   const listEpoch = useRef(0);
-  const [view, setView] = useState<"pending" | "confirmed">("pending");
+  const [view, setView] = useState<"pending" | "confirmed" | "today">("pending");
   const [loadingList, setLoadingList] = useState(false);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [warning, setWarning] = useState("");
   const [confirmationError, setConfirmationError] = useState<{ key: string; message: string } | null>(null);
+  const [today, setToday] = useState<{ day: string; total: number; counts: Record<string, number> } | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [todayCursors, setTodayCursors] = useState<(string | null)[]>([null]);
+  const [todayPage, setTodayPage] = useState(0);
 
-  const loadLatest = useCallback(async (offset = 0) => {
+  const loadLatest = useCallback(async (offset = 0, cursor: string | null = null, pageNumber = 0) => {
     if (workInFlight.current || banInFlight.current) return;
     const epoch = ++listEpoch.current;
     setLoadingList(true);
@@ -249,15 +259,25 @@ export default function AdminDatingCardAiReviewPanel() {
       if (source !== "all") query.set("source", source);
       if (includeClear) query.set("includeClear", "true");
       if (view === "confirmed") query.set("view", "confirmed");
+      if (view === "today") {
+        query.set("view", "today");
+        if (cursor) query.set("cursor", cursor);
+      }
       if (offset) query.set("offset", String(offset));
       const res = await fetch(`/api/admin/dating/card-ai-review${query.size ? `?${query.toString()}` : ""}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as ScanResponse;
       if (epoch !== listEpoch.current) return;
       if (!res.ok || body.ok === false) throw new Error(body.message || "최근 검수 목록을 불러오지 못했습니다.");
-      setItems((prev) => offset
+      setItems((prev) => offset && view !== "today"
         ? [...new Map([...prev, ...(body.items ?? [])].map((item) => [itemKey(item), item])).values()]
         : body.items ?? []);
       setNextOffset(body.nextOffset ?? null);
+      setNextCursor(body.nextCursor ?? null);
+      if (view === "today") {
+        setToday({ day: body.day ?? "", total: body.total ?? 0, counts: body.counts ?? {} });
+        setTodayPage(pageNumber);
+        setTodayCursors(prev => [...prev.slice(0, pageNumber), body.cursor ?? cursor]);
+      }
       setWarning(body.warning ?? "");
     } catch (err) {
       if (epoch !== listEpoch.current) return;
@@ -275,6 +295,7 @@ export default function AdminDatingCardAiReviewPanel() {
   }, [loadLatest, invalidateList]);
 
   const runScan = async (mode: ReviewMode) => {
+    if (view === "today") return; // Daily view is read-only until an explicit moderation action.
     if (workInFlight.current || banInFlight.current || processingKey || loadingList) return;
     workInFlight.current = true;
     listEpoch.current++;
@@ -502,7 +523,8 @@ export default function AdminDatingCardAiReviewPanel() {
       const res = await fetch("/api/admin/dating/card-ai-review", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: undo ? "undo_confirmation" : "confirm_normal", sourceType, cardId,
-          snapshot: item.confirmationSnapshot, confirmationId: item.confirmationId }),
+          snapshot: item.confirmationSnapshot, confirmationId: item.confirmationId,
+          ...(item.reviewNotSaved ? { allowUnscanned: true } : {}) }),
       });
       const body = (await res.json().catch(() => ({}))) as ActionResponse;
       if (res.status === 409 && body.code === "REVIEW_CHANGED" && body.sourceType === sourceType
@@ -517,7 +539,10 @@ export default function AdminDatingCardAiReviewPanel() {
       if (!res.ok || body.ok !== true || body.sourceType !== sourceType || body.cardId !== cardId || (!undo && !body.confirmationId)) {
         throw new Error(body.message || "정상 확인 처리 결과를 확인하지 못했습니다. 최근 결과를 다시 불러와 주세요.");
       }
-      setItems((prev) => prev.filter((candidate) => itemKey(candidate) !== key));
+      setItems((prev) => view === "today"
+        ? prev.map(candidate => itemKey(candidate) === key ? { ...candidate, reviewNotSaved: false,
+          confirmationCurrent: !undo, confirmationId: undo ? null : body.confirmationId } : candidate)
+        : prev.filter((candidate) => itemKey(candidate) !== key));
       setEditingKey("");
       setInfo(body.message || (undo ? "정상 확인을 취소했습니다." : "정상으로 확인해 검수 목록에서 숨겼습니다."));
     } catch (err) {
@@ -532,13 +557,19 @@ export default function AdminDatingCardAiReviewPanel() {
 
   return (
     <div className="space-y-4">
-      <AdminAutomaticProfileReviewPanel />
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50/50 px-4 py-3">
+        <span className="text-sm font-semibold text-neutral-900">오늘 올라온 프로필을 한곳에서</span>
+        <button type="button" disabled={processingKey !== "" || loadingMode !== null || loadingList}
+          onClick={() => { if (view === "today" && source === "all") void loadLatest(); else { setItems([]); setSource("all"); setView("today"); setInfo(""); setNextOffset(null); setNextCursor(null); setToday(null); } }}
+          className="rounded-lg bg-neutral-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">오늘 신규 전체 보기</button>
+      </div>
+      {view !== "today" && <AdminAutomaticProfileReviewPanel />}
       <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-violet-900">카드/지원 내역 검수</p>
+            <p className="text-sm font-semibold text-violet-900">{view === "today" ? "오늘 신규 프로필 검수" : "카드/지원 내역 검수"}</p>
             <p className="mt-1 text-xs text-neutral-500">
-              일반 검수는 욕설·성적인 문구·외부 연락 유도·광고·부실 소개를 확인하고, AI 검수는 사진까지 확인합니다. 검수 결과만으로 자동 삭제하거나 제재하지 않습니다.
+              {view === "today" ? "한국 시간 00시 이후 처음 등록된 프로필만 표시해요. 기존 프로필 수정·재공개와 지원 내역은 제외하며, 정상·숨김·정상 확인 완료 항목도 포함합니다. 사진은 직접 확인해 주세요." : "일반 검수는 욕설·성적인 문구·외부 연락 유도·광고·부실 소개를 확인하고, AI 검수는 사진까지 확인합니다. 검수 결과만으로 자동 삭제하거나 제재하지 않습니다."}
             </p>
           </div>
           <button
@@ -547,7 +578,7 @@ export default function AdminDatingCardAiReviewPanel() {
             disabled={processingKey !== "" || loadingMode !== null || loadingList}
             className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700"
           >
-            최근 결과
+            {view === "today" ? "오늘 목록 새로고침" : "최근 결과"}
           </button>
         </div>
 
@@ -555,18 +586,19 @@ export default function AdminDatingCardAiReviewPanel() {
           <select
             value={source}
             disabled={processingKey !== "" || loadingMode !== null || loadingList}
-            onChange={(event) => setSource(event.target.value as SourceType)}
+            aria-label="검수 대상"
+            onChange={(event) => { setItems([]); setNextOffset(null); setNextCursor(null); setToday(null); setSource(event.target.value as SourceType); }}
             className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm"
           >
-            <option value="all">전체: 카드/지원 내역</option>
+            <option value="all">{view === "today" ? "전체 신규 프로필" : "전체: 카드/지원 내역"}</option>
             <option value="open_card">오픈카드</option>
-            <option value="paid_card">유료카드</option>
+            <option value="paid_card">대기없이 등록</option>
             <option value="one_on_one">1대1 카드</option>
-            <option value="open_card_application">오픈카드 지원</option>
+            {view !== "today" && <><option value="open_card_application">오픈카드 지원</option>
             <option value="paid_card_application">유료카드 지원</option>
-            <option value="one_on_one_application">1대1 지원</option>
+            <option value="one_on_one_application">1대1 지원</option></>}
           </select>
-          <input
+          {view !== "today" && <><input
             value={limit}
             onChange={(event) => setLimit(event.target.value)}
             inputMode="numeric"
@@ -590,20 +622,25 @@ export default function AdminDatingCardAiReviewPanel() {
             >
               {loadingMode === "ai" ? "AI 중..." : "AI 검수"}
             </button>
-          </div>
+          </div></>}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2" aria-label="검수 목록 구분">
-          {([ ["pending", "확인할 항목"], ["confirmed", "정상 확인 목록"] ] as const).map(([value, label]) => (
+          {([ ["today", "오늘 신규 전체"], ["pending", "확인할 항목"], ["confirmed", "정상 확인 목록"] ] as const).map(([value, label]) => (
             <button key={value} type="button" aria-pressed={view === value}
               disabled={processingKey !== "" || loadingMode !== null || loadingList}
-              onClick={() => { if (view !== value) { setItems([]); setInfo(""); setNextOffset(null); setView(value); } }}
+              onClick={() => { if (view !== value) { setItems([]); setInfo(""); setNextOffset(null); setNextCursor(null); setToday(null); if (value === "today") setSource("all"); setView(value); } }}
               className={`h-8 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50 ${view === value ? "border-neutral-800 bg-neutral-800 text-white" : "border-neutral-200 bg-white text-neutral-600"}`}>
               {label}
             </button>
           ))}
         </div>
-        <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-neutral-600">
+        {view === "today" && today ? <div className="mt-3 rounded-xl bg-neutral-50 p-3 text-xs text-neutral-700" role="status">
+          <p className="font-semibold">{today.day} · 한국 시간 · 전체 {today.total}개</p>
+          <p className="mt-1">{Object.entries(today.counts).map(([key, count]) => `${key === "paid_card" ? "대기없이 등록" : SOURCE_LABEL[key]} ${count}개`).join(" · ")}</p>
+          <p className="mt-1 text-neutral-500">종류별 최신순 · 한 화면에 20개씩 · 새 등록은 새로고침 시 반영</p>
+        </div> : null}
+        {view !== "today" && <><label className="mt-3 flex items-center gap-2 text-xs font-semibold text-neutral-600">
           <input
             type="checkbox"
             checked={includeClear}
@@ -618,7 +655,7 @@ export default function AdminDatingCardAiReviewPanel() {
         </p>
         <p className="mt-1 text-[11px] text-neutral-500">
           정상 확인한 내용은 검수 목록에서만 숨깁니다. 내용·사진 수정 또는 새 등록 후에는 재검수하며, 정상 확인 목록에서 취소할 수 있습니다.
-        </p>
+        </p></>}
         {info ? <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{info}</p> : null}
         {warning ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">{warning}</p> : null}
         {error ? <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
@@ -626,7 +663,7 @@ export default function AdminDatingCardAiReviewPanel() {
 
       {items.length === 0 ? (
         <div className="rounded-2xl border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-500">
-          {loadingList ? "검수 목록을 불러오는 중입니다." : view === "confirmed" ? "표시할 정상 확인 항목이 없습니다." : "표시할 의심 카드/지원 내역이 없습니다."}
+          {loadingList ? "검수 목록을 불러오는 중입니다." : view === "today" ? "이 페이지에 표시할 오늘 신규 프로필이 없습니다." : view === "confirmed" ? "표시할 정상 확인 항목이 없습니다." : "표시할 의심 카드/지원 내역이 없습니다."}
         </div>
       ) : (
         <div className="grid gap-3">
@@ -644,6 +681,7 @@ export default function AdminDatingCardAiReviewPanel() {
             const banResult = bannedUsers[userId];
             const targetLabel = isApplicationSource(sourceType) ? "지원 삭제" : "카드 삭제";
             const draft = editDrafts[key] ?? editableFieldsFromItem(item);
+            const undoConfirmation = view === "confirmed" || (view === "today" && item.confirmationCurrent === true);
             return (
               <div key={`${sourceType}-${cardId}`} className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
@@ -669,27 +707,29 @@ export default function AdminDatingCardAiReviewPanel() {
                     <p className="mt-1 break-all text-[11px] text-neutral-400">
                       card {cardId} / user {itemUserId(item) || "-"}
                     </p>
+                    {view === "today" && item.createdAt ? <p className="mt-1 text-xs text-neutral-500">등록 {new Date(item.createdAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}{item.confirmationCurrent ? " · ✓ 정상 확인 완료" : ""}</p> : null}
                   </div>
                   {item.previewUrls && item.previewUrls.length > 0 ? (
                     <div className="flex gap-2">
-                      {item.previewUrls.map((url) => (
+                      {item.previewUrls.map((url, photoIndex) => (
+                        <a key={url} href={url} target="_blank" rel="noreferrer" aria-label={`검수 사진 ${photoIndex + 1} 확대`}>
                         <img
-                          key={url}
                           src={url}
                           alt="검수 사진"
-                          className="h-20 w-20 rounded-xl border border-neutral-200 object-cover"
-                        />
+                          loading="lazy"
+                          className={view === "today" ? "h-40 w-32 rounded-xl border border-neutral-200 bg-neutral-50 object-contain" : "h-20 w-20 rounded-xl border border-neutral-200 object-cover"}
+                        /></a>
                       ))}
                     </div>
                   ) : null}
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button type="button" onClick={() => void confirmNormal(item, view === "confirmed")}
-                    disabled={processingKey !== "" || loadingMode !== null || loadingList || (view === "confirmed" ? !item.confirmationId : !item.confirmationSnapshot)}
-                    title={view === "confirmed" ? "관리자의 정상 확인을 취소합니다. 실제 카드 공개 상태는 바뀌지 않습니다." : item.confirmationSnapshot ? "현재 확인한 내용만 검수 목록에서 숨깁니다." : "내용이 변경됐거나 이전 검수 결과입니다. 일반 검수를 다시 실행해 주세요."}
+                  <button type="button" onClick={() => void confirmNormal(item, undoConfirmation)}
+                    disabled={processingKey !== "" || loadingMode !== null || loadingList || (undoConfirmation ? !item.confirmationId : !item.confirmationSnapshot)}
+                    title={undoConfirmation ? "관리자의 정상 확인을 취소합니다. 실제 카드 공개 상태는 바뀌지 않습니다." : item.confirmationSnapshot ? "현재 확인한 내용만 정상으로 기록합니다. 오늘 전체 목록에는 남습니다." : "내용이 변경됐거나 이전 검수 결과입니다. 일반 검수를 다시 실행해 주세요."}
                     className="h-9 rounded-xl border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50">
-                    {processingKey === `confirmation:${key}` ? "처리 중..." : view === "confirmed" ? "정상 확인 취소" : item.confirmationSnapshot ? "✓ 정상 확인" : "재검수 필요"}
+                    {processingKey === `confirmation:${key}` ? "처리 중..." : undoConfirmation ? "정상 확인 취소" : item.confirmationSnapshot ? "✓ 정상 확인" : "재검수 필요"}
                   </button>
                   <button
                     type="button"
@@ -880,7 +920,13 @@ export default function AdminDatingCardAiReviewPanel() {
           })}
         </div>
       )}
-      {nextOffset !== null ? (
+      {view === "today" ? <div className="flex items-center justify-end gap-3 text-sm">
+        <button type="button" disabled={todayPage === 0 || loadingList || processingKey !== ""}
+          onClick={() => void loadLatest(0, todayCursors[todayPage - 1], todayPage - 1)} className="rounded-lg border bg-white px-3 py-2 disabled:opacity-40">이전 20개</button>
+        <span>{todayPage + 1}페이지</span>
+        <button type="button" disabled={!nextCursor || loadingList || processingKey !== ""}
+          onClick={() => void loadLatest(0, nextCursor, todayPage + 1)} className="rounded-lg border bg-white px-3 py-2 disabled:opacity-40">다음 20개</button>
+      </div> : nextOffset !== null ? (
         <button type="button" onClick={() => void loadLatest(nextOffset)}
           disabled={loadingList || loadingMode !== null || processingKey !== ""}
           className="h-10 w-full rounded-xl border border-neutral-200 bg-white text-xs font-semibold text-neutral-700 disabled:opacity-50">

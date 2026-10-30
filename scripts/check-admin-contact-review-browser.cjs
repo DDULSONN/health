@@ -56,6 +56,10 @@ async function main() {
         const req=route.request(),url=new URL(req.url());
         assert.equal(url.origin,origin,'External traffic forbidden');
         if(!url.pathname.startsWith('/api/'))return route.continue();
+        if(url.pathname==='/api/admin/dating/automatic-review') {
+          assert.equal(req.method(),'GET','Automatic review is read-only in this fixture');
+          return route.fulfill({json:{ok:true,items:[],enabled:false}});
+        }
         assert.equal(url.pathname,'/api/admin/dating/card-ai-review','No member, matching, email or payment endpoints');
         if(req.method()==='POST') {
           const body=req.postDataJSON();assert.equal(body.mode,'rules');scans++;
