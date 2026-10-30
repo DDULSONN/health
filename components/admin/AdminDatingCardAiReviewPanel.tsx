@@ -576,7 +576,7 @@ export default function AdminDatingCardAiReviewPanel() {
             type="button"
             onClick={() => void loadLatest()}
             disabled={processingKey !== "" || loadingMode !== null || loadingList}
-            className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700"
+            className="h-9 shrink-0 whitespace-nowrap rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700"
           >
             {view === "today" ? "오늘 목록 새로고침" : "최근 결과"}
           </button>
