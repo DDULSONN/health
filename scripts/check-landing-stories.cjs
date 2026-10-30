@@ -4,15 +4,15 @@ const fs = require('node:fs'), path = require('node:path'), ts = require('typesc
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 const mod = { exports: {} };
 new Function('exports', ts.transpileModule(read('lib/landing-reviews.ts'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(mod.exports);
-const { LANDING_REVIEWS, FEATURED_LANDING_REVIEWS } = mod.exports;
+const { LANDING_REVIEWS } = mod.exports;
 
-test('featured excerpts retain the exact reviewed source and no invented identity or success claims', () => {
-  assert.deepEqual(FEATURED_LANDING_REVIEWS.map(x => [x.review.src, x.quote]), [
-    ['/landing/reviews/review-08.webp', '마음에 맞는 사람을 만나게 됐습니다!!'],
-    ['/landing/reviews/review-04.webp', '첨엔 조금 걱정했는데 좋은사람같아요!'],
-    ['/landing/reviews/review-05.webp', '지방 살아도 이게 되네요 ㅠㅠ 지인들한테도 추천했어요 !!'],
-  ]);
-  for (const story of FEATURED_LANDING_REVIEWS) assert.ok(LANDING_REVIEWS.includes(story.review));
+test('all ten original screenshots are displayed directly, without replacement quotes or a collapsed gallery', () => {
+  assert.equal(LANDING_REVIEWS.length, 10);
+  for (const review of LANDING_REVIEWS) assert.ok(fs.existsSync(path.join(__dirname, '../public', review.src)));
+  const source = read('components/LandingStories.tsx');
+  assert.match(source, /LANDING_REVIEWS\.map/);
+  assert.match(source, /<img src=\{review.src\}/);
+  assert.doesNotMatch(source, /FEATURED_LANDING_REVIEWS|landing-stories-quote|allOpen|후기 더 보기/);
 });
 
 test('the primary signup path follows the reviews immediately and all existing routes stay intact', () => {
@@ -24,13 +24,17 @@ test('the primary signup path follows the reviews immediately and all existing r
   assert.doesNotMatch(source, /무료|18,000|결제/);
 });
 
-test('review presentation does not call APIs, change membership or load screenshots before interaction', () => {
+test('review presentation preserves image ratios, accessible enlargement and motion controls without member API calls', () => {
   const source = read('components/LandingStories.tsx');
   assert.doesNotMatch(source, /fetch\(|supabase|localStorage|sessionStorage|setInterval|requestAnimationFrame|<form|<input|type="submit"/);
-  assert.match(source, /allOpen \? <div/); assert.match(source, /current \? failed/);
-  assert.match(source, /LANDING_REVIEWS\.map/); assert.match(source, /loading="lazy"/);
+  assert.match(source, /current \? failed/);
+  assert.match(source, /LANDING_REVIEWS\.map/); assert.match(source, /loading=\{index < 3 && !duplicate \? "eager" : "lazy"\}/);
   assert.match(source, /object-fit: contain/); assert.match(source, /onCancel=/);
   assert.match(source, /trigger\.focus/); assert.match(source, /previousOverflow/);
   assert.match(source, /noopener,noreferrer/); assert.match(source, /만남을 보장하지 않아요/);
-  assert.doesNotMatch(source, /animation:|transition:|autoFocus/);
+  assert.match(source, /prefers-reduced-motion: reduce/);
+  assert.match(source, /aria-hidden=\{duplicate/);
+  assert.match(source, /tabIndex=\{duplicate \? -1 : 0\}/);
+  assert.match(source, /후기 자동 이동 일시정지/);
+  assert.doesNotMatch(source, /autoFocus/);
 });

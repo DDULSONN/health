@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { FEATURED_LANDING_REVIEWS, LANDING_REVIEWS } from "@/lib/landing-reviews";
+import { LANDING_REVIEWS } from "@/lib/landing-reviews";
 
 export default function LandingStories() {
   const headingId = useId();
   const dialogId = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const opener = useRef<HTMLButtonElement | null>(null);
+  const rail = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<number | null>(null);
-  const [allOpen, setAllOpen] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [failed, setFailed] = useState<string[]>([]);
   const current = selected === null ? null : LANDING_REVIEWS[selected];
 
@@ -40,39 +41,30 @@ export default function LandingStories() {
 
   return <div className="landing-stories" aria-labelledby={headingId}>
     <div className="landing-stories-heading">
-      <div>
-        <p>회원들이 보내온 이야기</p>
-        <h1 id={headingId}>짐툴에서 시작된 만남</h1>
+      <h1 id={headingId}>실제 리뷰</h1>
+      <button type="button" aria-label={paused ? "후기 자동 이동 재생" : "후기 자동 이동 일시정지"}
+        onClick={() => { if (rail.current) rail.current.scrollLeft = 0; setPaused(value => !value); }}>
+        {paused ? "재생" : "일시정지"}
+      </button>
+    </div>
+    <div ref={rail} className="landing-stories-rail" data-manual={paused} aria-label="실제 후기 사진">
+      <div className="landing-stories-track" data-open={selected !== null}>
+        {[false, true].map(duplicate => <div key={String(duplicate)} className="landing-stories-group" aria-hidden={duplicate || undefined}>
+          {LANDING_REVIEWS.map((review, index) => <button key={review.src} type="button" className="landing-stories-card"
+            tabIndex={duplicate ? -1 : 0} aria-label={`회원 후기 ${index + 1} 원문 보기`}
+            onClick={event => openReview(index, event.currentTarget)}>
+            {failed.includes(review.src) ? <span>후기 {index + 1} · 눌러서 다시 확인</span> :
+              // Existing static WebP only; preserve the original screenshots and aspect ratios.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={review.src} width={review.width} height={review.height} alt={`짐툴 실제 리뷰 스크린샷 ${index + 1}`}
+                loading={index < 3 && !duplicate ? "eager" : "lazy"} decoding="async"
+                onError={() => setFailed(items => items.includes(review.src) ? items : [...items, review.src])} />}
+          </button>)}
+        </div>)}
       </div>
-      <span className="landing-stories-swipe">옆으로 넘겨보세요 →</span>
     </div>
-    <div className="landing-stories-cards" aria-label="실제 후기 3개">
-      {FEATURED_LANDING_REVIEWS.map(({ review, quote }) => {
-        const index = LANDING_REVIEWS.indexOf(review);
-        return <button type="button" className="landing-stories-card" key={review.src}
-          aria-label={`${quote} · 후기 원문 보기`} onClick={event => openReview(index, event.currentTarget)}>
-          <span className="landing-stories-quote">“{quote}”</span>
-          <span className="landing-stories-card-foot"><span>회원 후기 중 일부</span><span>원문 보기 ↗</span></span>
-        </button>;
-      })}
-    </div>
-    <div className="landing-stories-meta">
-      <span>개인의 경험으로, 만남의 결과는 다를 수 있어요.</span>
-      <button type="button" aria-expanded={allOpen} aria-controls={`${headingId}-all`}
-        onClick={() => setAllOpen(value => !value)}>{allOpen ? "후기 접기 −" : "후기 더 보기 +"}</button>
-    </div>
-    <div id={`${headingId}-all`} hidden={!allOpen}>
-      {allOpen ? <div className="landing-stories-gallery">
-        {LANDING_REVIEWS.map((review, index) => <button key={review.src} type="button"
-          aria-label={`회원 후기 ${index + 1} 원문 보기`} onClick={event => openReview(index, event.currentTarget)}>
-          {failed.includes(review.src) ? <span>후기 {index + 1} · 이미지 확인 불가</span> :
-            // Existing static WebP only; no originals, member APIs or new image transforms.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={review.src} width={review.width} height={review.height} alt="" loading="lazy" decoding="async"
-              onError={() => setFailed(items => items.includes(review.src) ? items : [...items, review.src])} />}
-        </button>)}
-      </div> : null}
-    </div>
+    <p className="landing-stories-hint">사진을 누르면 크게 볼 수 있어요.</p>
+    <p className="landing-stories-note">리뷰 속 유기견은 인스타그램 크리에이터 일반사람이 쓰는 표현으로, 헬스는 열심히 하지만 아직 연애는 못 하고 있는 사람을 뜻하는 농담이에요.</p>
     <dialog ref={dialog} className="landing-stories-dialog" aria-labelledby={dialogId}
       onCancel={event => { event.preventDefault(); setSelected(null); }}
       onClose={event => { if (!event.currentTarget.open) setSelected(null); }}
@@ -90,23 +82,21 @@ export default function LandingStories() {
 
 const STYLES = `
 .landing-stories { min-width: 0; color: #202024; }
-.landing-stories-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-.landing-stories-heading p { margin: 0 0 7px; font-size: 12px; color: #777780; }
-.landing-stories-heading h1 { margin: 0; font-size: clamp(23px, 3vw, 30px); font-weight: 750; letter-spacing: -.045em; line-height: 1.3; }
-.landing-stories-swipe { display: none; }
-.landing-stories-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.landing-stories .landing-stories-card { display: flex; flex-direction: column; justify-content: space-between; gap: 22px; min-width: 0; min-height: 170px; padding: 22px 20px 16px; border: 1px solid #e7e5e7; border-radius: 16px; background: #fff; color: #202024; text-align: left; cursor: pointer; box-shadow: none; }
-.landing-stories .landing-stories-card:first-child { background: #fff8fa; border-color: #f2dce4; }
-.landing-stories-quote { display: block; font-size: 18px; font-weight: 650; line-height: 1.65; letter-spacing: -.025em; word-break: keep-all; overflow-wrap: anywhere; }
-.landing-stories-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: #86838a; }
-.landing-stories-card-foot > span:last-child { color: #5d5961; white-space: nowrap; }
+.landing-stories-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.landing-stories-heading h1 { margin: 0; font-size: 13px; font-weight: 700; color: #707078; }
+.landing-stories-heading button { min-height: 32px; padding: 4px 0 4px 8px; border: 0; background: transparent; color: #89848b; font-size: 11px; cursor: pointer; }
+.landing-stories-rail { overflow: hidden; border-radius: 12px; }
+.landing-stories-track { display: flex; width: max-content; animation: landing-stories-drift 90s linear infinite; }
+.landing-stories-group { display: flex; flex: 0 0 auto; gap: 12px; padding-right: 12px; }
+.landing-stories .landing-stories-card { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: clamp(256px, 34vw, 352px); height: clamp(140px, 16vw, 180px); padding: 7px; overflow: hidden; border: 1px solid #e7e5e7; border-radius: 12px; background: #f8f8f9; color: #625c65; cursor: zoom-in; }
+.landing-stories-card img { width: 100%; height: 100%; object-fit: contain; border-radius: 7px; }
 .landing-stories button:focus-visible { outline: 2px solid #ed174c; outline-offset: -3px; }
-.landing-stories-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; color: #89848b; font-size: 11px; }
-.landing-stories-meta > span { line-height: 1.5; }
-.landing-stories .landing-stories-meta button { flex-shrink: 0; min-height: 44px; padding: 8px 0 8px 12px; border: 0; background: transparent; color: #625c65; font-size: 12px; font-weight: 500; cursor: pointer; }
-.landing-stories-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding-top: 10px; }
-.landing-stories-gallery button { min-width: 0; height: 150px; padding: 6px; border: 1px solid #e7e5e7; border-radius: 10px; background: #fafafa; color: #625c65; cursor: zoom-in; }
-.landing-stories-gallery img { width: 100%; height: 100%; object-fit: contain; }
+.landing-stories-track[data-open="true"], .landing-stories-track:focus-within { animation-play-state: paused; }
+.landing-stories-rail[data-manual="true"], .landing-stories-rail:has(:focus-visible) { overflow-x: auto; }
+.landing-stories-rail[data-manual="true"] .landing-stories-track, .landing-stories-track:has(:focus-visible) { animation: none; }
+.landing-stories-rail[data-manual="true"] .landing-stories-group[aria-hidden="true"] { display: none; }
+.landing-stories-hint { margin: 7px 0; color: #89848b; font-size: 11px; }
+.landing-stories-note { max-width: 608px; margin: 0; color: #8a8a91; font-size: 11px; line-height: 1.55; }
 .landing-stories-dialog { position: fixed; inset: 0; margin: auto; width: calc(100% - 32px); max-width: 720px; max-height: 85dvh; padding: 16px; border: 1px solid #e7e5e7; border-radius: 18px; background: #fff; color: #202024; overflow: auto; }
 .landing-stories-dialog::backdrop { background: rgb(0 0 0 / 60%); }
 .landing-stories-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -114,14 +104,7 @@ const STYLES = `
 .landing-stories-dialog header button { min-height: 44px; padding: 8px 12px; border: 1px solid #e7e5e7; border-radius: 10px; background: #fff; font-size: 13px; cursor: pointer; }
 .landing-stories-dialog img { display: block; width: 100%; height: auto; object-fit: contain; }
 .landing-stories-dialog p { margin: 12px 0 0; font-size: 11px; line-height: 1.6; color: #79727e; }
-@media (max-width: 640px) {
-  .landing-stories-heading { display: block; margin-bottom: 12px; }
-  .landing-stories-swipe { display: block; margin-top: 9px; color: #89848b; font-size: 11px; }
-  .landing-stories-cards { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: #ded8dc transparent; padding-bottom: 8px; }
-  .landing-stories .landing-stories-card { flex: 0 0 85%; min-height: 165px; padding: 20px 18px 16px; scroll-snap-align: start; }
-  .landing-stories-quote { font-size: 18px; }
-  .landing-stories-meta { align-items: center; font-size: 10px; }
-  .landing-stories-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .landing-stories-gallery button { height: 110px; }
-}
+@keyframes landing-stories-drift { to { transform: translateX(-50%); } }
+@media (hover: hover) and (pointer: fine) { .landing-stories-rail:hover .landing-stories-track { animation-play-state: paused; } }
+@media (prefers-reduced-motion: reduce) { .landing-stories-track { animation: none; } .landing-stories-rail { overflow-x: auto; } .landing-stories-group[aria-hidden="true"] { display: none; } .landing-stories-heading button { display: none; } }
 `;

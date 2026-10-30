@@ -20,19 +20,18 @@ const { chromium } = require('./test-browser-runtime.cjs');
     };
     for (const width of [320, 390, 768, 1280]) {
       const f = await fixture({ viewport: { width, height: 900 }, reducedMotion: 'reduce' }), { page } = f;
-      await page.goto(origin + '/landing'); await page.getByRole('heading', { name: '짐툴에서 시작된 만남' }).waitFor();
-      assert.equal(f.images.length, 0, 'No screenshot downloads before opening');
+      await page.goto(origin + '/landing'); await page.getByRole('heading', { name: '실제 리뷰', exact: true }).waitFor();
+      await page.waitForFunction(() => { const img = document.querySelector('.landing-stories-card img'); return img?.complete && img.naturalWidth > 0; });
+      assert.ok(f.images.length > 0, 'Original screenshots load without an extra click');
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       assert.ok((await page.locator('.brandIcon').boundingBox()).width <= 40, 'Preview retains the actual image class and dimensions');
-      assert.equal(await page.locator('.landing-stories-card').count(), 3);
+      assert.equal(await page.locator('.landing-stories-group').first().locator('.landing-stories-card').count(), 10);
       const cta = page.getByRole('link', { name: '가입하고 프로필 만들기', exact: true });
       assert.ok((await cta.boundingBox()).y < 600, 'Main action visible without a long scroll');
       await page.screenshot({ path: path.join(output, `landing-stories-${width}.png`), fullPage: true });
-      if (width < 641) {
-        await page.locator('.landing-stories-cards').evaluate(el => { el.scrollLeft = el.scrollWidth; });
-        assert.ok(await page.locator('.landing-stories-cards').evaluate(el => el.scrollLeft > 0));
-      }
-      for (const [index, src] of [[0, '08'], [1, '04'], [2, '05']]) {
+      await page.locator('.landing-stories-rail').evaluate(el => { el.scrollLeft = el.scrollWidth; });
+      assert.ok(await page.locator('.landing-stories-rail').evaluate(el => el.scrollLeft > 0));
+      for (const [index, src] of [[0, '01'], [1, '02'], [2, '03'], [9, '10']]) {
         const card = page.locator('.landing-stories-card').nth(index); await card.click();
         const modal = page.getByRole('dialog', { name: '회원이 보내주신 후기' }); await modal.waitFor();
         await page.waitForFunction(() => { const img = document.querySelector('.landing-stories-dialog img'); return img?.complete && img.naturalWidth > 0; });
@@ -43,19 +42,13 @@ const { chromium } = require('./test-browser-runtime.cjs');
         assert.equal(await page.evaluate(() => document.body.style.overflow), '');
         assert.ok(await card.evaluate(el => el === document.activeElement));
       }
-      await page.getByRole('button', { name: '후기 더 보기 +' }).click();
-      assert.equal(await page.locator('.landing-stories-gallery button').count(), 10);
-      await page.getByRole('button', { name: '회원 후기 1 원문 보기', exact: true }).click();
-      await page.getByRole('dialog').getByRole('button', { name: '닫기', exact: true }).click();
-      await page.getByRole('button', { name: '후기 접기 −' }).click();
-      assert.equal(await page.locator('.landing-stories-gallery').count(), 0);
       await cta.click(); await page.waitForURL(origin + '/signup');
       await page.getByRole('button', { name: 'Google로 계속하기' }).waitFor();
       assert.equal(await page.getByRole('checkbox').isChecked(), false, 'Marketing consent unchanged');
       assert.deepEqual(f.errors, []); passed++; await f.context.close();
     }
     for (const mode of ['image-error', 'no-dialog', 'keyboard', 'normal-motion']) {
-      const f = await fixture(), { page } = f;
+      const f = await fixture({ reducedMotion: mode === 'normal-motion' ? 'no-preference' : 'reduce' }), { page } = f;
       if (mode === 'image-error') await page.route('**/landing/reviews/*.webp', route => route.fulfill({ status: 404, body: '' }));
       if (mode === 'no-dialog') await page.addInitScript(() => {
         HTMLDialogElement.prototype.showModal = undefined; window.fixtureOpened = [];
@@ -63,11 +56,22 @@ const { chromium } = require('./test-browser-runtime.cjs');
       });
       await page.goto(origin + '/landing'); const card = page.locator('.landing-stories-card').first();
       if (mode === 'normal-motion') {
-        await page.waitForFunction(() => getComputedStyle(document.querySelector('.stage')).visibility === 'hidden');
-        assert.equal(await card.evaluate(el => getComputedStyle(el).animationName), 'none');
+        await page.waitForFunction(() => { const stage = document.querySelector('.stage'); return stage && getComputedStyle(stage).visibility === 'hidden'; });
+        const track = page.locator('.landing-stories-track');
+        assert.equal(await track.evaluate(el => getComputedStyle(el).animationName), 'landing-stories-drift');
+        const before = await track.evaluate(el => getComputedStyle(el).transform);
+        await page.waitForTimeout(250);
+        assert.notEqual(await track.evaluate(el => getComputedStyle(el).transform), before, 'Actual photo rail moves');
+        await page.getByRole('button', { name: '후기 자동 이동 일시정지' }).click();
+        assert.equal(await track.evaluate(el => getComputedStyle(el).animationName), 'none');
+        await page.locator('.landing-stories-rail').evaluate(el => { el.scrollLeft = 300; });
+        assert.ok(await page.locator('.landing-stories-rail').evaluate(el => el.scrollLeft > 0));
+        await page.getByRole('button', { name: '후기 자동 이동 재생' }).click();
+        assert.equal(await page.locator('.landing-stories-rail').evaluate(el => el.scrollLeft), 0);
+        await page.getByRole('button', { name: '후기 자동 이동 일시정지' }).click();
       }
       if (mode === 'keyboard') { await card.focus(); await page.keyboard.press('Enter'); } else await card.click();
-      if (mode === 'no-dialog') assert.deepEqual(await page.evaluate(() => window.fixtureOpened), [['/landing/reviews/review-08.webp', '_blank', 'noopener,noreferrer']]);
+      if (mode === 'no-dialog') assert.deepEqual(await page.evaluate(() => window.fixtureOpened), [['/landing/reviews/review-01.webp', '_blank', 'noopener,noreferrer']]);
       else {
         const modal = page.getByRole('dialog'); await modal.waitFor();
         if (mode === 'image-error') await modal.getByRole('status').waitFor();
