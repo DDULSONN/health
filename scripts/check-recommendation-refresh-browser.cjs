@@ -118,7 +118,7 @@ async function main() {
             case '/api/dating/1on1/recommendations/my':
               if (posts && !recover && ['read-failure', 'no-change-read-failure'].includes(scenario)) { await route.fulfill({ status: 503, json: { error: '로컬 조회 실패' } }); return; }
               if (posts && !recover && scenario === 'bad-read') { await route.fulfill({ json: { items: [null] } }); return; }
-              body = { items: [{ source_card_id: profile.id, source_card_status: 'approved', recommendations: [{
+              body = { items: [{ source_card_id: profile.id, source_card_status: 'approved', candidate_pool_count:30, recovery_refresh_applied:false, recommendations: [{
                 ...profile, id: posts && !noChange ? 'candidate-new' : 'candidate-old', user_id: 'other', sex: 'male',
                 name: posts && !noChange ? repeatRotation ? `다른 기존 후보 ${posts}` : '새 후보' : '이전 후보',
               }], admin_recommendations: [], favorite_candidates: [],
@@ -148,6 +148,8 @@ async function main() {
             assert.equal(posts, 0, 'checking an expired quota display is GET-only');
           }
           await refresh.waitFor();
+          await page.getByText('아직 새로고침이 남아 있어요 👀 어떤 분이 나올지 살펴볼까요?',{exact:true}).waitFor();
+          assert.equal(posts,0,'unused hint is read-only');
           const plus = page.locator('[data-one-on-one-plus-status]').first();
           if (scenario !== 'non-plus') {
             await plus.waitFor();
@@ -221,6 +223,7 @@ async function main() {
           }
           assert.equal(alerts.length, 0, 'no native confirm or alert dependency');
           if (!needsRecovery) await page.getByRole('status').filter({ hasText: repeatRotation ? '이전에 본 후보 중 다른 1명' : noChange ? '횟수를 사용하지 않았어요.' : '새로고침 1회를 사용했어요.' }).waitFor();
+          if (!needsRecovery) assert.equal(await page.getByText('아직 새로고침이 남아 있어요 👀 어떤 분이 나올지 살펴볼까요?',{exact:true}).count(),0,'result replaces the reminder, including no-charge attempts');
           if (width === 360 && repeatRotation) {
             await page.getByRole('status').filter({ hasText: '이전에 본 후보' }).scrollIntoViewIfNeeded();
             await page.screenshot({ path: path.join(output, surface + '-mobile-repeat-rotation.png') });

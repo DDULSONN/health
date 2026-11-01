@@ -1,5 +1,11 @@
 // Presentation only. Eligibility and consumption remain server-authoritative.
 export type OneOnOneRefreshUsage = {
+  source_card_id?: string;
+  source_card_status?: string;
+  refresh_used_at?: string | null;
+  refresh_used_count?: number;
+  candidate_pool_count?: number;
+  recovery_refresh_applied?: boolean;
   recommendation_region_widened?: boolean;
   refresh_limit?: number;
   refresh_remaining?: number;
@@ -16,6 +22,22 @@ export const ONE_ON_ONE_REFRESH_POLICY_COPY =
 
 export const ONE_ON_ONE_WIDER_REGION_COPY =
   "주변 새 후보가 적어 지역을 넓혔어요. 가까운 새 후보는 우선 추천해요.";
+
+export const ONE_ON_ONE_UNUSED_REFRESH_COPY = "아직 새로고침이 남아 있어요 👀 어떤 분이 나올지 살펴볼까요?";
+
+// A small in-page hint only. Never infer eligibility from a browser clock alone,
+// promise unseen candidates, or trigger a refresh/notification request.
+export function shouldShowOneOnOneRefreshReminder(usage?: OneOnOneRefreshUsage | null, nowMs = Date.now()) {
+  if (!usage || !Number.isFinite(nowMs) || typeof usage.source_card_id !== "string" || !usage.source_card_id.trim() ||
+    !["submitted", "reviewing", "approved"].includes(usage.source_card_status ?? "") ||
+    usage.can_refresh !== true || count(usage.refresh_remaining, 1) === null ||
+    usage.refresh_used_count !== 0 || count(usage.candidate_pool_count, 1) === null ||
+    usage.recovery_refresh_applied === true) return false;
+  // Undefined/invalid timestamps are unknown, not proof of an unused allowance.
+  if (usage.refresh_used_at === null) return true;
+  const lastUsedMs = typeof usage.refresh_used_at === "string" ? Date.parse(usage.refresh_used_at) : NaN;
+  return Number.isFinite(lastUsedMs) && nowMs - lastUsedMs >= 24 * 60 * 60 * 1000;
+}
 
 // Disabled can mean loading/error/invalid card, not just an exhausted allowance.
 export function shouldOfferOneOnOnePlus(usage: OneOnOneRefreshUsage | null | undefined, plusActive: boolean) {

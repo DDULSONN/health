@@ -33,6 +33,29 @@ const nextAt = '2026-09-17T14:56:35.484405+00:00';
 const quota = (remaining = 1, limit = 2) => ({ source_card_id: 'fixture-card', refresh_limit: limit,
   refresh_remaining: remaining, can_refresh: remaining > 0, next_refresh_at: remaining === 0 ? nextAt : null });
 
+const reminderNow=Date.parse('2026-11-01T06:00:00Z');
+const unused={...quota(),source_card_status:'approved',refresh_used_count:0,refresh_used_at:null,candidate_pool_count:20,recovery_refresh_applied:false};
+test('unused refresh reminder uses existing eligible metadata; never refreshed and 24h-old are included',()=>{
+  assert.equal(copy.shouldShowOneOnOneRefreshReminder(unused,reminderNow),true);
+  assert.equal(copy.shouldShowOneOnOneRefreshReminder({...unused,refresh_used_at:'2026-10-31T06:00:00Z'},reminderNow),true);
+  assert.equal(copy.shouldShowOneOnOneRefreshReminder({...unused,refresh_used_at:'2026-10-31T15:00:00+09:00'},reminderNow),true);
+  assert.equal(copy.shouldShowOneOnOneRefreshReminder({...unused,refresh_bonus_remaining:2},reminderNow),true);
+  assert.doesNotMatch(copy.ONE_ON_ONE_UNUSED_REFRESH_COPY,/새 후보가|새로운 후보가|반드시|무료|오늘만/);
+});
+for(const change of [
+  {can_refresh:false},{can_refresh:undefined},{refresh_remaining:0},{refresh_remaining:-1},{refresh_remaining:NaN},{refresh_remaining:1.5},{refresh_remaining:'2'},
+  {refresh_used_count:1},{refresh_used_count:undefined},{refresh_used_at:undefined},{refresh_used_at:'invalid'},
+  {refresh_used_at:'2026-10-31T06:00:00.001Z'},{refresh_used_at:'2026-11-02T06:00:00Z'},
+  {source_card_id:''},{source_card_id:42},{source_card_status:'hidden'},{source_card_status:'rejected'},{source_card_status:undefined},
+  {candidate_pool_count:0},{candidate_pool_count:undefined},{recovery_refresh_applied:true}
+])test('unused reminder excludes unknown/recent/ineligible state '+JSON.stringify(change),()=>{
+  assert.equal(copy.shouldShowOneOnOneRefreshReminder({...unused,...change},reminderNow),false);
+});
+test('missing usage and invalid time never show a refresh reminder',()=>{
+  for(const usage of [null,undefined,{}])assert.equal(copy.shouldShowOneOnOneRefreshReminder(usage,reminderNow),false);
+  assert.equal(copy.shouldShowOneOnOneRefreshReminder(unused,NaN),false);
+});
+
 test('compensation copy separates bonus from rolling quota without inventing a larger subscription', () => {
   const input={...quota(4,2),refresh_bonus_remaining:2};
   assert.match(copy.getOneOnOneRefreshCopy(input).summary,/일반 2회 \+ 보상 2회/);
@@ -222,6 +245,18 @@ test('all affected customer copy drops ambiguous calendar-day/completion wording
 const controlSource = ast('components/dating/OneOnOneRefreshControl.tsx');
 const controlFn = find(controlSource, n => ts.isFunctionDeclaration(n) && n.name?.text === 'OneOnOneRefreshControl');
 const renderControl = evaluate('exports.render = ' + controlFn.getText(controlSource).replace('export default ', '') + ';', { ...copy, useState: value => [value, () => {}] }).render;
+
+test('compact unused hint adds no action, fetch or consent bypass; busy/error/result hides it',()=>{
+  let calls=0;
+  for(const flags of [{},{busy:true},{blocked:true},{notice:{kind:'error',message:'확인해 주세요.'}},{notice:{kind:'success',message:'후보가 바뀌었어요.'}}]){
+    const tree=renderControl({usage:unused,busy:false,onRequest:()=>calls++,...flags});
+    assert.equal(text(tree).includes(copy.ONE_ON_ONE_UNUSED_REFRESH_COPY),Object.keys(flags).length===0);
+    assert.equal(nodes(tree).filter(n=>n.type==='button').length,1);
+    assert.equal(calls,0,'rendering the hint never sends a request');
+  }
+  const tree=renderControl({usage:unused,busy:false,onRequest:()=>calls++});
+  nodes(tree).find(n=>n.type==='button').props.onClick();assert.equal(calls,1,'original handler remains the only action');
+});
 test('wider-region notice is compact, read-only, and absent on local or legacy responses', () => {
   for (const widened of [undefined, false, true, 'true', 1]) {
     const tree = renderControl({ usage: { ...quota(), recommendation_region_widened: widened }, busy: false, onRequest() {} });
