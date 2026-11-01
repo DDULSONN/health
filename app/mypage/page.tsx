@@ -72,6 +72,7 @@ const AdminRegistrationSexCounts = dynamic(() => import("@/components/admin/Admi
 const AdminActiveOneOnOneCounts = dynamic(() => import("@/components/admin/AdminActiveOneOnOneCounts"));
 const AdminUserContactExchangesPanel = dynamic(() => import("@/components/admin/AdminUserContactExchangesPanel"));
 const AdminContactCarePanel = dynamic(() => import("@/components/admin/AdminContactCarePanel"));
+const AdminContactVoucherPanel = dynamic(() => import("@/components/admin/AdminContactVoucherPanel"));
 const AdminFriendSharesPanel = dynamic(() => import("@/components/admin/AdminFriendSharesPanel"));
 const FriendShareSettings = dynamic(() => import("@/components/dating/sharing/FriendShareSettings"));
 const ContactCarePanel = dynamic(() => import("@/components/dating/ContactCarePanel"));
@@ -14585,6 +14586,7 @@ export default function MyPage() {
                   ) : null}
 
                   {adminUserActivityResult.user ? <AdminContactCarePanel userId={adminUserActivityResult.user.id} /> : null}
+                  {adminUserActivityResult.user ? <AdminContactVoucherPanel userId={adminUserActivityResult.user.id} /> : null}
 
                   {adminUserActivityResult.deleted_audits.length > 0 ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">

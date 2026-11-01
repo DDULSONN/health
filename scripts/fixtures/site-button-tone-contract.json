@@ -6,7 +6,7 @@
   "contextualOffersReview": "Home navigation is compact with quota-zero offers only for verified known users. Existing home handlers unchanged. Apply page replaces only DAILY_APPLY_LIMIT presentation, retaining checkout lock, draft, return URL and submission handlers. Covered by check-contextual-paid-offers(-browser), check-apply-credit-checkout, check-city-preview-and-card-order, check-profile-writing-browser and check-revenue-journey-browser. Existing matching, fulfillment and phone-disclosure rules are unchanged.",
   "reviewedUxBaseline": "Legacy navigation, completion and inline feedback reviewed against ac955ce. Candidate-hide controls reviewed against e45dd22: all 116 existing My Page handlers unchanged. Home hides reviewed against 91ff9fd: existing handlers unchanged; only unsent proposals are filtered. Hidden-slot notices reviewed against 0b02832: only the hide-success text changes in these pages. Covered by check-candidate-hides, check-home-candidate-hides, recommendation hide-slot tests and real-page home/mypage hide/restore/reload/refresh browser tests.",
   "files": {
-    "app/mypage/page.tsx": "8aedfb0cf2df6dfd367a2aacc0b3fcd90f9e73fc366bb2686577702b8bc190f2",
+    "app/mypage/page.tsx": "9820f17b7cb9ddab6890fcf9663e42c0ced66077edb606eee4e8b59f1a87834f",
     "app/community/dating/cards/page.tsx": "cb219e9ab66d58546f41bdd7483c7a128d1d2ab38294d62e714aadfdecfed61f",
     "app/community/dating/cards/[id]/page.tsx": "3869e13f9080c4201b7b52d3629355ae99592c61907d034a35053f34f0d7f0d2",
     "app/community/dating/cards/[id]/apply/page.tsx": "26f2c7ae8093e79dca36e165e9476d210b26f239b6ac5ccd5fc64da65f27c9c9",
