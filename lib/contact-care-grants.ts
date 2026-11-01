@@ -16,7 +16,7 @@ export function parseContactVoucherGrant(value: unknown): ContactVoucherGrantInp
     typeof v.userId !== "string" || !CONTACT_CARE_UUID.test(v.userId) ||
     typeof v.expectedNickname !== "string" || !v.expectedNickname.trim() || v.expectedNickname.length > 100 ||
     typeof v.quantity !== "number" || !Number.isSafeInteger(v.quantity) || v.quantity < 1 || v.quantity > CONTACT_VOUCHER_GRANT_LIMIT ||
-    typeof v.reason !== "string" || v.reason.trim().length < 5 || v.reason.length > 300 || v.confirmed !== true) return null;
+    typeof v.reason !== "string" || Array.from(v.reason.trim()).length < 5 || v.reason.length > 300 || v.confirmed !== true) return null;
   return { requestId: v.requestId.toLowerCase(), userId: v.userId.toLowerCase(), expectedNickname: v.expectedNickname,
     quantity: v.quantity, reason: v.reason.trim(), confirmed: true };
 }

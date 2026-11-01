@@ -15,6 +15,8 @@ test('strict grant input / Korean / no caller-selected admin',()=>{
  for(const quantity of [0,-1,11,1.1,'1',null,NaN,Infinity])assert.equal(logic.parseContactVoucherGrant({...input,quantity}),null);
  for(const patch of [{confirmed:false},{confirmed:'true'},{userId:'bad'},{requestId:'bad'},{reason:'짧다'},{reason:'가'.repeat(301)},{expectedNickname:''}])assert.equal(logic.parseContactVoucherGrant({...input,...patch}),null);
  assert.equal(logic.parseContactVoucherGrant({...input,quantity:10}).quantity,10);
+ assert.equal(logic.parseContactVoucherGrant({...input,reason:'🙂🙂🙂'}),null,'Unicode minimum matches PostgreSQL char_length');
+ assert.equal(logic.parseContactVoucherGrant({...input,reason:'🙂🙂🙂🙂🙂'}).reason,'🙂🙂🙂🙂🙂');
 });
 const check=(name,fn)=>test(name,async()=>{const f=await fixture();try{await fn(f);}finally{await f.db.close();}});
 check('1 and 10 vouchers, replay, migration rerun; orders/phones/claims unchanged',async f=>{
