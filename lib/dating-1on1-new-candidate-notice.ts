@@ -5,14 +5,15 @@ import { getRegionDistanceMeta } from "@/lib/region-distance";
 export type OneOnOneNewCandidateNotice = { state: "waiting" | "updated"; new_candidate_count: number };
 const WEEK_MS = 7 * 86400000;
 
-// Presentation metadata only. Use this member's committed pages AND actual
-// impressions; merely reloading/acknowledging the current page is not a repeat.
-// Missing history means unknown, not an exhausted pool or a reason to upsell.
-export function getOneOnOneNewCandidateNotice({ source, visible, observations, pages, pageAt, nowMs }: {
+// Presentation metadata only. Actual views before this page are evidence of a
+// repeat even when the two latest saved pages differ (or have expired).
+// Views of this page itself must never turn an ordinary reload into a repeat.
+// Missing impressions mean unknown, not an exhausted pool or a reason to upsell.
+export function getOneOnOneNewCandidateNotice({ source, visible, observations, pageAt, nowMs }: {
   source: RecommendationCandidate;
   visible: RecommendationCandidate[];
   observations: ObservedCandidate[];
-  pages?: RecommendationPageVisit[];
+  pages?: RecommendationPageVisit[]; // Kept for callers; page overlap is not an exposure requirement.
   pageAt: number;
   nowMs: number;
 }): OneOnOneNewCandidateNotice | null {
@@ -20,17 +21,6 @@ export function getOneOnOneNewCandidateNotice({ source, visible, observations, p
   const sourceCreated = Date.parse(source.created_at);
   if (!Number.isFinite(sourceCreated)) return null;
   const since = Math.max(nowMs - WEEK_MS, sourceCreated);
-  const uniquePages = new Map<number, Set<string>>();
-  for (const page of pages ?? []) {
-    if (Number.isFinite(page.at) && page.at >= since && page.at <= pageAt && page.ids.length) {
-      uniquePages.set(page.at, new Set(page.ids));
-    }
-  }
-  const recent = [...uniquePages].sort(([a], [b]) => b - a).slice(0, 2);
-  if (recent.length < 2) return null;
-  const [, latestIds] = recent[0], [, previousIds] = recent[1];
-  const overlap = [...latestIds].filter(id => previousIds.has(id)).length;
-  if (overlap < Math.ceil(Math.max(latestIds.size, previousIds.size) / 2)) return null;
   const seenBeforePage = new Set(observations.filter(row => Number.isFinite(row.at) && row.at >= since && row.at < pageAt).map(row => row.id));
   const uniqueVisible = [...new Map(visible.map(card => [card.id, card])).values()];
   if (uniqueVisible.filter(card => seenBeforePage.has(card.id)).length < Math.ceil(uniqueVisible.length / 2)) return null;

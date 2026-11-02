@@ -38,7 +38,7 @@ const card = (id, overrides = {}) => ({
 const source = card("source", { sex: "male", age: 30 });
 const ids = (cards) => cards.map((candidate) => candidate.id);
 
-test('personal newcomer notice requires repeated committed pages and earlier actual impressions', () => {
+test('personal newcomer notice uses earlier actual impressions, not overlap between committed pages', () => {
   const { getOneOnOneNewCandidateNotice: notice } = load('@/lib/dating-1on1-new-candidate-notice');
   const visible = Array.from({ length: 10 }, (_, i) => card('seen-' + i));
   const pageAt = now - 3600000;
@@ -51,6 +51,8 @@ test('personal newcomer notice requires repeated committed pages and earlier act
     { pages: [args.pages[0], { at: pageAt, ids: ['different-1', 'different-2'] }] },
     { pages: args.pages.map(p => ({ ...p, at: p.at - 8 * day })) },
     { pages: args.pages.map(p => ({ ...p, at: p.at + 2 * day })) },
+  ]) assert.deepEqual(notice({ ...args, ...patch }), { state: 'waiting', new_candidate_count: 0 });
+  for (const patch of [
     { observations: [] }, { observations: args.observations.map(o => ({ ...o, at: pageAt })) },
     { observations: args.observations.map(o => ({ ...o, at: now + 1 })) },
     { observations: args.observations.map(o => ({ ...o, at: now - 8 * day })) },
@@ -62,6 +64,38 @@ test('personal newcomer notice requires repeated committed pages and earlier act
   for (const patch of [{ age: 65 }, { region: '알 수 없는 곳' }, { created_at: new Date(now + 1).toISOString() }]) {
     assert.deepEqual(notice({ ...args, visible: [{ ...newCard, ...patch }, ...visible.slice(0, 9)] }), { state: 'waiting', new_candidate_count: 0 });
   }
+});
+
+test('recent real exposures catch daily repeats even when the last 23 saved pages differ', () => {
+  const { getOneOnOneNewCandidateNotice: notice } = load('@/lib/dating-1on1-new-candidate-notice');
+  const visible = Array.from({ length: 10 }, (_, i) => card('real-seen-' + i));
+  const pageAt = now - 3600000;
+  const args = { source, visible, pageAt, nowMs: now,
+    observations: visible.map(c => ({ id: c.id, at: now - 2 * day })),
+    pages: Array.from({ length: 23 }, (_, i) => ({ at: pageAt - (i + 1) * 1000,
+      ids: Array.from({ length: 13 }, (_, j) => `page-${i}-${j}`) })) };
+  const before = structuredClone(args);
+  assert.deepEqual(notice(args), { state: 'waiting', new_candidate_count: 0 });
+  assert.deepEqual(args, before, 'presentation must not mutate candidates, exposure history or saved pages');
+});
+
+test('repeat notice threshold counts unique visible people and only exposures before this page', () => {
+  const { getOneOnOneNewCandidateNotice: notice } = load('@/lib/dating-1on1-new-candidate-notice');
+  const visible = Array.from({ length: 10 }, (_, i) => card('threshold-' + i));
+  const pageAt = now - 3600000;
+  const args = { source, visible, pageAt, nowMs: now };
+  const seen = visible.map(c => ({ id: c.id, at: pageAt - 1 }));
+  assert.equal(notice({ ...args, observations: seen.slice(0,4) }), null);
+  assert.deepEqual(notice({ ...args, observations: seen.slice(0,5) }), { state: 'waiting', new_candidate_count: 0 });
+  assert.equal(notice({ ...args, observations: Array(20).fill(seen[0]) }), null);
+  assert.equal(notice({ ...args, observations: seen.map(o=>({...o, at: pageAt})) }), null);
+  assert.equal(notice({ ...args, observations: seen.map(o=>({...o, at: now})) }), null);
+  assert.equal(notice({ ...args, observations: seen.map(o=>({...o, at: NaN})) }), null);
+  assert.equal(notice({ ...args, observations: seen.map(o=>({...o, at: now-7*day-1})) }), null);
+  assert.deepEqual(notice({ ...args, observations: seen.map(o=>({...o, at: now-7*day})) }), { state: 'waiting', new_candidate_count: 0 });
+  assert.equal(notice({ ...args, visible: [...visible,...Array(20).fill(visible[0])], observations: seen.slice(0,4) }), null);
+  assert.deepEqual(notice({ ...args, visible: visible.slice(0,9), observations: seen.slice(0,5) }), { state: 'waiting', new_candidate_count: 0 });
+  assert.equal(notice({ ...args, observations: seen, source: {...source, created_at:'invalid'} }), null);
 });
 
 test('protected hidden slots are not replaced by automatic newcomer promotion', () => {
@@ -931,11 +965,12 @@ function fixture(size = 15) {
   };
 }
 
-async function runApi(tables, { intercept, signedIn = true, atTime } = {}) {
+async function runApi(tables, { intercept, signedIn = true, atTime, noticeEnabled = true } = {}) {
   const db = mockDatabase(tables, intercept);
   const apiLoad = createLoader({
     "@/lib/supabase/server": { createAdminClient: () => db },
     "@/lib/supabase/request": { getRequestAuthContext: async () => ({ user: signedIn ? { id: "user-source" } : null }) },
+    ...(noticeEnabled ? {} : { '@/lib/dating-1on1-new-candidate-notice': { getOneOnOneNewCandidateNotice: () => null } }),
   }, atTime);
   const { GET } = apiLoad("@/app/api/dating/1on1/recommendations/my/route");
   const response = await GET(new Request("http://localhost/api/dating/1on1/recommendations/my"));
@@ -945,7 +980,7 @@ async function runApi(tables, { intercept, signedIn = true, atTime } = {}) {
   return { response, body, calls: db.calls };
 }
 
-for (const mode of ['daily', 'saved', 'legacy']) test(`personal repeat notice and newcomer arrival through actual API: ${mode}`, async () => {
+for (const mode of ['daily', 'saved', 'legacy']) for (const historyMode of ['overlap', 'disjoint', 'missing']) test(`personal repeat notice and newcomer arrival through actual API: ${mode}/${historyMode}`, async () => {
   const tables = fixture(13);
   const initialAt = now - 3600000;
   const own = tables.dating_1on1_cards[0];
@@ -957,6 +992,9 @@ for (const mode of ['daily', 'saved', 'legacy']) test(`personal repeat notice an
     { ...saved, refreshed_at: new Date(now - 2 * day).toISOString() },
     { ...saved, refreshed_at: new Date(mode === 'daily' ? now - day : initialAt).toISOString() },
   ];
+  if (historyMode === 'disjoint') tables.dating_1on1_recommendation_page_history[0] = {
+    ...tables.dating_1on1_recommendation_page_history[0], main_candidate_ids: ['earlier-other-person'], extra_candidate_ids: [] };
+  if (historyMode === 'missing') tables.dating_1on1_recommendation_page_history = [];
   tables.dating_1on1_candidate_impressions = candidates.map(c => ({ viewer_user_id: own.user_id,
     candidate_user_id: c.user_id, first_seen_at: new Date(now - day).toISOString() }));
   if (mode !== 'daily') {
@@ -984,12 +1022,17 @@ for (const mode of ['daily', 'saved', 'legacy']) test(`personal repeat notice an
   assert.deepEqual(tables, snapshot, 'GET does not write quota, pages, payment or matches');
   assert.ok(after.calls.every(q => !q.insert && !q.update && !q.delete));
   assert.ok(after.calls.filter(q => q.table === 'dating_1on1_recommendation_page_history').every(q => q.filters.some(f => f[0] === 'eq' && f[1] === 'user_id' && f[2] === own.user_id)));
+  const withoutNotice = await runApi(tables, { atTime: now + 1000, noticeEnabled: false });
+  const omitNotice = body => ({ ...body, items: body.items.map(({ new_candidate_notice, ...item }) => { void new_candidate_notice; return item; }) });
+  assert.deepEqual(omitNotice(after.body), omitNotice(withoutNotice.body), 'notice changes no recommendation order, quota, favorites, photos, or refresh eligibility');
+  assert.deepEqual(after.calls, withoutNotice.calls, 'notice adds no DB queries or writes');
   tables.dating_1on1_candidate_impressions.push({ viewer_user_id: own.user_id,
     candidate_user_id: fresh.user_id, first_seen_at: new Date(now + 1001).toISOString() });
   for (let step = 0; step < 5; step++) {
     const again = await runApi(tables, { atTime: now + 1002 + step });
     assert.deepEqual(ids(allCandidates(again.body)), ids(allCandidates(after.body)), 'acknowledgements and reloads do not cycle candidates');
     assert.equal(again.body.items[0].refresh_remaining, group.refresh_remaining);
+    assert.deepEqual(again.body.items[0].new_candidate_notice, group.new_candidate_notice);
   }
 });
 
