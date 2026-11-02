@@ -19,9 +19,13 @@ async function startPreview(port = 0) {
     });
     compiler.run((error, stats) => { compiler.close(() => {}); if (error || stats.hasErrors()) reject(error || Error(stats.toString({ all: false, errors: true }))); else resolve(); });
   });
-  const cssRoot = process.env.PROFILE_UX_CSS_DIR || path.join(root, '.next/static/css');
+  const cssRoot = process.env.PROFILE_UX_CSS_DIR;
+  // Compile current UI classes for fixtures; stale build CSS can hide regressions.
+  const builtCss = cssRoot
+    ? fs.readdirSync(cssRoot).filter(p => p.endsWith('.css')).map(p => fs.readFileSync(path.join(cssRoot, p), 'utf8')).join('\n')
+    : (await require('postcss')([require('@tailwindcss/postcss')({ base: root })]).process(fs.readFileSync(path.join(root,'app/globals.css'),'utf8'), { from: path.join(root,'app/globals.css') })).css;
   // RootLayout normally defines these via next/font; retain its Korean system-font fallback locally.
-  const css = fs.readdirSync(cssRoot).filter(p => p.endsWith('.css')).map(p => fs.readFileSync(path.join(cssRoot, p), 'utf8')).join('\n') + '\n:root{--font-geist-sans:Arial;--font-geist-mono:monospace}';
+  const css = builtCss + '\n:root{--font-geist-sans:Arial;--font-geist-mono:monospace}';
   const server = http.createServer((req, res) => {
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'");
     const url = new URL(req.url, 'http://localhost');
@@ -45,7 +49,9 @@ async function startPreview(port = 0) {
       if (url.pathname === '/api/dating/cards/write-enabled') body = { enabled: true };
       if (url.pathname === '/api/dating/cards/queue-stats') body = { male: { public_count: 0, pending_count: 0, slot_limit: 45 }, female: { public_count: 0, pending_count: 0, slot_limit: 45 } };
       if (url.pathname === '/api/dating/cards/viewer-sex') body = { status: 'resolved', viewerSex: 'female', targetSex: 'male', source: 'metadata', canSwitchSex: false, requiresSexSelection: false };
+      if (url.pathname === '/api/dating/cards/list') body = { items: [], hasMore: false, audience: { status: String(req.headers.referer || '').includes('visitor=guest') ? 'guest' : 'resolved', viewerSex: 'female', targetSex: 'male', canSwitchSex: false } };
       if (url.pathname === '/api/site/ad-inquiry') body = { enabled: false };
+      if (url.pathname === '/api/dating/paid/my/status') body = { card: null, checked_at: new Date().toISOString() };
       res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify(body)); return;
     }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');

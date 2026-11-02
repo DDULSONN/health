@@ -148,6 +148,7 @@ export default function OneOnOneHomePanel({
   viewerLoggedIn,
   profileStartHref,
   profileStartCta,
+  profileDraftAvailable = false,
   loading,
   sessionError,
   onRetrySession,
@@ -179,6 +180,7 @@ export default function OneOnOneHomePanel({
   viewerLoggedIn: boolean;
   profileStartHref: string;
   profileStartCta: string;
+  profileDraftAvailable?: boolean;
   loading: boolean;
   sessionError: boolean;
   onRetrySession: () => void;
@@ -371,14 +373,18 @@ export default function OneOnOneHomePanel({
           </div>
         ) : !viewerLoggedIn ? (
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-            <p className="text-sm font-semibold text-neutral-900">내 프로필로 시작하는 1대1 매칭</p>
-            <p className="mt-2 text-[13px] leading-6 text-neutral-600">프로필을 등록하고 추천 후보에게 요청을 보내세요. 서로 수락한 뒤 연락처를 교환할 수 있어요.</p>
+            <p className="text-base font-semibold text-neutral-900">나와 맞는 분을 추천받아 보세요</p>
+            <p className="mt-1 text-sm leading-6 text-neutral-500">내 소개를 작성하면 나이와 지역을 고려해 추천해요.</p>
             <p className="mt-2 text-xs leading-5 text-neutral-500">등록·요청 무료 · 연락처 교환 건당 {ONE_ON_ONE_CONTACT_PRICE_KRW.toLocaleString("ko-KR")}원</p>
+            {!targetMatchId && !focusIncomingRequests ? <Link href="/signup"
+              className="mr-4 mt-3 inline-flex min-h-11 items-center rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white hover:bg-rose-700">
+              가입하고 내 소개 쓰기
+            </Link> : null}
             <Link
               href={buildLoginRedirect(targetMatchId ? oneOnOneMatchHref(targetMatchId) : focusIncomingRequests ? `${ONE_ON_ONE_HOME_HREF}&focus=incoming` : ONE_ON_ONE_HOME_HREF)}
-              className="mt-3 inline-flex min-h-[42px] items-center rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700"
+              className={targetMatchId || focusIncomingRequests ? "mt-3 inline-flex min-h-11 items-center rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700" : "mt-3 inline-flex min-h-11 items-center text-xs text-neutral-500 underline underline-offset-4 hover:text-neutral-800"}
             >
-              로그인하기
+              {targetMatchId || focusIncomingRequests ? "로그인하기" : "이미 가입했어요"}
             </Link>
           </div>
         ) : error ? (
@@ -388,11 +394,11 @@ export default function OneOnOneHomePanel({
           </div>
         ) : (
           <div className="flex flex-col gap-5">
-            {!hasOneOnOneCard ? (
+            {!hasOneOnOneCard && !profileDraftAvailable ? (
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-            <p className="text-base font-semibold text-neutral-900">내 소개를 등록하고 후보를 만나보세요</p>
+            <p className="text-base font-semibold text-neutral-900">내 소개를 올리면 추천이 시작돼요</p>
             <p className="mt-2 text-[13px] leading-6 text-neutral-600">
-              사진과 소개를 작성하면 추천 후보를 확인할 수 있어요. 프로필 등록과 매칭 요청은 무료예요.
+              사진 2장과 소개를 준비해 주세요. 등록하고 바로 후보를 볼 수 있어요.
             </p>
             <p className="mt-1 text-xs leading-5 text-neutral-500">서로 수락한 후 연락처 교환은 건당 {ONE_ON_ONE_CONTACT_PRICE_KRW.toLocaleString("ko-KR")}원이에요.</p>
             <Link

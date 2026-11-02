@@ -158,7 +158,10 @@ const movedFunctions = {
   // Reviewed home hide/restore controls against 91ff9fd. Existing action functions,
   // ordering, contacts and quota are pinned separately and exercised in real pages.
   // Reviewed favorites/inbox/starter presentation; matching/payment callbacks stay separately pinned.
-  OneOnOneHomePanel: 'df2227ebff6b21bebe1a4f7a0829f2bd148c06b6a4eff51e23690f5f9f523c46',
+  // Reviewed first-use copy, guest signup CTA and duplicate-draft prompt suppression.
+  // Incoming/deep-link login returns and existing-member actions are covered by
+  // check-entry-profile-flow-browser; save/refresh/checkout handlers stay pinned.
+  OneOnOneHomePanel: '46d6aaafbc3a296d8c961a99150294c8e3071b13460ef6115b1a1e5d5aeeb8b7',
   OneOnOneCandidateCard: 'ab83423c6962c84c974052b0bf024392846e572e8f7b2a4b8c7471a8f53a16a8',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',

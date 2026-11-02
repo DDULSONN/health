@@ -22,7 +22,7 @@ export default function GuidedIntroductionField({ id, error, value, onChange, la
         <p>{example}</p>
         <p className="mt-1 text-[11px] text-neutral-500">참고만 하고, 내 이야기로 적어 주세요.</p>
       </div>
-      <textarea id={id} aria-invalid={Boolean(error)} aria-describedby={[id + "-hint", showExample ? id + "-example" : "", error ? id + "-error" : ""].filter(Boolean).join(" ")} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} rows={3} className={`block w-full rounded-lg border ${error ? "border-rose-400" : "border-neutral-300"} bg-white px-3 py-3 text-sm leading-6 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-900`} />
+      <textarea id={id} aria-invalid={Boolean(error)} aria-describedby={[id + "-hint", showExample ? id + "-example" : "", error ? id + "-error" : ""].filter(Boolean).join(" ")} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} rows={3} className={`block w-full rounded-xl border ${error ? "border-rose-400" : "border-neutral-200"} bg-neutral-50/60 px-3 py-3 text-base leading-6 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-50`} />
       <div className="mt-1.5 flex items-start justify-between gap-2">
         {error ? <p id={id + "-error"} className="text-xs leading-5 text-rose-700">{error}</p> : <span />}
         {value.length > 0 && <span aria-hidden="true" className="shrink-0 text-[11px] tabular-nums leading-5 text-neutral-400">{value.length}/{maxLength}</span>}

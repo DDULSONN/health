@@ -200,10 +200,10 @@ function PhoneVerificationContent() {
   }
 
   return (
-    <main className="mx-auto max-w-sm px-4 py-14">
+    <main className="mx-auto my-6 w-[calc(100%-2rem)] max-w-[440px] rounded-3xl border border-neutral-200 bg-white p-5 text-neutral-950 sm:my-10 sm:p-7">
       {continuesToProfile && <SignupProgress current={1} />}
-      <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <h1 className="mt-2 text-2xl font-black text-neutral-950">휴대폰 인증</h1>
+      <div>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-neutral-950">휴대폰 인증</h1>
         <p className="mt-2 text-sm leading-6 text-neutral-600">
           {continuesToProfile ? "본인 확인이 끝나면 프로필 작성으로 이어져요." : "안전한 이용을 위해 본인 확인이 필요해요."}
         </p>
@@ -212,7 +212,9 @@ function PhoneVerificationContent() {
           <button type="button" onClick={() => setCheckAttempt((value) => value + 1)} className="mt-5 h-12 w-full rounded-xl bg-neutral-950 text-sm font-bold text-white">다시 확인</button>
         ) : (
         <div className="mt-6 space-y-3">
+          <label htmlFor="onboarding-phone" className="block text-sm font-medium text-neutral-700">휴대폰 번호</label>
           <input
+            id="onboarding-phone"
             aria-label="휴대폰 번호"
             type="tel"
             inputMode="tel"
@@ -226,14 +228,14 @@ function PhoneVerificationContent() {
               setErrorCode(null);
               setInfo("");
             }}
-            placeholder="01012345678"
-            className="h-12 w-full rounded-xl border border-neutral-300 px-3 text-base outline-none focus:border-neutral-950"
+            placeholder="010 1234 5678"
+            className="h-12 w-full rounded-xl border border-neutral-200 bg-neutral-50/60 px-3 text-base outline-none focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-50"
           />
           <button
             type="button"
             onClick={sendCode}
             disabled={sending || resendAfterSec > 0}
-            className="h-12 w-full rounded-xl bg-neutral-950 text-sm font-bold text-white disabled:opacity-50"
+            className="h-12 w-full rounded-xl bg-rose-600 text-sm font-semibold text-white hover:bg-rose-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600 disabled:opacity-50"
           >
             {sending ? "발송 중..." : resendAfterSec > 0 ? `${resendAfterSec}초 후 재발송` : "인증번호 받기"}
           </button>

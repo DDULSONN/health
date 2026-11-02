@@ -13,7 +13,9 @@ const baselines = {
  // Signup-journey copy/read recovery only; unchanged mutations also pinned in check-onboarding-user.cjs.
  // Reviewed job/photo guidance only; no new required fields or persistence changes.
  // Reviewed exact /s/token authentication + post-success return; mutation hashes stay pinned separately.
- 'app/onboarding/dating/page.tsx': '176bb0bd5d71e45100f25a137c39f271b40a2a1209dc5b20379ba50a061a4c14',
+ // First-use presentation reviewed against 550ef281. Existing handlers are pinned
+ // by check-onboarding-polish; draft, error/retry and signup journeys use real-page browser tests.
+ 'app/onboarding/dating/page.tsx': '63dfc19bb7f2a140fd3c4c0c61ee6ea945b702b8fb4ffef846f0c8341c416c03',
  'app/dating/1on1/page.tsx': '4594d2f8d889979fc2a10ea59cf701a5ec5c67ad23900d68bb9ab77d298102bc',
  // Bounded raw/lite/blur upload and error text; save-after-all-upload contract
  // and unchanged-photo preservation exercised by check-dating-trust-ux-browser.cjs.

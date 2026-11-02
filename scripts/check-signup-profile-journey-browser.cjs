@@ -28,7 +28,7 @@ const { startPreview } = require('./preview-profile-writing.cjs');
       for (const [url, heading, step] of [['/signup', '회원가입', '회원가입'], [phonePath, '휴대폰 인증', '휴대폰 인증'], ['/onboarding/dating', '소개 프로필 작성', '프로필 작성']]) {
         await page.goto(origin + url);
         await page.getByRole('heading', { name: heading, exact: true }).waitFor();
-        assert.equal(await page.locator('[aria-current="step"]').innerText(), (step === '회원가입' ? '' : '›') + step);
+        assert.equal(await page.getByRole('list', { name: '시작 단계' }).locator('[aria-current="step"]').innerText(), (step === '회원가입' ? '' : '›') + step);
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no horizontal overflow');
         if (url === '/signup') {
           assert.equal(await page.getByRole('checkbox').isChecked(), false, 'marketing remains optional and unchecked');

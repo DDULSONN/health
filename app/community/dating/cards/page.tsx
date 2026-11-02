@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import ViewerSexSelection from "@/components/dating/ViewerSexSelection";
 import FriendRecommendButton, { FriendRecommendationBasketButton } from "@/components/dating/sharing/FriendRecommendButton";
 import { hideReportedMatches, hideReportedRecommendations } from "@/lib/dating-report-visibility";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
@@ -40,6 +41,7 @@ import { trackCheckoutStarted } from "@/lib/payment-analytics";
 import { readDatingJson } from "@/lib/dating-read-json";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 import AllPassProfileOfferBanner from "@/components/dating/AllPassProfileOfferBanner";
+import ProfileStartCard from "@/components/dating/ProfileStartCard";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
 import { buildOneOnOneRequestSentMessage } from "@/lib/dating-1on1-action-copy";
 import type {
@@ -2934,6 +2936,7 @@ function OpenCardsContent() {
   const showProfileStartCard =
     !showOneOnOneSection && !showLoveFortuneSection && !showDraftResumeCard &&
     viewerSessionReady && !viewerSessionError &&
+    (!showOpenCardSection || cardsAudience?.status === "guest" || cardsAudience?.status === "resolved" || cardsAudience?.status === "admin") &&
     (!viewerLoggedIn || (homeProfilePresenceReady && registeredProfileServiceCount < 2));
   const showOpenCardManagement =
     viewerLoggedIn &&
@@ -2942,23 +2945,18 @@ function OpenCardsContent() {
   const profileStartPath = showOneOnOneSection || (hasAnyOpenCardProfile && !hasActiveOneOnOneProfile)
     ? ONE_ON_ONE_ONBOARDING_HREF : "/onboarding/dating";
   const profileStartHref = viewerLoggedIn ? profileStartPath : buildLoginRedirect(profileStartPath);
-  const profileStartLabel = !viewerLoggedIn || registeredProfileServiceCount === 0
-    ? "내 프로필"
-    : hasAnyOpenCardProfile
-      ? "1:1 매칭"
-      : "오픈카드";
   const profileStartTitle = !viewerLoggedIn
-    ? "프로필을 완성해 주세요"
+    ? "마음에 드는 분이 있나요?"
     : registeredProfileServiceCount === 0
-      ? "프로필을 완성해 주세요"
+      ? "내 소개도 올려볼까요?"
       : hasAnyOpenCardProfile
-        ? "1:1 프로필을 등록해 주세요"
-        : "오픈카드를 등록해 주세요";
+        ? "1:1 추천도 받아볼까요?"
+        : "오픈카드에서도 만나보세요";
   const profileStartBody = !viewerLoggedIn || registeredProfileServiceCount === 0
-    ? "사진 2장 · 기본 정보 · 자기소개"
+    ? "내 소개를 올리면 먼저 지원을 받을 수도 있어요."
     : hasAnyOpenCardProfile
-      ? "오픈카드 내용을 가져와 1:1 프로필을 작성할 수 있어요. 기존 오픈카드는 그대로 유지돼요."
-      : "다른 회원에게 먼저 지원받으려면 오픈카드가 필요해요.";
+      ? "작성한 오픈카드 내용을 가져와 시작할 수 있어요."
+      : "내 카드를 본 회원에게 지원을 받을 수 있어요.";
   const profileStartCta = !viewerLoggedIn
     ? "로그인하고 시작하기"
     : !viewerPhoneVerified
@@ -2970,9 +2968,6 @@ function OpenCardsContent() {
         : hasAnyOpenCardProfile
           ? "기존 프로필로 시작하기"
           : "오픈카드 등록하기";
-  const profileStatusLabel = !viewerLoggedIn || registeredProfileServiceCount === 0
-    ? "시작 전"
-    : "미등록";
   const instantOpenCardOnboardingHref = "/onboarding/dating?next=instant_open_card";
   const checkPaidRegistration = paidRegistration.loading || paidRegistration.error || paidRegistration.presentation?.active;
   const instantOpenCardLabel = checkPaidRegistration ? "등록 상태 확인" : "대기 없이 등록";
@@ -3025,22 +3020,10 @@ function OpenCardsContent() {
       {showDraftResumeCard && profileDraft ? <DatingDraftResumeCard draft={profileDraft} href="/onboarding/dating" /> : null}
       <AllPassProfileOfferBanner placement="matching_home_profile_complete" />
       {showProfileStartCard ? (
-        <section className="mb-4 overflow-hidden rounded-2xl border border-rose-100 bg-[#fffafb] shadow-[0_8px_24px_rgba(190,24,93,0.06)]">
-          <div className="px-4 py-4 sm:px-5 sm:py-5">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-black tracking-[-0.01em] text-rose-700">{profileStartLabel}</p>
-              <span className="shrink-0 rounded-full border border-rose-100 bg-white px-2.5 py-1 text-[11px] font-bold text-rose-600">{profileStatusLabel}</span>
-            </div>
-            <h1 className="mt-3 text-xl font-black leading-7 tracking-[-0.025em] text-neutral-950">{profileStartTitle}</h1>
-            <p className="mt-1.5 text-sm font-medium leading-6 text-neutral-600">{profileStartBody}</p>
-            <Link
-              href={profileStartHref}
-              className="mt-4 inline-flex min-h-[46px] w-full items-center justify-center rounded-xl bg-rose-600 px-4 text-sm font-black text-white shadow-[0_6px_16px_rgba(225,29,72,0.16)] transition hover:bg-rose-700"
-            >
-              {profileStartCta}
-            </Link>
-          </div>
-        </section>
+        <ProfileStartCard title={profileStartTitle} body={profileStartBody}
+          href={viewerLoggedIn ? profileStartHref : "/signup"}
+          action={viewerLoggedIn ? profileStartCta : "가입하고 내 소개 쓰기"}
+          loginHref={!viewerLoggedIn ? profileStartHref : undefined} />
       ) : null}
       {showOpenCardSection && viewerLoggedIn ? <PaidRegistrationStatus state={paidRegistration} /> : null}
       {showOpenCardSection && openCardPresenceError ? (
@@ -3531,6 +3514,7 @@ function OpenCardsContent() {
 
       {showOneOnOneSection ? (
         <OneOnOneHomePanel
+          profileDraftAvailable={showDraftResumeCard}
           focusedMatchId={searchParams.get("matchId")}
           arrivedFromOnboarding={arrivedFromDatingOnboarding}
           viewerLoggedIn={viewerLoggedIn}
@@ -3572,31 +3556,7 @@ function OpenCardsContent() {
       ) : null}
 
       {showOpenCardSection && cardsAudience?.status === "missing" ? (
-        <section className="mb-5 rounded-[26px] border border-rose-100 bg-white p-5 text-center shadow-[0_12px_34px_rgba(15,23,42,0.06)]">
-          <p className="text-base font-black text-neutral-950">내 성별을 확인해주세요</p>
-          <p className="mt-2 text-sm leading-6 text-neutral-500">
-            기존 오픈카드나 1:1 카드가 없어 최초 한 번만 확인합니다. 선택한 성별의 이성 카드만 표시됩니다.
-          </p>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={viewerSexSaving}
-              onClick={() => void handleViewerSexSelection("male")}
-              className="min-h-[48px] rounded-2xl bg-slate-900 px-4 text-sm font-black text-white disabled:opacity-50"
-            >
-              나는 남성
-            </button>
-            <button
-              type="button"
-              disabled={viewerSexSaving}
-              onClick={() => void handleViewerSexSelection("female")}
-              className="min-h-[48px] rounded-2xl bg-rose-600 px-4 text-sm font-black text-white disabled:opacity-50"
-            >
-              나는 여성
-            </button>
-          </div>
-          {viewerSexError ? <p className="mt-3 text-sm font-semibold text-red-600">{viewerSexError}</p> : null}
-        </section>
+        <ViewerSexSelection saving={viewerSexSaving} error={viewerSexError} onSelect={(sex) => { void handleViewerSexSelection(sex); }} />
       ) : null}
 
       {showOpenCardSection && cardsAudience?.status === "conflict" ? (

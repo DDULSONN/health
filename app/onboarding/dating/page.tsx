@@ -636,18 +636,18 @@ export default function DatingOnboardingPage() {
     : !available.open && !available.oneOnOne;
 
   return (
-    <main className="min-h-screen bg-neutral-50 px-4 py-7 text-neutral-950">
+    <main className="min-h-screen bg-neutral-50 px-4 py-6 text-neutral-950 sm:py-9">
       <div className="mx-auto max-w-xl">
         {!nothingAvailable && <SignupProgress current={2} />}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="mt-1 text-2xl font-black">{entry === "one_on_one" ? "1:1 프로필 작성" : "소개 프로필 작성"}</h1>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight">{entry === "one_on_one" ? "1:1 프로필 작성" : "소개 프로필 작성"}</h1>
             <p className="mt-2 text-sm leading-6 text-neutral-600">{entry === "one_on_one"
               ? completed.open ? "기존 오픈카드는 그대로 두고, 1:1 프로필을 추가해요."
                 : available.open ? "1:1 매칭부터 시작해요. 오픈카드 등록은 선택사항이에요." : "1:1 매칭에 사용할 정보를 입력해 주세요."
-              : "오픈카드와 1:1 매칭에 사용할 정보를 입력해 주세요."}</p>
+              : "한 번 작성해서 오픈카드와 1:1에 함께 올릴 수 있어요."}</p>
           </div>
-          <button type="button" disabled={submitting} onClick={() => router.replace("/community/dating/cards")} className="shrink-0 text-xs font-semibold text-neutral-500 underline underline-offset-4">나중에</button>
+          <button type="button" disabled={submitting} onClick={() => router.replace("/community/dating/cards")} className="-mr-2 flex min-h-11 shrink-0 items-center rounded-lg px-2 text-xs font-medium text-neutral-500 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-rose-600">나중에</button>
         </div>
 
         {draft.pendingDraft && !nothingAvailable && (
@@ -682,8 +682,8 @@ export default function DatingOnboardingPage() {
           </section>
         )}
         <fieldset disabled={submitting || importing || Boolean(draft.pendingDraft) || !draft.ready} aria-busy={submitting || importing} className="min-w-0">
-        <section id={onboardingFieldId("targets")} tabIndex={-1} aria-describedby={fieldErrors.targets ? `${onboardingFieldId("targets")}-error` : undefined} className="mt-5 border-y border-neutral-200 bg-white py-3">
-          <p className="mb-2 text-xs font-semibold text-neutral-700">등록할 서비스 선택{available.open && available.oneOnOne && !completed.open && !completed.oneOnOne && !continueToInstantOpenCard && <span className="font-normal text-neutral-400"> · 둘 다 선택 가능</span>}</p>
+        <section id={onboardingFieldId("targets")} tabIndex={-1} aria-describedby={fieldErrors.targets ? `${onboardingFieldId("targets")}-error` : undefined} className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
+          <p className="mb-2 text-xs font-semibold text-neutral-700">어디에 올릴까요?{available.open && available.oneOnOne && !completed.open && !completed.oneOnOne && !continueToInstantOpenCard && <span className="font-normal text-neutral-400"> · 둘 다 선택 가능</span>}</p>
           <div className="grid grid-cols-2 gap-2">
             {(["open", "oneOnOne"] as TargetKey[]).map((key) => {
               const label = key === "open" ? "오픈카드" : "1:1 매칭";
@@ -697,10 +697,10 @@ export default function DatingOnboardingPage() {
                   aria-pressed={selected}
                   disabled={!enabled}
                   onClick={() => setTargets((current) => ({ ...current, [key]: !current[key] }))}
-                  className={`min-h-14 rounded-lg border px-3 text-left transition ${selected ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-200 bg-white text-neutral-700"} disabled:bg-neutral-100 disabled:text-neutral-400`}
+                  className={`min-h-16 rounded-xl border px-3 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600 ${selected ? "border-neutral-400 bg-neutral-50 text-neutral-900" : "border-neutral-200 bg-white text-neutral-500"} disabled:border-neutral-200 disabled:bg-neutral-50 disabled:text-neutral-400`}
                 >
-                  <span className="block text-sm font-bold">{done ? `${label} 등록됨` : label}</span>
-                  <span className="mt-1 block text-[11px] opacity-75">{availabilityNote[key] || (key === "open" ? "내 카드 공개하기" : "추천 후보에게 지원")}</span>
+                  <span className="flex items-center justify-between gap-1 text-sm font-semibold">{done ? `${label} 등록됨` : label}<span aria-hidden="true" className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? "border-rose-600 bg-rose-600 text-white" : "border-neutral-300 text-neutral-400"}`}><svg viewBox="0 0 16 16" fill="none" className={`h-3 w-3 ${selected || done ? "" : "invisible"}`}><path d="m4 8 2.5 2.5L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg></span></span>
+                  <span className="mt-1 block text-[11px] leading-5 opacity-80">{availabilityNote[key] || (key === "open" ? "내 카드 공개하기" : "추천 후보에게 지원")}</span>
                 </button>
               );
             })}
@@ -735,14 +735,10 @@ export default function DatingOnboardingPage() {
           </section>
         ) : (
           <>
-            <nav className="mt-5 bg-white px-4 pt-4" aria-label="작성 단계">
-              <div className="flex items-center justify-between text-xs font-bold">
-                <span className="text-neutral-900">{step + 1}. {STEP_LABELS[step]}</span>
-                <span className="text-neutral-400">{step + 1} / {STEP_LABELS.length}</span>
-              </div>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-neutral-100" aria-hidden>
+            <nav className="mt-5 rounded-t-2xl border-x border-t border-neutral-200 bg-white px-4 pt-4 sm:px-5" aria-label="작성 단계">
+              <div className="h-1 overflow-hidden rounded-full bg-neutral-100" role="progressbar" aria-label="프로필 작성 진행" aria-valuemin={1} aria-valuemax={STEP_LABELS.length} aria-valuenow={step + 1} aria-valuetext={`${STEP_LABELS.length}단계 중 ${step + 1}단계, ${STEP_LABELS[step]}`}>
                 <div
-                  className="h-full rounded-full bg-rose-500 transition-[width] duration-300"
+                  className="h-full rounded-full bg-rose-600 transition-[width] duration-300 motion-reduce:transition-none"
                   style={{ width: `${((step + 1) / STEP_LABELS.length) * 100}%` }}
                 />
               </div>
@@ -754,8 +750,9 @@ export default function DatingOnboardingPage() {
                     aria-label={label}
                     style={{ fontSize: 12, fontWeight: 600 }}
                     disabled={index > step}
+                    aria-current={index === step ? "step" : undefined}
                     onClick={() => index <= step && setStep(index)}
-                    className={`min-h-8 truncate rounded-md px-1 text-[10px] font-bold ${
+                    className={`min-h-11 truncate rounded-lg px-1 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-rose-600 ${
                       index === step
                         ? "bg-rose-50 text-rose-700"
                         : index < step
@@ -769,28 +766,28 @@ export default function DatingOnboardingPage() {
               </div>
             </nav>
 
-            <section className="bg-white px-4 py-5 sm:px-5">
+            <section className="rounded-b-2xl border-x border-b border-neutral-200 bg-white px-4 pb-5 pt-3 sm:px-5">
               {step === 0 && (
                 <div>
-                  <StepHeading title="기본 정보" description="선택한 서비스에 사용할 정보예요." />
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    {!nicknameSaved && <TextField {...fieldProps("nickname")} value={nickname} onChange={(value) => setNickname(normalizeNickname(value).slice(0, 12))} label="닉네임" placeholder="사이트에서 사용할 닉네임" className="sm:col-span-2" maxLength={12} />}
-                    <div className="sm:col-span-2">
+                  <StepHeading title="기본 정보" description="상대에게 보여줄 나의 기본 정보예요." />
+                  <div className="mt-5 grid grid-cols-2 gap-x-3 gap-y-5">
+                    {!nicknameSaved && <TextField {...fieldProps("nickname")} value={nickname} onChange={(value) => setNickname(normalizeNickname(value).slice(0, 12))} label="닉네임" placeholder="사이트에서 사용할 닉네임" className="col-span-2" maxLength={12} />}
+                    <div className="col-span-2">
                       <FieldLabel>성별 (필수)</FieldLabel>
-                      <div id={onboardingFieldId("sex")} tabIndex={-1} aria-describedby={fieldErrors.sex ? `${onboardingFieldId("sex")}-error` : undefined} className="grid grid-cols-2 border border-neutral-200" role="group" aria-label="성별 선택">
+                      <div id={onboardingFieldId("sex")} tabIndex={-1} aria-describedby={fieldErrors.sex ? `${onboardingFieldId("sex")}-error` : undefined} className="grid grid-cols-2 gap-2" role="group" aria-label="성별 선택">
                         <Choice active={sex === "male"} onClick={() => setSex("male")}>남자</Choice>
                         <Choice active={sex === "female"} onClick={() => setSex("female")}>여자</Choice>
                       </div>
                       <FieldError {...fieldProps("sex")} />
                     </div>
-                    {targets.oneOnOne && <TextField {...fieldProps("name")} value={name} onChange={setName} label="이름" placeholder="1:1 프로필에 표시되는 이름" className="sm:col-span-2" maxLength={30} />}
+                    {targets.oneOnOne && <TextField {...fieldProps("name")} value={name} onChange={setName} label="이름" placeholder="1:1 프로필에 표시되는 이름" className="col-span-2" maxLength={30} />}
                     <TextField {...fieldProps("birthYear")} value={birthYear} onChange={(value) => setBirthYear(value.replace(/\D/g, "").slice(0, 4))} label="출생연도" placeholder="예: 1996" inputMode="numeric" />
                     <TextField {...fieldProps("heightCm")} value={heightCm} onChange={(value) => setHeightCm(value.replace(/\D/g, "").slice(0, 3))} label="키(cm)" placeholder="예: 175" inputMode="numeric" />
-                    <div className="sm:col-span-2">
+                    <div className="col-span-2">
                       <TextField {...fieldProps("job")} value={job} onChange={setJob} label="직업" placeholder="예: IT 서비스 개발자, 병원 간호사" maxLength={targets.open ? 50 : 80} />
                       <p className="mt-1 text-xs leading-5 text-neutral-500">회사명은 적지 않아도 괜찮아요. 어떤 일을 하는지 알려주세요.</p>
                     </div>
-                    <TextField {...fieldProps("region")} value={region} onChange={setRegion} label="지역" placeholder="예: 서울 마포구" className="sm:col-span-2" maxLength={targets.open ? 30 : 80} />
+                    <TextField {...fieldProps("region")} value={region} onChange={setRegion} label="지역" placeholder="예: 서울 마포구" className="col-span-2" maxLength={targets.open ? 30 : 80} />
                   </div>
                 </div>
               )}
@@ -813,12 +810,12 @@ export default function DatingOnboardingPage() {
                   {targets.oneOnOne && (
                     <div className="mt-5">
                       <FieldLabel>흡연</FieldLabel>
-                      <div className="grid grid-cols-3 border border-neutral-200">
+                      <div className="grid grid-cols-3 gap-2">
                         {([['non_smoker', '비흡연'], ['occasional', '가끔'], ['smoker', '흡연']] as const).map(([value, label]) => <Choice key={value} active={smoking === value} onClick={() => setSmoking(value)}>{label}</Choice>)}
                       </div>
                       <FieldLabel className="mt-5">운동 빈도</FieldLabel>
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                        {[["none", "안함"], ["1_2", "주 1-2회"], ["3_4", "주 3-4회"], ["5_plus", "주 5회+"]].map(([value, label]) => <button key={value} type="button" onClick={() => setWorkoutFrequency(value)} className={`h-11 border text-xs font-bold ${workoutFrequency === value ? "border-rose-500 bg-rose-50 text-rose-700" : "border-neutral-200 bg-white text-neutral-600"}`}>{label}</button>)}
+                        {[["none", "안함"], ["1_2", "주 1-2회"], ["3_4", "주 3-4회"], ["5_plus", "주 5회+"]].map(([value, label]) => <Choice key={value} active={workoutFrequency === value} onClick={() => setWorkoutFrequency(value)}>{label}</Choice>)}
                       </div>
                     </div>
                   )}
@@ -837,7 +834,7 @@ export default function DatingOnboardingPage() {
                   <StepHeading title="사진 두 장" description="마지막에 등록을 완료하면 선택한 서비스에 사진이 저장돼요." />
                   <div className="mt-5 grid grid-cols-2 gap-3">
                     {[0, 1].map((index) => (
-                      <div key={index} className="min-w-0"><label className="relative flex aspect-[4/5] cursor-pointer items-center justify-center overflow-hidden border border-dashed border-neutral-300 bg-neutral-50">
+                      <div key={index} className="min-w-0"><label className="relative flex aspect-[4/5] cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-neutral-300 bg-neutral-50 focus-within:ring-2 focus-within:ring-rose-500">
                         {previewUrls[index] ? <NextImage src={previewUrls[index] ?? ""} alt={`사진 ${index + 1} 미리보기`} fill sizes="(max-width: 640px) 45vw, 250px" unoptimized className="object-contain" /> : <span className="text-sm font-bold text-neutral-500">사진 {index + 1} 선택</span>}
                         <input id={onboardingFieldId(`photo${index}`)} aria-label={`사진 ${index + 1}`} aria-invalid={Boolean(fieldErrors[index === 0 ? "photo0" : "photo1"] || photoSelectionErrors[index])} aria-describedby={(fieldErrors[index === 0 ? "photo0" : "photo1"] || photoSelectionErrors[index]) ? `${onboardingFieldId(`photo${index}`)}-error` : undefined} type="file" accept={DATING_PHOTO_ACCEPT} className="sr-only" onChange={(event) => {
                           const file = event.target.files?.[0] ?? null;
@@ -858,7 +855,7 @@ export default function DatingOnboardingPage() {
                   {targets.open && (
                     <div className="mt-5 border-t border-neutral-200 pt-5">
                       <FieldLabel>오픈카드 사진 공개</FieldLabel>
-                      <div className="grid grid-cols-2 border border-neutral-200">
+                      <div className="grid grid-cols-2 gap-2">
                         <Choice active={photoVisibility === "blur"} onClick={() => setPhotoVisibility("blur")}>블러 공개</Choice>
                         <Choice active={photoVisibility === "public"} onClick={() => setPhotoVisibility("public")}>원본 공개</Choice>
                       </div>
@@ -903,7 +900,7 @@ export default function DatingOnboardingPage() {
               <div className="mt-6 grid grid-cols-[auto_1fr] gap-2">
                 <button type="button" disabled={submitting || step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))} className="h-12 rounded-xl border border-neutral-300 bg-white px-5 text-sm font-bold text-neutral-700 disabled:opacity-30">이전</button>
                 {step < STEP_LABELS.length - 1 ? (
-                  <button type="button" data-onboarding-next disabled={photoPreparation.busy} onClick={moveNext} className="h-12 rounded-xl bg-neutral-950 px-4 text-sm font-bold text-white disabled:opacity-50">{["소개 작성하기", "생활 정보 입력하기", "사진 선택하기", "등록 내용 확인"][step]}</button>
+                  <button type="button" data-onboarding-next disabled={photoPreparation.busy} onClick={moveNext} className="min-h-12 rounded-xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-rose-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600 disabled:opacity-50">{["소개 작성하기", "생활 정보 입력하기", "사진 선택하기", "등록 내용 확인"][step]}</button>
                 ) : allSelectedDone ? (
                   <button
                     type="button"
@@ -926,15 +923,15 @@ export default function DatingOnboardingPage() {
 }
 
 function StepHeading({ title, description }: { title: string; description: string }) {
-  return <div><h2 className="text-lg font-black text-neutral-950">{title}</h2><p className="mt-1 text-sm leading-6 text-neutral-500">{description}</p></div>;
+  return <div><h2 className="text-lg font-bold tracking-tight text-neutral-950">{title}</h2><p className="mt-1 text-sm leading-6 text-neutral-500">{description}</p></div>;
 }
 
 function FieldLabel({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <p className={`mb-2 text-xs font-bold text-neutral-700 ${className}`}>{children}</p>;
+  return <p className={`mb-2 text-sm font-medium text-neutral-700 ${className}`}>{children}</p>;
 }
 
 function Choice({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" aria-pressed={active} onClick={onClick} className={`h-11 text-sm font-bold ${active ? "bg-rose-50 text-rose-700" : "bg-white text-neutral-500"}`}>{children}</button>;
+  return <button type="button" aria-pressed={active} onClick={onClick} className={`min-h-12 rounded-xl border px-2 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600 ${active ? "border-rose-300 bg-rose-50 text-rose-700" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}`}>{children}</button>;
 }
 
 type FieldFeedback = { id: string; error?: string };
@@ -944,9 +941,9 @@ function FieldError({ id, error }: FieldFeedback) {
 }
 
 function TextField({ id, error, value, onChange, label, placeholder, className = "", inputMode, maxLength }: FieldFeedback & { value: string; onChange: (value: string) => void; label: string; placeholder: string; className?: string; inputMode?: "text" | "numeric"; maxLength?: number }) {
-  return <label className={className}><span className="mb-2 block text-xs font-bold text-neutral-700">{label}</span><input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} inputMode={inputMode} maxLength={maxLength} className={`h-12 w-full border ${error ? "border-rose-400" : "border-neutral-300"} bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900`} /><FieldError id={id} error={error} /></label>;
+  return <label className={`min-w-0 ${className}`}><span className="mb-2 block text-sm font-medium text-neutral-700">{label}</span><input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} inputMode={inputMode} maxLength={maxLength} className={`h-12 min-w-0 w-full rounded-xl border ${error ? "border-rose-400" : "border-neutral-200"} bg-neutral-50/60 px-3 text-base text-neutral-900 outline-none transition-colors placeholder:text-neutral-400 focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-50`} /><FieldError id={id} error={error} /></label>;
 }
 
 function Consent({ id, error, checked, onChange, children }: FieldFeedback & { checked: boolean; onChange: (value: boolean) => void; children: ReactNode }) {
-  return <div><label className={`flex min-h-12 items-start gap-3 border ${error ? "border-rose-400" : "border-neutral-200"} bg-neutral-50 p-3 text-sm leading-5 text-neutral-700`}><input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 accent-rose-500" /><span>{children}</span></label><FieldError id={id} error={error} /></div>;
+  return <div><label className={`flex min-h-12 items-start gap-3 rounded-xl border ${error ? "border-rose-400" : "border-neutral-200"} bg-neutral-50 p-3 text-sm leading-6 text-neutral-700`}><input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-rose-600" /><span>{children}</span></label><FieldError id={id} error={error} /></div>;
 }

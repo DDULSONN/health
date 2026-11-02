@@ -1,0 +1,44 @@
+{
+  "reviewedBaseline": "550ef28118e3402b5bc06c4d67cb4fe6a1f1001f",
+  "note": "Reviewed onboarding UI-only change. Changes to these save, validation, auth or home action handlers require explicit contract review.",
+  "files": {
+    "app/signup/page.tsx": {
+      "validateCurrentReferralCode": "4e95c3c279d068248ad7189e80441c8624021106a22fe5d94db193b3740f311d",
+      "handleSignup": "8d2974d4b346babd68872dc718a52b52e8dd05c2a35a7cf92bedaa133de43623",
+      "prepareEmailConsent": "46ef83632d45fce3741c223251dcef25bc2702a66f7a053b204bf89478d493e9",
+      "handleSocialSignup": "8efa598f91f6e583f9963a354553f0207c98534ebce3e59f89d15c14e12d63f8"
+    },
+    "app/phone-verification/page.tsx": {
+      "sendCode": "d3e1b8f9869bc723fbc17a01cf6b6fc51d7e8111a5c72daf4afa64dc2fdda0aa",
+      "verifyCode": "a3805524e7386373f57b3514829cdbefb0b982dd820503ffa849bdb9ddf1af15",
+      "moveToExistingAccountLogin": "a7fea200cf4ffe4f372daeaac9a78cb0d73bf14ba457ad9406253e8ff81c6ac3"
+    },
+    "app/community/dating/cards/page.tsx": {
+      "handleHomeFeatureTabChange": "aab7b9f33d71f67d0f13f228d3238ee9baae67d07f76ca21c4b3bdeeee9b3791",
+      "reloadMyOpenCards": "255939cd4a7ba731adc40542ad090e3985ea4ff878ba16d2bf907585708f1575",
+      "reloadOneOnOneHome": "b3a629e089ea5969c0155206e2ae168c980fcecca45ec444e67ec5cf79ea64de",
+      "handleHideOneOnOneCandidate": "376c4e47bbfbcc320c00b48cd1482b147cc1fc1c31b4628282bbf1c47c00f74b",
+      "handleOneOnOneFavoriteChanged": "db98f34fce63bfe7f044551ecbbb4642679bdb8296e07af84e675a58284cda91",
+      "handleOpenCardSexChange": "194d33cacaf638a8d3d4cbad3a7aa06b7f36c2ee988b325a0bf8b6fa6f164b52",
+      "handleViewerSexSelection": "1404d0beefcdc2c75f8aa477a3b341a5a164261c37edfbf1d28d670a6ad2c4e2",
+      "handleReactivateHomeOpenCard": "aa8a03e8b444f0e1e04a14dbe6f60b188c935b780a24137c05251aadac9bf650",
+      "handleFirstQueueBoost": "2e40cf764686158fb933d164d06b846771a8fc3268da7bb147412460c2f1b6c7",
+      "handleVisibilityChange": "480f62bffb5b90b335a6c41f28c8900a0b9e479cc8beac1bf99273b60fea0ef7",
+      "handleSwipe": "773cf9efe4fa8b69bf51280df25acde6fc8097d5f871d33c03c7c409b59b7812",
+      "handleOneOnOneMatchAction": "093182cc50e23231b170557d4f1c334acc7b8c277a268f2ab39c1c2f8612cfd2",
+      "handleOneOnOneContactCheckout": "c2b5a6a9cd272e4871264fd1a9879e7309d03602c744000bcd7c63cae86fc783",
+      "handleOneOnOneAutoSelect": "189174cb8d2fa8ff152384ac5b8d7f8b82cccc2447bb5ed8275403af4b6813f3",
+      "handleOneOnOneRecommendationRefresh": "3b1b6a53a16fb039bccd6c28fe3479fa5b24a7b6a2c84ccc5d019a9e35739384",
+      "handleReelsApplySubmit": "dbf7448b678b0bc2c106b4fa37f2fd052166bdb9785cff52f767af9c590dfd19",
+      "handleActiveSexChange": "164106d88c92322acc5c1bbab103ea1abba6a21cb4cfe135b405e9f563667803",
+      "handleOneOnOneContactNudge": "dde9de11072fae34da7794d6552a7e24d40d70eb6a5c909b8c908990f2e26ee3"
+    },
+    "app/onboarding/dating/page.tsx": {
+      "resumeDraft": "8717957604c065df5059c2db2ec68e749d9db8ff0f81702758079c00b153635e",
+      "importOpenCard": "49dab1ce1f4659b16517c35ede2b426636a9cadd8bb25b16e345257eee40f6e3",
+      "validateStep": "18b67309d411a4b08562912a280fed67ce43509903eb573fcab36be7fca5203d",
+      "moveNext": "8f4950ee457ca54cc39c96a372ae74cfba957513e59889009eb3a1adb68aa988",
+      "submit": "eef984bd6e0d77a71541ab84552fae237bf8e3729726410cf5098cf9c593234c"
+    }
+  }
+}

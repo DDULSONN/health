@@ -330,19 +330,19 @@ export default function SignupPage() {
   };
 
   return (
-    <main className="mx-auto max-w-sm px-4 py-12 sm:py-16">
+    <main className="mx-auto my-6 w-[calc(100%-2rem)] max-w-[440px] rounded-3xl border border-neutral-200 bg-white p-5 text-neutral-950 sm:my-10 sm:p-7">
       <SignupProgress current={0} />
-      <h1 className="text-2xl font-bold text-neutral-900 mb-2">회원가입</h1>
-      <p className="mb-6 text-sm leading-6 text-neutral-500">가입 후 휴대폰을 인증하고, 소개 프로필을 작성해요.</p>
+      <h1 className="mb-2 text-2xl font-bold tracking-tight text-neutral-950">회원가입</h1>
+      <p className="mb-6 text-sm leading-6 text-neutral-500">가입하고 내 소개를 올려보세요.</p>
 
       {error && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error}</p>}
       {info && <p role="status" aria-live="polite" className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{info}</p>}
 
       {step === "form" && (
-        <div className="space-y-4">
-          <div className="rounded-xl border border-neutral-100 px-3 py-2">
+        <div className="space-y-3">
+          <div className="rounded-xl bg-neutral-50 px-3 py-2">
             <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-xs text-neutral-700">
-              <input type="checkbox" checked={emailMarketingConsent} disabled={loading} onChange={(event) => setEmailMarketingConsent(event.target.checked)} className="h-4 w-4 shrink-0 accent-emerald-600" aria-describedby="signup-email-consent-description" />
+              <input type="checkbox" checked={emailMarketingConsent} disabled={loading} onChange={(event) => setEmailMarketingConsent(event.target.checked)} className="h-4 w-4 shrink-0 accent-rose-600" aria-describedby="signup-email-consent-description" />
               <span>{EMAIL_CONSENT_LABEL}</span>
             </label>
             <p id="signup-email-consent-description" className="pb-1 text-[11px] leading-5 text-neutral-500">{EMAIL_CONSENT_DESCRIPTION}</p>
@@ -351,7 +351,7 @@ export default function SignupPage() {
             type="button"
             onClick={() => handleSocialSignup("google")}
             disabled={loading}
-            className="min-h-[52px] w-full rounded-xl border border-neutral-300 bg-white font-medium text-neutral-900 disabled:opacity-50"
+            className="min-h-[52px] w-full rounded-xl border border-neutral-200 bg-white text-sm font-semibold text-neutral-900 transition-colors hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600 disabled:opacity-50"
           >
             Google로 계속하기
           </button>
@@ -359,7 +359,7 @@ export default function SignupPage() {
             type="button"
             onClick={() => handleSocialSignup("apple")}
             disabled={loading}
-            className="min-h-[52px] w-full rounded-xl border border-neutral-900 bg-neutral-950 font-medium text-white disabled:opacity-50"
+            className="min-h-[52px] w-full rounded-xl border border-neutral-900 bg-neutral-950 text-sm font-semibold text-white transition-colors hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600 disabled:opacity-50"
           >
             Apple로 계속하기
           </button>
@@ -400,7 +400,7 @@ export default function SignupPage() {
                 inputMode="email"
                 autoCapitalize="none"
                 spellCheck={false}
-                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-300 px-3 text-neutral-900"
+                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-200 bg-neutral-50/60 px-3 text-base text-neutral-900 outline-none focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-50"
               />
             </div>
 
@@ -415,10 +415,10 @@ export default function SignupPage() {
                 type="text"
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
-                placeholder="닉네임 (예: 벤치왕김OO)"
+                placeholder="짐툴에서 사용할 이름"
                 maxLength={NICKNAME_MAX}
                 autoComplete="nickname"
-                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-300 px-3 text-neutral-900"
+                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-200 bg-neutral-50/60 px-3 text-base text-neutral-900 outline-none focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-50"
               />
             </div>
 
@@ -435,7 +435,7 @@ export default function SignupPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="8자 이상"
                 autoComplete="new-password"
-                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-300 px-3 text-neutral-900"
+                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-200 bg-neutral-50/60 px-3 text-base text-neutral-900 outline-none focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-50"
               />
             </div>
 
@@ -452,7 +452,7 @@ export default function SignupPage() {
                 onChange={(e) => setPasswordConfirm(e.target.value)}
                 placeholder="비밀번호를 다시 입력하세요"
                 autoComplete="new-password"
-                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-300 px-3 text-neutral-900"
+                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-200 bg-neutral-50/60 px-3 text-base text-neutral-900 outline-none focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-50"
               />
             </div>
 
@@ -475,7 +475,7 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={loading}
-              className="min-h-[52px] w-full rounded-xl bg-emerald-600 font-medium text-white disabled:opacity-50"
+              className="min-h-[52px] w-full rounded-xl bg-rose-600 text-sm font-semibold text-white transition-colors hover:bg-rose-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600 disabled:opacity-50"
             >
               {loading ? "가입 요청 중..." : "이메일로 회원가입"}
             </button>
@@ -520,7 +520,7 @@ export default function SignupPage() {
                   autoCapitalize="characters"
                   autoComplete="off"
                   spellCheck={false}
-                  className="mt-1.5 min-h-[40px] w-full rounded-lg border border-neutral-200 bg-white px-3 font-mono text-xs uppercase tracking-wide text-neutral-900 outline-none focus:border-emerald-500"
+                  className="mt-1.5 min-h-[44px] w-full rounded-lg border border-neutral-200 bg-white px-3 font-mono text-base uppercase tracking-wide text-neutral-900 outline-none focus:border-rose-400"
                 />
                 <p className="mt-1.5 text-[11px] leading-4 text-neutral-500">
                   조건 완료 시 추천인과 가입자 모두 지원권 5장 지급
@@ -567,7 +567,7 @@ export default function SignupPage() {
           <button
             type="button"
             onClick={() => router.replace(`/login?tab=password&next=${encodeURIComponent(signupNext)}`)}
-            className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium"
+            className="w-full min-h-[48px] rounded-xl bg-rose-600 text-white font-semibold"
           >
             로그인하러 가기
           </button>
@@ -583,7 +583,7 @@ export default function SignupPage() {
 
       {step !== "pending_verify" && <p className="mt-6 text-sm text-neutral-600">
         이미 계정이 있나요?{" "}
-        <Link href={`/login?tab=password&next=${encodeURIComponent(signupNext)}`} className="text-emerald-700 underline">
+        <Link href={`/login?tab=password&next=${encodeURIComponent(signupNext)}`} className="font-semibold text-rose-600 underline underline-offset-4">
           로그인
         </Link>
       </p>}
