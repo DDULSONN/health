@@ -61,6 +61,23 @@ test('provider approved but connection dropped: server lookup recovers without a
     assert.equal((await phones(f))[0].counterparty_phone,'01000000002');
   }finally{await f.db.close();}
 });
+
+test('large matching history keeps all nudges; missing enrichment never hides an approved phone',async()=>{
+  const f=await runtime();try{
+    const c=await create(f);assert.equal((await approve(f,c.body.orderId)).status,200);
+    await f.db.query(`insert into dating_1on1_match_proposals(id,source_card_id,candidate_card_id,source_user_id,candidate_user_id,state,contact_exchange_status)
+      select md5('match-'||n::text)::uuid,$1,$2,$3,$4,'mutual_accepted','awaiting_applicant_payment' from generate_series(1,620) n`,[id(20),id(21),id(1),id(2)]);
+    await f.db.query(`insert into dating_1on1_contact_nudges(id,match_id,sender_user_id,recipient_user_id,preset_key,message_text,created_at)
+      select md5('nudge-'||id::text)::uuid,id,source_user_id,candidate_user_id,'coffee_on_me','반가워요 🙂',now() from dating_1on1_match_proposals`);
+    const items=await phones(f);
+    assert.equal(items.length,621);assert.equal(items.filter(row=>row.contact_nudge.sent_by_me?.message_text==='반가워요 🙂').length,621);
+    assert.equal(items.find(row=>row.id===id(10)).counterparty_phone,'01000000002');
+    await f.db.exec('drop table dating_1on1_contact_nudges');
+    const failed=await phones(f);
+    assert.equal(failed.length,621);assert.equal(failed.find(row=>row.id===id(10)).counterparty_phone,'01000000002');
+    assert.ok(failed.every(row=>row.contact_nudge.available===false&&!row.contact_nudge.can_send));
+  }finally{await f.db.close();}
+});
 for(const stage of ['failPaidWriteOnce','failFulfillmentOnce'])test(`retry repairs ${stage} after provider approval, preserving the same order`,async()=>{
   const f=await runtime();try{
     const c=await create(f);f.flags[stage]=true;
@@ -83,7 +100,7 @@ test('concurrent duplicate confirmations produce one paid order and one approved
 test('failed checkout never reveals numbers; recovery reuses READY and approved numbers disappear after blocking',async()=>{
   const f=await runtime();try{
     const c=await create(f);f.provider.flags.failure=true;
-    assert.equal((await approve(f,c.body.orderId)).status,500);assert.equal((await phones(f))[0].counterparty_phone,null);
+    assert.equal((await approve(f,c.body.orderId)).status,502);assert.equal((await phones(f))[0].counterparty_phone,null);
     f.provider.flags.failure=false;
     const retry=await create(f,{recoveryOrderId:c.body.orderId});assert.equal(retry.body.reusedOrder,true);
     assert.equal((await approve(f,c.body.orderId)).status,200);f.flags.blocked=true;

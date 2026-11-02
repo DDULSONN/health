@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { buildOneOnOneRefreshConfirmation, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, ONE_ON_ONE_WIDER_REGION_COPY, ONE_ON_ONE_UNUSED_REFRESH_COPY, shouldShowOneOnOneRefreshReminder, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
-import { shouldOfferOneOnOnePlus } from "@/lib/dating-1on1-refresh-copy";
+import { getOneOnOneNewCandidateCopy, shouldOfferOneOnOnePlus } from "@/lib/dating-1on1-refresh-copy";
 
 export type OneOnOneRefreshNotice = { sourceCardId: string; kind: "success" | "error"; message: string };
 type Confirmation = { message: string; resolve: (confirmed: boolean) => void };
@@ -70,10 +70,14 @@ export default function OneOnOneRefreshControl({ usage, busy, blocked = false, n
 }) {
   const [offerOpen, setOfferOpen] = useState(false);
   const copy = getOneOnOneRefreshCopy(usage);
+  const newCandidateCopy = getOneOnOneNewCandidateCopy(usage);
   const ready = usage?.can_refresh === true;
   const remaining = typeof usage?.refresh_remaining === "number" && Number.isSafeInteger(usage.refresh_remaining) && usage.refresh_remaining >= 0
     ? usage.refresh_remaining : null;
   return <div className="mt-3 space-y-2">
+    {!busy && notice?.kind !== "error" && newCandidateCopy ? (
+      <p data-testid="new-candidate-notice" className="rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-600">{newCandidateCopy}</p>
+    ) : null}
     {!busy && !blocked && !notice && shouldShowOneOnOneRefreshReminder(usage) ? (
       <p className="rounded-lg border border-rose-100 bg-rose-50/40 px-3 py-2 text-xs leading-5 text-neutral-700">{ONE_ON_ONE_UNUSED_REFRESH_COPY}</p>
     ) : null}
@@ -107,7 +111,7 @@ export default function OneOnOneRefreshControl({ usage, busy, blocked = false, n
         </div> : null}
       </div>
     ) : null}
-    {usage?.recommendation_region_widened === true && (
+    {!newCandidateCopy && usage?.recommendation_region_widened === true && (
       <p className="text-xs leading-5 text-neutral-500">{ONE_ON_ONE_WIDER_REGION_COPY}</p>
     )}
     <details className="text-xs leading-5 text-neutral-500">

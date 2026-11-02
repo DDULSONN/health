@@ -69,6 +69,21 @@ export async function auditRefreshAttempt(admin: Admin, job: AuditJob, a: Refres
     // Review-only threshold: high overlap is NOT proof of a bug or grounds for
     // an automatic replacement, quota grant, or outbound message.
     if (repetitive.length >= 2) finding = "repeat_review";
+    if (finding === "healthy" && a.after_user_ids.length) {
+      // A -> B -> A can look healthy against just the immediately previous page.
+      // Read only these candidates' prior observations, not the whole member pool.
+      const afterIds = [...new Set(a.after_user_ids)];
+      const since = new Date(Date.parse(a.planned_at) - 7 * 86400000).toISOString();
+      const impressions = await admin.from("dating_1on1_candidate_impressions")
+        .select("candidate_user_id,first_seen_at").eq("viewer_user_id", a.user_id)
+        .in("candidate_user_id", afterIds).gte("first_seen_at", since).lt("first_seen_at", a.planned_at)
+        .order("first_seen_at").limit(1000).abortSignal(AbortSignal.timeout(4000));
+      if (impressions.error) throw Error("AUDIT_IMPRESSIONS_FAILED");
+      const seen = new Set((impressions.data ?? []).filter(row =>
+        Date.parse(row.first_seen_at) >= Date.parse(since) && Date.parse(row.first_seen_at) < Date.parse(a.planned_at)
+      ).map(row => row.candidate_user_id));
+      if (afterIds.filter(id => seen.has(id)).length / afterIds.length >= 0.8) finding = "repeat_review";
+    }
   }
   if (finding === "repair_ready" && mode === "repair" && plan) {
     const result = await admin.rpc("repair_dating_1on1_refresh_audit", {

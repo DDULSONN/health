@@ -24,6 +24,11 @@ function loadMiddleware(user) {
     "@/lib/auth-confirmed": {
       isEmailConfirmed: (candidate) => Boolean(candidate?.email_confirmed_at),
     },
+    "@/lib/supabase/session-cookies": (() => {
+      const m = { exports: {} };
+      new Function("module", "exports", transpile(fs.readFileSync(path.join(root, "lib/supabase/session-cookies.ts"), "utf8")))(m, m.exports);
+      return m.exports;
+    })(),
     "@/lib/admin-panel-lock": {
       getAdminPanelCookieName: () => "admin-lock",
       isAdminPanelLockEnabled: () => false,

@@ -384,7 +384,7 @@ function existedAt(candidate: RecommendationCandidate, timestamp: number) {
 export function includeNewRelevantCandidates<T extends RecommendationCandidate>(
   source: RecommendationCandidate, candidates: T[], previous: T[], since: number, at: number, limit: number,
   handledIds: Set<string>, readMeta: RecommendationMetaReader = createRecommendationMetaReader(source), observedBeforeSeed: Set<string> = new Set(),
-  preserveCloserCandidates = false
+  preserveCloserCandidates = false, protectedIds: Set<string> = new Set()
 ) {
   // A scarce-region member may already be browsing beyond 90 km. Allow new
   // compatible people up to that page's known distance band, not just locals,
@@ -393,12 +393,22 @@ export function includeNewRelevantCandidates<T extends RecommendationCandidate>(
     const km = readMeta(card).km;
     return km == null ? band : Math.max(band, distanceBand(km));
   }, distanceBand(90));
-  const newcomers = takeRecommendations(sortCandidatesForSource(source, candidates.filter((card) => {
+  const newcomerPool = sortCandidatesForSource(source, candidates.filter((card) => {
     const created = Date.parse(card.created_at);
+    // Old registrations need no extra region resolution on an ordinary GET.
+    if (!(created > since && created <= at) || protectedIds.has(card.id) || handledIds.has(card.id) ||
+      observedBeforeSeed.has(card.id) || isRecentlyHandledCandidate(card, at)) return false;
     const meta = readMeta(card);
-    return created > since && created <= at && meta.ageMatch && meta.km != null && distanceBand(meta.km) <= pageBand &&
-      !handledIds.has(card.id) && !observedBeforeSeed.has(card.id) && !isRecentlyHandledCandidate(card, at);
-  }), `new:${since}`, at, readMeta), Math.min(2, limit));
+    return meta.ageMatch && meta.km != null && distanceBand(meta.km) <= pageBand;
+  }), `new:${since}`, at, readMeta);
+  const stableOrder = new Map(newcomerPool.map((card, index) => [card.id, index]));
+  // Within the same suitability/distance band prefer the latest registration.
+  // Otherwise two earlier arrivals can occupy both automatic slots all day,
+  // even after more compatible people join. Views alone never reorder them.
+  newcomerPool.sort((a, b) => readMeta(a).tier - readMeta(b).tier ||
+    distanceBand(readMeta(a).km) - distanceBand(readMeta(b).km) ||
+    Date.parse(b.created_at) - Date.parse(a.created_at) || stableOrder.get(a.id)! - stableOrder.get(b.id)!);
+  const newcomers = takeRecommendations(newcomerPool, Math.min(2, limit));
   const newcomerIds = new Set(newcomers.map((card) => card.id));
   let merged = [...newcomers, ...previous.filter((card) => !newcomerIds.has(card.id))].slice(0, limit);
   if (preserveCloserCandidates) {
@@ -416,6 +426,8 @@ export function includeNewRelevantCandidates<T extends RecommendationCandidate>(
         let replace = -1;
         let farthestBand = -1;
         for (let index = 0; index < retained.length; index++) {
+          // A newly hidden card keeps its empty slot until an explicit refresh.
+          if (protectedIds.has(retained[index].id)) continue;
           const band = distanceBand(readMeta(retained[index]).km);
           if ((incoming.close || band >= distanceBand(incoming.km)) && band >= farthestBand) {
             replace = index; farthestBand = band;

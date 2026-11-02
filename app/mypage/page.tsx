@@ -1060,6 +1060,7 @@ type MyOneOnOneAutoRecommendationGroup = {
   hides_enabled?: boolean;
   hidden_candidate_ids?: string[];
   recommendation_region_widened?: boolean;
+  new_candidate_notice?: import("@/lib/dating-1on1-new-candidate-notice").OneOnOneNewCandidateNotice | null;
   impression_ticket?: string | null;
   source_card_id: string;
   source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";

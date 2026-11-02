@@ -2,9 +2,6 @@ import type { DatingOneOnOneMatchRow } from "@/lib/dating-1on1";
 import {
   canConfirmOneOnOneContactNudge,
   getOneOnOneContactNudgeEligibility,
-  isMissingContactNudgeReadColumn,
-  type OneOnOneContactNudgeItem,
-  type OneOnOneContactNudgePresetKey,
 } from "@/lib/dating-1on1-contact-nudge";
 import {
   getDatingOneOnOneCardPhonesByIds,
@@ -23,23 +20,12 @@ import { NextResponse } from "next/server";
 import { loadOneOnOneContactNudgeDelayHours, loadOneOnOneContactGreetingsAvailable } from "@/lib/dating-1on1-contact-nudge-policy";
 import { canReplyToOneOnOneContactNudge } from "@/lib/dating-1on1-contact-reply";
 import { loadOneOnOneContactReplies } from "@/lib/dating-1on1-contact-replies-server";
+import { loadOneOnOneContactNudges, type ContactNudgeRow } from "@/lib/dating-1on1-contact-nudges-server";
 
 const MY_MATCH_BATCH_SIZE = 500;
 const CLOSED_MATCH_LIMIT = 80;
 const ACTIVE_MATCH_STATES = ["proposed", "source_selected", "candidate_accepted", "mutual_accepted"];
 const CLOSED_MATCH_STATES = ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"];
-
-type ContactNudgeRow = OneOnOneContactNudgeItem & {
-  match_id: string;
-  sender_user_id: string;
-  recipient_user_id: string;
-  preset_key: OneOnOneContactNudgePresetKey;
-};
-
-function isMissingNudgeSchema(error: { code?: string | null; message?: string | null }) {
-  const message = String(error.message ?? "").toLowerCase();
-  return error.code === "42P01" || error.code === "PGRST205" || message.includes("dating_1on1_contact_nudges");
-}
 
 function formatPhoneForDisplay(value: string | null | undefined) {
   const normalized = normalizeDatingContactPhone(String(value ?? ""));
@@ -172,37 +158,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to load phone details." }, { status: 500 });
   }
 
-  let nudgeSchemaAvailable = true;
-  let readReceiptsAvailable = true;
-  let nudgeRows: ContactNudgeRow[] = [];
-  if (rows.length > 0) {
-    let nudgeRes: {
-      data: ContactNudgeRow[] | null;
-      error: { code?: string | null; message?: string | null } | null;
-    } = await admin
-      .from("dating_1on1_contact_nudges")
-      .select("id,match_id,sender_user_id,recipient_user_id,preset_key,message_text,created_at,read_at")
-      .in("match_id", rows.map((row) => row.id))
-      .order("created_at", { ascending: false });
-    // Deploying the UI before the additive migration must not hide old messages
-    // or interfere with contact exchange. Only the new missing column falls back.
-    if (nudgeRes.error && isMissingContactNudgeReadColumn(nudgeRes.error)) {
-      readReceiptsAvailable = false;
-      nudgeRes = await admin
-        .from("dating_1on1_contact_nudges")
-        .select("id,match_id,sender_user_id,recipient_user_id,preset_key,message_text,created_at")
-        .in("match_id", rows.map((row) => row.id))
-        .order("created_at", { ascending: false });
-    }
-    if (nudgeRes.error) {
-      nudgeSchemaAvailable = false;
-      if (!isMissingNudgeSchema(nudgeRes.error)) {
-        console.error("[GET /api/dating/1on1/matches/my] contact nudges failed", nudgeRes.error);
-      }
-    } else {
-      nudgeRows = (nudgeRes.data ?? []) as ContactNudgeRow[];
-    }
-  }
+  const { available: nudgeSchemaAvailable, readReceiptsAvailable, rows: nudgeRows } =
+    await loadOneOnOneContactNudges(admin, rows.map(row => row.id));
 
   const hasPendingContact = nudgeSchemaAvailable && rows.some((row) => row.state === "mutual_accepted" && row.contact_exchange_status === "awaiting_applicant_payment");
   const [replyResult, nudgeDelayHours, greetingsAvailable] = await Promise.all([

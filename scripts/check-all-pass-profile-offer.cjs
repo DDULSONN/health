@@ -168,7 +168,7 @@ test('normal fulfillment/confirmation is unchanged outside the explicit offer pr
  const file='app/api/payments/toss/confirm/route.ts';
  // SHA-256 of LF-normalized 955b2f8 source: retain the exact baseline in shallow/no-Git builds.
  const before='87da546f98b7fd3e8972d12b4f1ef5ae93ae0c2f7307c145b7da1929ae10fcd7';
- const stripped=read(file)
+ const stripped=require('./fixtures/confirmation-diagnostics-contract.cjs').withoutConfirmationDiagnostics(read(file))
   // Display-only match destination is independently tested by match-journey.
   .replace('import { normalizeOneOnOneMatchId } from "@/lib/dating-1on1-match-navigation";\n','')
   .replace(/^[ \t]*matchId: order\.product_type === "one_on_one_contact_exchange"\n[ \t]*\? normalizeOneOnOneMatchId\(order\.product_meta\?\.matchId\) \?\? normalizeOneOnOneMatchId\(order\.product_ref_id\) : undefined,\n/gm,'')

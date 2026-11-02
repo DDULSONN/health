@@ -108,7 +108,7 @@ function loadFile(file, overrides) {
   const mod={exports:{}};
   new Function("require","module","exports","Date",code)(name=>{
     if(Object.hasOwn(overrides,name))return overrides[name];
-    if(["@/lib/dating-1on1-contact-reply", "@/lib/dating-1on1-contact-replies-server", "@/components/dating/OneOnOneContactReply"].includes(name)) {
+    if(["@/lib/dating-1on1-contact-nudges-server", "@/lib/dating-1on1-contact-reply", "@/lib/dating-1on1-contact-replies-server", "@/components/dating/OneOnOneContactReply"].includes(name)) {
       return loadFile(name.slice(2)+(name.startsWith("@/components/")?".tsx":".ts"),overrides);
     }
     if(name.startsWith("@/"))throw Error("Unmocked dependency: "+name);
@@ -155,7 +155,7 @@ for(const scenario of ["before24","at24","after30","legacyPolicy","alreadySent",
   test(`actual matching list response: ${scenario}`,async()=>{
     const row=match(["before24","legacyPolicy"].includes(scenario)?{source_final_responded_at:new Date(fixedNow).toISOString()}:scenario==="after30"?{source_final_responded_at:new Date(fixedNow-30*hour).toISOString()}:scenario==="approved"?{contact_exchange_status:"approved",contact_exchange_approved_at:new Date(fixedNow-47*hour).toISOString()}:{});
     const sent={match_id:"match",sender_user_id:"source",recipient_user_id:"candidate",preset_key:"coffee_on_me",message_text:"기존 한마디 ☕",created_at:new Date(fixedNow-2*hour).toISOString()};
-    const db={from(table){let states;const q={select(){return q;},or(){return q;},order(){return q;},range(){return q;},in(key,values){if(key==="state")states=values;return q;},then(ok,bad){return Promise.resolve().then(()=>{
+    const db={from(table){let states;const q={select(){return q;},or(){return q;},order(){return q;},range(){return q;},abortSignal(){return q;},in(key,values){if(key==="state")states=values;return q;},then(ok,bad){return Promise.resolve().then(()=>{
       if(table==="dating_1on1_match_proposals")return {data:states.includes(row.state)?[row]:[],error:null};
       assert.equal(table,"dating_1on1_contact_nudges");
       return scenario==="schemaMissing"?{data:null,error:{code:"PGRST205"}}:{data:scenario==="alreadySent"?[sent]:[],error:null};

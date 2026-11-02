@@ -38,6 +38,73 @@ const card = (id, overrides = {}) => ({
 const source = card("source", { sex: "male", age: 30 });
 const ids = (cards) => cards.map((candidate) => candidate.id);
 
+test('personal newcomer notice requires repeated committed pages and earlier actual impressions', () => {
+  const { getOneOnOneNewCandidateNotice: notice } = load('@/lib/dating-1on1-new-candidate-notice');
+  const visible = Array.from({ length: 10 }, (_, i) => card('seen-' + i));
+  const pageAt = now - 3600000;
+  const args = { source, visible, pageAt, nowMs: now,
+    observations: visible.map(c => ({ id: c.id, at: pageAt - 1000 })),
+    pages: [{ at: pageAt - day, ids: ids(visible) }, { at: pageAt, ids: ids(visible) }] };
+  assert.deepEqual(notice(args), { state: 'waiting', new_candidate_count: 0 });
+  for (const patch of [
+    { pages: undefined }, { pages: [] }, { pages: [args.pages[0], args.pages[0]] },
+    { pages: [args.pages[0], { at: pageAt, ids: ['different-1', 'different-2'] }] },
+    { pages: args.pages.map(p => ({ ...p, at: p.at - 8 * day })) },
+    { pages: args.pages.map(p => ({ ...p, at: p.at + 2 * day })) },
+    { observations: [] }, { observations: args.observations.map(o => ({ ...o, at: pageAt })) },
+    { observations: args.observations.map(o => ({ ...o, at: now + 1 })) },
+    { observations: args.observations.map(o => ({ ...o, at: now - 8 * day })) },
+    { visible: [] }, { pageAt: NaN }, { nowMs: NaN }, { pageAt: now + 1 },
+    { source: { ...source, created_at: new Date(now).toISOString() } },
+  ]) assert.equal(notice({ ...args, ...patch }), null, JSON.stringify(patch));
+  const newCard = card('fresh', { created_at: new Date(now - 1000).toISOString() });
+  assert.deepEqual(notice({ ...args, visible: [newCard, ...visible.slice(0, 9)] }), { state: 'updated', new_candidate_count: 1 });
+  for (const patch of [{ age: 65 }, { region: '알 수 없는 곳' }, { created_at: new Date(now + 1).toISOString() }]) {
+    assert.deepEqual(notice({ ...args, visible: [{ ...newCard, ...patch }, ...visible.slice(0, 9)] }), { state: 'waiting', new_candidate_count: 0 });
+  }
+});
+
+test('protected hidden slots are not replaced by automatic newcomer promotion', () => {
+  const previous = Array.from({ length: 10 }, (_, i) => card('held-' + i));
+  const fresh = card('fresh', { created_at: new Date(now - 1).toISOString() });
+  const protectedIds = new Set(['held-9', 'held-8']);
+  const result = rules.includeNewRelevantCandidates(source, [...previous, fresh], previous,
+    now - 100, now, 10, new Set(), undefined, new Set(), true, protectedIds);
+  assert.equal(result[0].id, 'fresh');
+  assert.equal(result.length, 10);
+  assert.ok([...protectedIds].every(id => ids(result).includes(id)));
+});
+
+test('newcomer check does not resolve regions again for thousands of old registrations', () => {
+  const old = Array.from({ length: 5000 }, (_, i) => card('old-' + i));
+  const fresh = card('fresh', { created_at: new Date(now).toISOString() });
+  let reads = 0;
+  const result = rules.includeNewRelevantCandidates(source, [...old, fresh], old.slice(0, 10), now - 1000,
+    now, 10, new Set(), () => { reads++; return { km: 0, close: true, ageMatch: true, ageGap: 0, tier: 0 }; }, new Set(), true);
+  assert.equal(result[0].id, fresh.id);
+  assert.ok(reads < 50, 'region work is bounded by the page and new registrations, not the old pool');
+});
+
+for (const sex of ['male', 'female']) test('consecutive arrivals replace earlier newcomer slots within age/distance bands: ' + sex, () => {
+  const src = { ...source, sex };
+  const peers = Array.from({ length: 10 }, (_, i) => card('old-' + i, { sex: sex === 'male' ? 'female' : 'male', age: 30 }));
+  const pool = [...peers];
+  for (let step = 0; step < 12; step++) {
+    const fresh = card(`arrival-${step}`, { sex: peers[0].sex, age: 30, created_at: new Date(now + step).toISOString() });
+    pool.push(fresh);
+    const result = rules.includeNewRelevantCandidates(src, pool, peers, now - 1000, now + step, 10, new Set(), undefined, new Set(), true);
+    assert.equal(result[0].id, fresh.id);
+    assert.equal(result.length, 10); assert.equal(new Set(ids(result)).size, 10);
+    if (step > 0) assert.equal(result[1].id, `arrival-${step - 1}`);
+    assert.ok(result.slice(2).every(c => c.id.startsWith('old-')), 'automatic arrival does not rotate the remaining page');
+  }
+  const far = card('newer-far', { age: 30, region: '부산', created_at: new Date(now + 50).toISOString() });
+  const wrongAge = card('newer-wrong-age', { age: 65, created_at: new Date(now + 50).toISOString() });
+  const result = rules.includeNewRelevantCandidates(src, [...pool, far, wrongAge], peers,
+    now - 1000, now + 50, 10, new Set(), undefined, new Set(), true);
+  assert.deepEqual(ids(result.slice(0, 2)), ['arrival-11', 'arrival-10']);
+});
+
 for (const sex of ['male', 'female']) for (const unhandledCount of [0, 1, 7]) {
   test(`exhausted exact pages rotate off-page recyclable people (${sex}/${unhandledCount} untouched)`, () => {
     const pages = load('@/lib/dating-1on1-recommendation-page');
@@ -877,6 +944,79 @@ async function runApi(tables, { intercept, signedIn = true, atTime } = {}) {
     'Actual API output remains compatible with the client response guard');
   return { response, body, calls: db.calls };
 }
+
+for (const mode of ['daily', 'saved', 'legacy']) test(`personal repeat notice and newcomer arrival through actual API: ${mode}`, async () => {
+  const tables = fixture(13);
+  const initialAt = now - 3600000;
+  const own = tables.dating_1on1_cards[0];
+  const candidates = tables.dating_1on1_cards.slice(1);
+  const saved = { user_id: own.user_id, source_card_id: own.id, refreshed_at: new Date(initialAt).toISOString(),
+    source_profile_key: load('@/lib/dating-1on1-recommendation-page-store').recommendationSourceKey(own),
+    main_candidate_ids: ids(candidates.slice(0, 10)), extra_candidate_ids: ids(candidates.slice(10)) };
+  tables.dating_1on1_recommendation_page_history = [
+    { ...saved, refreshed_at: new Date(now - 2 * day).toISOString() },
+    { ...saved, refreshed_at: new Date(mode === 'daily' ? now - day : initialAt).toISOString() },
+  ];
+  tables.dating_1on1_candidate_impressions = candidates.map(c => ({ viewer_user_id: own.user_id,
+    candidate_user_id: c.user_id, first_seen_at: new Date(now - day).toISOString() }));
+  if (mode !== 'daily') {
+    own.recommendation_refresh_used_at = saved.refreshed_at;
+    tables.dating_1on1_recommendation_refresh_events = [{ card_id: own.id, refreshed_at: saved.refreshed_at }];
+  }
+  if (mode === 'saved') tables.dating_1on1_recommendation_pages = [saved];
+  const before = await runApi(tables, { atTime: now });
+  assert.equal(before.response.status, 200);
+  assert.deepEqual(before.body.items[0].new_candidate_notice, { state: 'waiting', new_candidate_count: 0 });
+  const fresh = { ...candidates[0], id: 'new-registration', user_id: 'new-user', phone: '+821099990000',
+    created_at: new Date(now + 500).toISOString() };
+  tables.dating_1on1_cards.push(fresh);
+  tables.profiles.push({ user_id: fresh.user_id, phone_e164: fresh.phone, is_banned: false });
+  const snapshot = structuredClone(tables);
+  const after = await runApi(tables, { atTime: now + 1000 });
+  assert.equal(after.response.status, 200);
+  const group = after.body.items[0];
+  assert.equal(group.recommendations[0].id, fresh.id, 'registration arrives first without pressing refresh');
+  assert.deepEqual(group.new_candidate_notice, { state: 'updated', new_candidate_count: 1 });
+  assert.equal(group.refresh_remaining, before.body.items[0].refresh_remaining);
+  assert.equal(group.refresh_used_at, before.body.items[0].refresh_used_at);
+  assert.equal(group.recommendations.length, 10);
+  assert.equal(new Set(ids(allCandidates(after.body))).size, allCandidates(after.body).length);
+  assert.deepEqual(tables, snapshot, 'GET does not write quota, pages, payment or matches');
+  assert.ok(after.calls.every(q => !q.insert && !q.update && !q.delete));
+  assert.ok(after.calls.filter(q => q.table === 'dating_1on1_recommendation_page_history').every(q => q.filters.some(f => f[0] === 'eq' && f[1] === 'user_id' && f[2] === own.user_id)));
+  tables.dating_1on1_candidate_impressions.push({ viewer_user_id: own.user_id,
+    candidate_user_id: fresh.user_id, first_seen_at: new Date(now + 1001).toISOString() });
+  for (let step = 0; step < 5; step++) {
+    const again = await runApi(tables, { atTime: now + 1002 + step });
+    assert.deepEqual(ids(allCandidates(again.body)), ids(allCandidates(after.body)), 'acknowledgements and reloads do not cycle candidates');
+    assert.equal(again.body.items[0].refresh_remaining, group.refresh_remaining);
+  }
+});
+
+test('daily newcomer promotion keeps hidden slots and all safety exclusions', async () => {
+  const tables = fixture(30);
+  const before = (await runApi(tables, { atTime: now })).body.items[0];
+  const hidden = before.recommendations.at(-1);
+  hideCandidate(tables, hidden);
+  const fresh = { ...tables.dating_1on1_cards[1], id: 'safe-new', user_id: 'safe-user', phone: '+821099990000', created_at: new Date(now + 1).toISOString() };
+  for (const [index, kind] of ['safe', 'blocked', 'banned', 'pending', 'underage'].entries()) {
+    const c = { ...fresh, id: `${kind}-new`, user_id: `${kind}-user`, phone: `+82109999000${index}` };
+    if (kind === 'underage') c.birth_year = 2020;
+    tables.dating_1on1_cards.push(c);
+    tables.profiles.push({ user_id: c.user_id, phone_e164: c.phone, is_banned: kind === 'banned' });
+    if (kind === 'blocked') tables.dating_user_blocks = [{ blocker_user_id: 'user-source', blocked_user_id: c.user_id }];
+    if (kind === 'pending') tables.dating_1on1_match_proposals.push(pair({ candidate_card_id: c.id, candidate_user_id: c.user_id, state: 'source_selected' }));
+  }
+  const snapshot = structuredClone(tables);
+  const after = await runApi(tables, { atTime: now + 100 });
+  assert.equal(after.response.status, 200);
+  const group = after.body.items[0];
+  assert.equal(group.recommendations[0].id, fresh.id);
+  assert.equal(group.recommendations.length, 9, 'new arrivals cannot fill a manually hidden slot');
+  assert.ok(allCandidates(after.body).every(c => ![hidden.id, 'blocked-new', 'banned-new', 'pending-new', 'underage-new'].includes(c.id)));
+  assert.equal(group.new_candidate_notice, null, 'no history is not evidence of repeated candidates');
+  assert.deepEqual(tables, snapshot);
+});
 
 async function runRefresh(tables, { intercept, signedIn = true, atTime = now, sourceId = 'source', rpc, legacyClient = false, expansionEnabled = false } = {}) {
   const db = mockDatabase(tables, intercept), rpcCalls = [];

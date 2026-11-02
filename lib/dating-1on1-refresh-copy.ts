@@ -1,4 +1,6 @@
 // Presentation only. Eligibility and consumption remain server-authoritative.
+import type { OneOnOneNewCandidateNotice } from "@/lib/dating-1on1-new-candidate-notice";
+
 export type OneOnOneRefreshUsage = {
   source_card_id?: string;
   source_card_status?: string;
@@ -7,6 +9,7 @@ export type OneOnOneRefreshUsage = {
   candidate_pool_count?: number;
   recovery_refresh_applied?: boolean;
   recommendation_region_widened?: boolean;
+  new_candidate_notice?: OneOnOneNewCandidateNotice | null;
   refresh_limit?: number;
   refresh_remaining?: number;
   refresh_bonus_remaining?: number;
@@ -25,6 +28,17 @@ export const ONE_ON_ONE_WIDER_REGION_COPY =
 
 export const ONE_ON_ONE_UNUSED_REFRESH_COPY = "아직 새로고침이 남아 있어요 👀 어떤 분이 나올지 살펴볼까요?";
 
+export function getOneOnOneNewCandidateCopy(usage?: OneOnOneRefreshUsage | null): string | null {
+  const notice = usage?.new_candidate_notice;
+  if (notice?.state === "waiting" && notice.new_candidate_count === 0) {
+    return "같은 후보가 자주 보이나요? 나이·지역이 맞는 새 프로필이 등록되면, 다음에 후보를 볼 때 먼저 보여드릴게요.";
+  }
+  if (notice?.state === "updated" && Number.isSafeInteger(notice.new_candidate_count) && notice.new_candidate_count > 0 && notice.new_candidate_count <= 10) {
+    return `새로 등록한 후보 ${notice.new_candidate_count}명을 앞쪽에 보여드려요. 새로고침 횟수는 그대로예요.`;
+  }
+  return null;
+}
+
 // A small in-page hint only. Never infer eligibility from a browser clock alone,
 // promise unseen candidates, or trigger a refresh/notification request.
 export function shouldShowOneOnOneRefreshReminder(usage?: OneOnOneRefreshUsage | null, nowMs = Date.now()) {
@@ -32,7 +46,7 @@ export function shouldShowOneOnOneRefreshReminder(usage?: OneOnOneRefreshUsage |
     !["submitted", "reviewing", "approved"].includes(usage.source_card_status ?? "") ||
     usage.can_refresh !== true || count(usage.refresh_remaining, 1) === null ||
     usage.refresh_used_count !== 0 || count(usage.candidate_pool_count, 1) === null ||
-    usage.recovery_refresh_applied === true) return false;
+    usage.recovery_refresh_applied === true || getOneOnOneNewCandidateCopy(usage) !== null) return false;
   // Undefined/invalid timestamps are unknown, not proof of an unused allowance.
   if (usage.refresh_used_at === null) return true;
   const lastUsedMs = typeof usage.refresh_used_at === "string" ? Date.parse(usage.refresh_used_at) : NaN;

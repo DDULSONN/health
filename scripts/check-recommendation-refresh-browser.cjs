@@ -59,10 +59,13 @@ async function main() {
     if (process.argv.includes('--region-notice')) {
       passed = await require('./test-recommendation-region-notice-browser.cjs')({ browser, origin, output });
     }
+    if (process.argv.includes('--new-candidates')) {
+      passed = await require('./test-recommendation-new-candidates-browser.cjs')({ browser, origin, output });
+    }
     if (process.argv.includes('--admin-counts')) {
       passed = await require('./test-admin-active-counts-browser.cjs')({ browser, origin, output });
     }
-    for (const surface of process.argv.includes('--engagement') || process.argv.includes('--hides') || process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') || process.argv.includes('--admin-counts') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
+    for (const surface of process.argv.includes('--engagement') || process.argv.includes('--hides') || process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') || process.argv.includes('--new-candidates') || process.argv.includes('--admin-counts') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
       for (const scenario of ['success', 'quota-stale', 'repeat-rotation', 'sequence-rotation', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'timeout-read', 'timeout-core-read', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
         if (scenario === 'timeout-core-read' && surface !== 'home') continue;
         const noChange = scenario.startsWith('no-change');

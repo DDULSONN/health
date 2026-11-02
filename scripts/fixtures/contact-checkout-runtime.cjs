@@ -32,7 +32,7 @@ function providerFixture() {
       const p = payments.get(input.orderId);
       if (!p || p.paymentKey !== input.paymentKey || p.totalAmount !== input.amount) throw Error('TEST_PROVIDER_MISMATCH');
       if (p.status === 'DONE') throw Error('ALREADY_PROCESSED_PAYMENT');
-      if (flags.failure) throw Error('TEST_PROVIDER_UNAVAILABLE');
+      if (flags.failure) throw Error(JSON.stringify({ code: flags.providerCode || 'PROVIDER_ERROR', message: 'synthetic private provider details' }));
       Object.assign(p, {status:'DONE', approvedAt:new Date().toISOString(), method:'카드'});
       if (flags.confirmAfterApprovedError) throw Error('TEST_CONNECTION_DROPPED_AFTER_APPROVAL');
       return p;
@@ -63,9 +63,11 @@ async function runtime({provider = providerFixture()} = {}) {
       values('${id(10)}','${id(20)}','${id(21)}','${id(1)}','${id(2)}','mutual_accepted','awaiting_applicant_payment');`);
   const definition = read('supabase/sql/toss_test_payment_orders.sql').match(/create table if not exists public\.toss_test_payment_orders \([\s\S]*?\n\);/)[0];
   await db.exec(definition);
+  await db.exec('create role anon; create role authenticated; create role service_role bypassrls;');
+  await db.exec(read('supabase/sql/payment_confirmation_failures.sql'));
   await db.exec("alter table toss_test_payment_orders drop constraint toss_test_payment_orders_product_type_check; alter table toss_test_payment_orders add check(product_type='one_on_one_contact_exchange')");
   const calls = [], flags = {failPaidWriteOnce:false, failFulfillmentOnce:false, blocked:false};
-  const tables = new Set(['profiles','dating_1on1_cards','dating_1on1_match_proposals','dating_1on1_contact_nudges','toss_test_payment_orders']);
+  const tables = new Set(['profiles','dating_1on1_cards','dating_1on1_match_proposals','dating_1on1_contact_nudges','toss_test_payment_orders','payment_confirmation_failures']);
   const col = key => {if (key==='*' || /^[a-z_]+$/.test(key)) return key; if (key === 'product_meta->>profileAllPassOfferKey') return "product_meta->>'profileAllPassOfferKey'"; throw Error('Unexpected column');};
   const admin = {from(table) {
     if (!tables.has(table)) throw Error('Unexpected table: ' + table);
@@ -76,6 +78,7 @@ async function runtime({provider = providerFixture()} = {}) {
       or(v){pairUser=v.match(/^source_user_id.eq.([0-9a-f-]+),candidate_user_id.eq.\1$/)?.[1];if(!pairUser)throw Error('Unexpected pair filter');return q;},
       order(k,o={}){sorting=col(k)+(o.ascending===false?' desc':' asc');return q;},limit(v){limit=v;return q;},range(a,b){offset=a;limit=b-a+1;return q;},
       maybeSingle(){single=true;return q;},single(){single=true;return q;},insert(v){operation='insert';payload=v;return q;},update(v){operation='update';payload=v;return q;},
+      abortSignal(){return q;},upsert(v,options){if(options.onConflict!=='order_id'||!options.ignoreDuplicates)throw Error('Unexpected upsert');operation='upsert';payload=v;return q;},
       then(ok,bad){return (async()=>{
         calls.push({table,operation});
         if (operation==='update' && table==='toss_test_payment_orders' && payload.status==='paid' && flags.failPaidWriteOnce) {
@@ -91,7 +94,7 @@ async function runtime({provider = providerFixture()} = {}) {
         const where=conditions.length?' where '+conditions.join(' and '):'';
         const selected=fields.split(',').map(col).join(',');
         let sql;
-        if(operation==='insert'){const entries=Object.entries(payload);sql=`insert into ${table}(${entries.map(([k])=>col(k)).join(',')}) values(${entries.map(([,v])=>bind(v)).join(',')}) returning ${selected}`;}
+        if(operation==='insert'||operation==='upsert'){const entries=Object.entries(payload);sql=`insert into ${table}(${entries.map(([k])=>col(k)).join(',')}) values(${entries.map(([,v])=>bind(v)).join(',')})${operation==='upsert'?' on conflict(order_id) do nothing':''} returning ${selected}`;}
         else if(operation==='update')sql=`update ${table} set ${changes}${where} returning ${selected}`;
         else sql=`select ${selected} from ${table}${where}${sorting?' order by '+sorting:''}${limit!==undefined?' limit '+Number(limit):''}${offset?' offset '+Number(offset):''}`;
         try {const result=await db.query(sql,args);const rows=JSON.parse(JSON.stringify(result.rows));return {data:single?rows[0]||null:rows,error:null};}
@@ -125,7 +128,7 @@ async function runtime({provider = providerFixture()} = {}) {
       getDatingOneOnOneCardPhonesByIds:cardPhoneReader,
       getDatingOneOnOneCardsByIds:async(_admin,ids)=>new Map((await db.query('select id,user_id,birth_year,status,name,region from dating_1on1_cards where id=any($1::uuid[])',[ids])).rows.map(r=>[r.id,{...r,age:2026-r.birth_year,photo_signed_urls:[]}]))},
   };
-  const quietConsole={...console,error:(message)=>calls.push({diagnostic:message})};
+  const quietConsole={...console,error:(message)=>calls.push({diagnostic:message}),warn:(message)=>calls.push({diagnostic:message})};
   function routes(userId=id(1)) {
     const d={...deps,'@/lib/supabase/request':{getRequestAuthContext:async()=>({user:userId?{id:userId}:null})}};
     const globals={process:{env:{}},console:quietConsole};

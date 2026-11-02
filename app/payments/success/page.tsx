@@ -744,10 +744,10 @@ function PaymentSuccessContent() {
   return (
     <main className={`mx-auto px-4 py-8 ${isLoveFortune ? "max-w-5xl" : "max-w-2xl"}`}>
       <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-bold text-neutral-900">결제가 완료됐어요</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">{loading ? "결제 확인 중이에요" : error ? "결제 확인이 필요해요" : "결제가 완료됐어요"}</h1>
 
         {loading ? <p className="mt-4 text-sm text-neutral-500">결제 상태를 확인하고 있어요.</p> : null}
-        {error ? <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p> : null}
+        {error ? <p role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p> : null}
 
         {!loading && !error && result ? (
           <div className="mt-4 space-y-3">
@@ -885,10 +885,10 @@ function PaymentSuccessContent() {
         {!isLoveFortune ? (
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
-              href={primaryAction.href}
+              href={error ? "/mypage?section=payment" : primaryAction.href}
               className="inline-flex min-h-[44px] items-center rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
             >
-              {primaryAction.label}
+              {error ? "결제센터에서 확인" : primaryAction.label}
             </Link>
             <Link
               href="/mypage"
@@ -928,7 +928,7 @@ export default function PaymentSuccessPage() {
       fallback={
         <main className="mx-auto max-w-2xl px-4 py-8">
           <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
-            <h1 className="text-2xl font-bold text-neutral-900">결제가 완료됐어요</h1>
+            <h1 className="text-2xl font-bold text-neutral-900">결제 확인 중이에요</h1>
             <p className="mt-4 text-sm text-neutral-500">결제 상태를 확인하고 있어요.</p>
           </section>
         </main>

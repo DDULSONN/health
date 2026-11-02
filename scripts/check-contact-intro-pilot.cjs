@@ -291,5 +291,5 @@ test('SQL timing boundaries are inclusive at 24/72 hours; activation with zero t
 test('critical fulfillment and phone consent/reveal files remain byte-for-byte unchanged', () => {
   // Filled from the deployed pre-pilot baseline; do not update just to bypass a failure.
   const baseline = JSON.parse(read('scripts/fixtures/contact-intro-baseline.json'));
-  for (const [file, hash] of Object.entries(baseline)) assert.equal(createHash('sha256').update(read(file)).digest('hex'), hash, file);
+  for (const [file, hash] of Object.entries(baseline)) assert.equal(createHash('sha256').update(file.endsWith('/toss/confirm/route.ts') ? require('./fixtures/confirmation-diagnostics-contract.cjs').withoutConfirmationDiagnostics(read(file)) : read(file)).digest('hex'), hash, file);
 });

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
+import { filterMalformedSessionCookies } from "@/lib/supabase/session-cookies";
 import {
   getAdminPanelCookieName,
   isAdminPanelLockEnabled,
@@ -66,7 +67,7 @@ export async function middleware(request: NextRequest) {
     {
       cookies: {
         getAll() {
-          return request.cookies.getAll();
+          return filterMalformedSessionCookies(request.cookies.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
         },
         setAll(cookiesToSet) {
           // The refreshed session must be visible to Server Components and route

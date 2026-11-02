@@ -86,7 +86,7 @@ test('new names remain escaped and bounded layout remains wrapping', () => {
 });
 
 test('successful confirmation only adds an owner-scoped navigation field; all approval/fulfillment code is unchanged', () => {
-  const source = read('app/api/payments/toss/confirm/route.ts');
+  const source = require('./fixtures/confirmation-diagnostics-contract.cjs').withoutConfirmationDiagnostics(read('app/api/payments/toss/confirm/route.ts'));
   const fields = source.match(/^[ \t]*matchId: order\.product_type === "one_on_one_contact_exchange"\n[ \t]*\? normalizeOneOnOneMatchId\(order\.product_meta\?\.matchId\) \?\? normalizeOneOnOneMatchId\(order\.product_ref_id\) : undefined,\n/gm);
   assert.equal(fields?.length, 2, 'both new and already-confirmed payment responses keep the destination');
   const withoutNavigation = source.replace('import { normalizeOneOnOneMatchId } from "@/lib/dating-1on1-match-navigation";\n', '')

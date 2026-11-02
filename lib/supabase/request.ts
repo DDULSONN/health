@@ -18,8 +18,12 @@ function readBearerToken(req: Request): string | null {
 
 export async function getRequestAuthContext(req: Request): Promise<RequestAuthContext> {
   const cookieClient = await createServerClient();
-  const cookieUserRes = await cookieClient.auth.getUser();
-  if (cookieUserRes.data.user) {
+  let cookieFailure: unknown;
+  const cookieUserRes = await cookieClient.auth.getUser().catch(error => {
+    cookieFailure = error;
+    return null;
+  });
+  if (cookieUserRes?.data.user) {
     return {
       client: cookieClient,
       user: cookieUserRes.data.user,
@@ -29,6 +33,9 @@ export async function getRequestAuthContext(req: Request): Promise<RequestAuthCo
 
   const token = readBearerToken(req);
   if (!token) {
+    // An upstream failure is not proof of logout. Preserve the original failure
+    // instead of turning it into an anonymous session or clearing cookies.
+    if (cookieFailure) throw cookieFailure;
     return {
       client: cookieClient,
       user: null,
@@ -51,6 +58,7 @@ export async function getRequestAuthContext(req: Request): Promise<RequestAuthCo
   });
 
   const bearerUserRes = await bearerClient.auth.getUser(token);
+  if (!bearerUserRes.data.user && cookieFailure) throw cookieFailure;
   return {
     client: bearerClient,
     user: bearerUserRes.data.user ?? null,

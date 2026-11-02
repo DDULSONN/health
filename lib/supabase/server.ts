@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { filterMalformedSessionCookies } from "@/lib/supabase/session-cookies";
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -11,7 +12,7 @@ export async function createClient() {
     {
       cookies: {
         getAll() {
-          return cookieStore.getAll();
+          return filterMalformedSessionCookies(cookieStore.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
         },
         setAll(cookiesToSet) {
           try {

@@ -37,6 +37,7 @@ import {
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { AllPassOfferError, checkAllPassProfileOfferPayment } from "@/lib/all-pass-profile-offer-server";
 import { ALL_PASS_PROFILE_DISCOUNT_PRICE } from "@/lib/all-pass-profile-offer";
+import { getPaymentConfirmationFailureCode, getPaymentConfirmationFailureMessage, recordPaymentConfirmationFailure } from "@/lib/payment-confirmation-diagnostics";
 
 type ConfirmBody = {
   paymentKey?: unknown;
@@ -71,8 +72,6 @@ type TossOrderRow = {
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
 }
-
-const PAYMENT_CARD_UNAVAILABLE_MESSAGE = "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
 function toAmount(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -947,7 +946,16 @@ export async function POST(req: Request) {
     }
     const recoveredOfferPayment = order.product_type === "dating_all_pass_30d" && (order.product_meta?.profileAllPassOfferKey || order.amount === ALL_PASS_PROFILE_DISCOUNT_PRICE)
       ? await checkAllPassProfileOfferPayment(admin, order, paymentKey) : null;
-    const payment = recoveredOfferPayment ?? await confirmOrRecoverTossPayment({ paymentKey, orderId, amount });
+    let payment: TossConfirmPaymentResponse;
+    try {
+      payment = recoveredOfferPayment ?? await confirmOrRecoverTossPayment({ paymentKey, orderId, amount });
+    } catch (confirmError) {
+      const providerCode = getPaymentConfirmationFailureCode(confirmError);
+      await recordPaymentConfirmationFailure(admin, order, providerCode);
+      console.warn("[toss-confirm] approval unresolved", { requestId, orderId: order.id, providerCode });
+      return json(502, { ok: false, code: "PAYMENT_CONFIRMATION_UNRESOLVED", providerCode, requestId,
+        message: getPaymentConfirmationFailureMessage(providerCode) });
+    }
 
     const updateRes = await admin
       .from("toss_test_payment_orders")
@@ -1008,7 +1016,7 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     if (error instanceof AllPassOfferError) return json(error.status, { ok: false, code: error.code, message: error.message });
-    console.error("[toss-confirm] unhandled", error);
+    console.error("[toss-confirm] unhandled", { requestId, code: getPaymentConfirmationFailureCode(error) });
     if (error instanceof Error && error.message === "MORE_VIEW_METADATA_MISSING") {
       return json(500, {
         ok: false,
@@ -1077,7 +1085,7 @@ export async function POST(req: Request) {
       ok: false,
       code: "INTERNAL_SERVER_ERROR",
       requestId,
-      message: `결제 확인 중 오류가 발생했습니다. ${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`,
+      message: "결제 처리 결과를 확인하지 못했어요. 다시 결제하지 말고 결제센터에서 내역을 확인해 주세요. 해결되지 않으면 고객센터로 문의해 주세요.",
     });
   }
 }

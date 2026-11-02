@@ -8,6 +8,8 @@ for (const key of Object.keys(env)) {
   if (/SUPABASE|SOLAPI|RESEND|TOSS|KAKAO|SERVICE_ROLE|CRON_SECRET|PAYMENT_SECRET|SMTP/i.test(key)) delete env[key];
 }
 const unitFiles = [
+  'check-site-reliability.cjs',
+  'check-payment-confirmation-diagnostics.cjs',
   'check-landing-stories.cjs',
   'check-contextual-paid-offers.cjs',
   'check-city-preview-and-card-order.cjs',
@@ -93,6 +95,7 @@ const unitFiles = [
   'check-profiles-authority-write-guard.cjs',
 ];
 const browserFiles = [
+  'check-payment-confirmation-browser.cjs',
   'check-landing-stories-browser.cjs',
   'check-contextual-paid-offers-browser.cjs',
   'check-contact-care-checkout-browser.cjs',
@@ -150,6 +153,7 @@ if (process.argv.includes('--browser')) {
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--hides'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--engagement'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--impressions'], 10 * 60_000);
+  run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--new-candidates'], 10 * 60_000);
 } else {
   const pglite = require.resolve('@electric-sql/pglite');
   for (const key of ['ACCOUNT_DELETION_PGLITE_PATH', 'PAYMENT_RECOVERY_PGLITE_PATH', 'PRIVACY_TEST_PGLITE_PATH', 'REVIEW_TEST_PGLITE_PATH', 'REFRESH_TEST_PGLITE_PATH']) env[key] = pglite;

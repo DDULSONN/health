@@ -4,7 +4,7 @@ const {fixture,id,load,read}=require('./fixtures/admin-voucher-db.cjs');
 const logic=load('lib/contact-care-grants.ts');
 const input={requestId:id(101),userId:id(1),expectedNickname:'검증회원',quantity:1,reason:'고객 문의 확인 후 지급',confirmed:true};
 test('admin panel is additive; every existing mypage action and condition is unchanged',()=>{
- const source=read('app/mypage/page.tsx').replace(/\r\n/g,'\n');
+ const source=require('./check-site-button-tone.cjs').withoutNewCandidateNoticeType(read('app/mypage/page.tsx'));
  const restored=source.replace(/^const AdminContactVoucherPanel = dynamic\([^\n]*\);\n/m,'')
   .replace(/^ +\{adminUserActivityResult.user \? <AdminContactVoucherPanel userId=\{adminUserActivityResult.user.id\} \/> : null\}\n/m,'');
  assert.notEqual(restored,source);

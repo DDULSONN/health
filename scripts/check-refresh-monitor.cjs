@@ -32,7 +32,7 @@ function fixture(opts = {}) {
   const admin = { from: table => {
     let patch, filters = [];
     const q = { select: () => q, eq: (k,v) => { filters.push([k,v]); return q; }, in: () => q, gte: () => q,
-      order: () => q, limit: () => q, lte: () => q, maybeSingle: () => q, single: () => q,
+      order: () => q, limit: () => q, lte: () => q, lt: () => q, abortSignal: () => q, maybeSingle: () => q, single: () => q,
       update: value => { patch = value; writes.push({ table, value }); return q; }, then: (resolve,reject) => {
         reads.push(table);
         let data = [];
@@ -40,9 +40,10 @@ function fixture(opts = {}) {
         if (table === 'profiles') data = opts.deleted ? null : { is_banned: !!opts.banned };
         if (table === 'dating_1on1_cards') data = opts.staleCard ? null : { id: id(3) };
         if (table === 'dating_1on1_refresh_attempts') data = opts.history ?? { source_card_id: id(3) };
+        if (table === 'dating_1on1_candidate_impressions') data = opts.impressions ?? [];
         if (table === 'dating_1on1_refresh_audits') data = patch ? (opts.reserved ? [] : [{ id: job.id }])
           : [{ id: job.id, user_id: job.user_id, attempt_id: job.attempt_id, repaired_at: plan.refresh_at }];
-        return Promise.resolve({ data, error: opts.readError ? { code: opts.readError } : null }).then(resolve,reject);
+        return Promise.resolve({ data, error: opts.readError || (table === 'dating_1on1_candidate_impressions' && opts.impressionError) ? { code: opts.readError || opts.impressionError } : null }).then(resolve,reject);
       } }; return q;
   }, rpc: async (name,args) => { calls.push([name,args]); return { data: opts.repaired !== false, error: opts.rpcError ? {} : null }; } };
   const deps = {
@@ -102,6 +103,29 @@ test('two high-overlap refreshes are flagged but never replaced or emailed autom
   assert.equal(f.calls.length,0);assert.equal(f.emails.length,0);
   const g=fixture({history:[row]});
   assert.equal(await g.api.auditRefreshAttempt(g.admin,job,{...attempt,outcome:'changed'},'repair'),'healthy');
+});
+test('seven-day A-B-A repetition is reviewed without replacement, quota changes or messages', async () => {
+  const ids = [6,7,8,9,10].map(id);
+  const f=fixture({history:[],impressions:ids.slice(0,4).flatMap(candidate_user_id=>[
+    {candidate_user_id,first_seen_at:'2026-10-20T01:00:00Z'},
+    {candidate_user_id,first_seen_at:'2026-10-21T01:00:00Z'},
+  ])});
+  assert.equal(await f.api.auditRefreshAttempt(f.admin,job,{...attempt,outcome:'changed',after_user_ids:ids},'repair'),'repeat_review');
+  assert.equal(f.calls.length,0);assert.equal(f.emails.length,0);
+  assert.ok(f.writes.every(w=>w.table==='dating_1on1_refresh_audits'));
+});
+test('older, future, unrelated and duplicate impressions do not exaggerate repetition', async () => {
+  const f=fixture({history:[],impressions:[
+    {candidate_user_id:id(6),first_seen_at:'2026-10-01T01:00:00Z'},
+    {candidate_user_id:id(6),first_seen_at:attempt.planned_at},
+    {candidate_user_id:id(100),first_seen_at:'2026-10-20T01:00:00Z'},
+  ]});
+  assert.equal(await f.api.auditRefreshAttempt(f.admin,job,{...attempt,outcome:'changed'},'observe'),'healthy');
+});
+test('an impression read error is not silently labelled healthy', async () => {
+  const f=fixture({history:[],impressionError:'57014'});
+  await assert.rejects(f.api.auditRefreshAttempt(f.admin,job,{...attempt,outcome:'changed'},'repair'),/IMPRESSIONS_FAILED/);
+  assert.equal(f.writes.length,0);assert.equal(f.calls.length,0);assert.equal(f.emails.length,0);
 });
 test('a missing history read is not misreported as a clean bill of health', async () => {
   const f=fixture({readError:'57014'});

@@ -31,6 +31,7 @@ import {
   hasWiderRecommendationRegion,
   isCandidateInSourceAgeRange,
   isWiderRecommendationRegion,
+  includeNewRelevantCandidates,
 } from "@/lib/dating-1on1-recommendations";
 import type { createAdminClient } from "@/lib/supabase/server";
 import { getKstDateString } from "@/lib/weekly";
@@ -60,6 +61,7 @@ import { nextRecommendationPage, restoreRecommendationPage } from "@/lib/dating-
 import { readRecommendationHistory } from "@/lib/dating-1on1-recommendation-history";
 import { getRegionDistanceMeta } from "@/lib/region-distance";
 import { candidateHideUserIdsAt, readCandidateHides } from "@/lib/dating-candidate-hides";
+import { getOneOnOneNewCandidateNotice } from "@/lib/dating-1on1-new-candidate-notice";
 
 const RECOMMENDATION_LIMIT = 10;
 const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
@@ -374,6 +376,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
   ])];
 
   const unavailableCardIds = new Set<string>();
+  const pageGenerationTimes = new Map<string, number>();
   const buildItems = (simulateRefresh = false) => mySourceCards.map((sourceCard) => {
     const handledPairIds = new Set(candidateUniverse.filter((card) => handledUserIds.has(card.user_id)).map((card) => card.id));
     const sourcePhone = sourceCard.phone ? normalizePhoneForOneOnOneBlock(sourceCard.phone) : "";
@@ -460,12 +463,19 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     // A subsequent explicit refresh (or normal new daily generation) uses the
     // preferences already in effect at its generation time and can fill again.
     const pageAt = hasActiveRefresh ? Math.max(...refreshSeeds.filter(seed => getActiveRecommendationRefresh(seed, nowMs)).map(Date.parse)) : defaultPageAt;
+    pageGenerationTimes.set(sourceCard.id, pageAt);
     const hiddenAtGeneration = candidateHideUserIdsAt(hiddenCandidates.rows, pageAt);
     const replayCandidates = unsavedCandidates.filter(card => !hiddenAtGeneration.has(card.user_id));
     const selectionCandidates = unsavedCandidates.filter(notHidden);
-    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, replayCandidates, `${adminRecommendationDate}:default`, nowMs);
+    // Reconstruct the daily base as of midnight before adding arrivals. Sorting
+    // new cards into that base first could displace a hidden slot and refill it.
+    const defaultPool = hasActiveRefresh ? replayCandidates : replayCandidates.filter(card => {
+      const created = Date.parse(card.created_at);
+      return !Number.isFinite(created) || created <= defaultPageAt;
+    });
+    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, defaultPool, `${adminRecommendationDate}:default`, nowMs);
     const dailyObservedIds = observedCandidateIdsAt(observations, defaultPageAt);
-    const defaultRecommendations = dailyObservedIds.size ? takeObservedRecommendations(sourceCard, defaultSortedCandidates,
+    let defaultRecommendations = dailyObservedIds.size ? takeObservedRecommendations(sourceCard, defaultSortedCandidates,
       RECOMMENDATION_LIMIT, dailyObservedIds, new Set(), handledPairIds, nowMs) : takeBalancedRecommendations(
       sourceCard,
       defaultSortedCandidates,
@@ -473,6 +483,15 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       handledPairIds,
       nowMs
     );
+    if (!hasActiveRefresh) {
+      // Saved/legacy refresh pages already promote eligible new arrivals. Apply
+      // the same bounded priority to daily pages, without a write or quota use.
+      // Freeze observations at generation time so acknowledging views cannot
+      // reshuffle candidates, and preserve empty slots created by hiding.
+      defaultRecommendations = includeNewRelevantCandidates(sourceCard, replayCandidates, defaultRecommendations,
+        defaultPageAt, nowMs, RECOMMENDATION_LIMIT, handledPairIds, undefined, dailyObservedIds, true,
+        new Set(replayCandidates.filter(card => !notHidden(card)).map(card => card.id)));
+    }
     const recentHandledIds = new Set(unsavedCandidates.filter((card) => isRecentlyHandledCandidate(card, nowMs)).map((card) => card.id));
     const savedPage = savedPageResult.page;
     const hasSavedPage = savedPage && savedPage.source_card_id === sourceCard.id && activeRefresh &&
@@ -669,6 +688,10 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         admin_recommendations: adminRecommendations,
         // Compute after final status/identity checks so removed cards cannot trigger the notice.
         recommendation_region_widened: source ? hasWiderRecommendationRegion(source, visibleCandidates) : false,
+        new_candidate_notice: source && impressionResult?.available ? getOneOnOneNewCandidateNotice({
+          source, visible: recommendations, observations, pages: recentPages ?? undefined,
+          pageAt: pageGenerationTimes.get(item.source_card_id) ?? NaN, nowMs,
+        }) : null,
         impression_ticket: impressionResult?.available ? createImpressionTicket(user.id, item.source_card_id,
           visibleCandidates.map(card => card.id), nowMs) : null,
       };

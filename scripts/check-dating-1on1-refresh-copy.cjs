@@ -16,6 +16,22 @@ function evaluate(code, bindings = {}) {
   return mod.exports;
 }
 const copy = evaluate(read('lib/dating-1on1-refresh-copy.ts'));
+test('personal newcomer copy is bounded, optional and suppresses contradictory unused-refresh encouragement', () => {
+  const usage = { source_card_id: 'source', source_card_status: 'approved', can_refresh: true,
+    refresh_remaining: 1, refresh_used_count: 0, candidate_pool_count: 20, refresh_used_at: null };
+  assert.equal(copy.shouldShowOneOnOneRefreshReminder(usage), true);
+  assert.equal(copy.getOneOnOneNewCandidateCopy(usage), null);
+  for (const notice of [{ state: 'waiting', new_candidate_count: 0 }, { state: 'updated', new_candidate_count: 2 }]) {
+    const value = { ...usage, new_candidate_notice: notice };
+    assert.ok(copy.getOneOnOneNewCandidateCopy(value));
+    assert.equal(copy.shouldShowOneOnOneRefreshReminder(value), false);
+    assert.ok(!copy.getOneOnOneNewCandidateCopy(value).includes('\ufffd'));
+  }
+  for (const notice of [null, {}, { state: 'updated', new_candidate_count: 0 }, { state: 'updated', new_candidate_count: 999 },
+    { state: 'updated', new_candidate_count: '2' }, { state: 'waiting', new_candidate_count: 1 }]) {
+    assert.equal(copy.getOneOnOneNewCandidateCopy({ ...usage, new_candidate_notice: notice }), null);
+  }
+});
 const parsed = new Map();
 function ast(file) {
   if (!parsed.has(file)) parsed.set(file, ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX));
