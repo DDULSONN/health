@@ -70,6 +70,7 @@ function initializer(source, name) {
   return find(ast, n => ts.isVariableDeclaration(n) && n.name.getText(ast) === name).initializer.getText(ast);
 }
 function fetches(text, name) {
+  text = require('./fixtures/private-contact-contract.cjs').withoutPrivateView(text);
   // The pilot adds only an optional server-validated offer ID. Ordinary calls
   // still send the exact pre-pilot payload; pilot calls are executed in its suite.
   text = text.replace(/\r\n/g, '\n').replace(/^[ \t]*\.\.\.\(contactIntroOfferId \? \{ contactIntroOfferId \} : \{\}\),\n/gm, '');

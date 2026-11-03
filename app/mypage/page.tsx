@@ -1,6 +1,8 @@
 ﻿"use client";
 
 import dynamic from "next/dynamic";
+import type { PayerContactChoice } from "@/lib/dating-private-contact";
+import OneOnOneExchangedContact from "@/components/dating/OneOnOneExchangedContact";
 import { openCardStatusLabel } from "@/lib/dating-ui-labels";
 import { hideReportedMatches, hideReportedRecommendations } from "@/lib/dating-report-visibility";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
@@ -1044,6 +1046,9 @@ type MyOneOnOneMatch = {
   candidate_card: MyOneOnOneMatchCard | null;
   counterparty_card: MyOneOnOneMatchCard | null;
   counterparty_phone: string | null;
+  counterparty_instagram?: string | null;
+  contact_chat_url?: string | null;
+  my_contact_method?: "phone" | "instagram";
   contact_nudge?: OneOnOneContactNudgeSummary | null;
 };
 
@@ -5489,7 +5494,7 @@ export default function MyPage() {
     void handleOneOnOneMatchAction(matchId, "source_cancel");
   };
 
-  const handleRequestOneOnOneContactExchange = async (matchId: string, contactIntroOfferId?: string) => {
+  const handleRequestOneOnOneContactExchange = async (matchId: string, contactIntroOfferId?: string, payerContact?: PayerContactChoice) => {
     if (oneOnOneContactCheckoutLocksRef.current.has(matchId)) return;
     oneOnOneContactCheckoutLocksRef.current.add(matchId);
     setProcessingOneOnOneContactExchangeIds((prev) => [...prev, matchId]);
@@ -5501,6 +5506,7 @@ export default function MyPage() {
           productType: "one_on_one_contact_exchange",
           matchId,
           ...(contactIntroOfferId ? { contactIntroOfferId } : {}),
+          ...(payerContact ? { payerContact } : {}),
         }),
       });
       const body = (await res.json().catch(() => ({}))) as {
@@ -8542,7 +8548,7 @@ export default function MyPage() {
             return ownCard ? <OneOnOneContactOffer compact matchId={match.id} name={match.counterparty_card?.name}
               included={ownCard.plus_contact_exchange_included === true} processing={processingOneOnOneContactExchangeIds.includes(match.id)}
               nudge={match.contact_nudge} nudgeProcessing={processingOneOnOneNudgeIds.includes(match.id)}
-              onExchange={(id, offerId) => void handleRequestOneOnOneContactExchange(id, offerId)}
+              onExchange={(id, offerId, choice) => void handleRequestOneOnOneContactExchange(id, offerId, choice)}
               onNudge={(id, preset) => void handleOneOnOneContactNudge(id, preset)} /> : null;
           }} /> : null}
           <AllPassProfileOfferBanner placement="mypage_matching_profile_complete" />
@@ -10864,7 +10870,7 @@ export default function MyPage() {
                                   <OneOnOneContactOffer matchId={match.id} name={card.name}
                                     included={plusContactExchangeIncluded} processing={contactProcessing}
                                     nudge={match.contact_nudge} nudgeProcessing={processingOneOnOneNudgeIds.includes(match.id)}
-                                    onExchange={(id, offerId) => void handleRequestOneOnOneContactExchange(id, offerId)}
+                                    onExchange={(id, offerId, choice) => void handleRequestOneOnOneContactExchange(id, offerId, choice)}
                                     onNudge={(id, preset) => void handleOneOnOneContactNudge(id, preset)}
                                     help={<p className="mt-1 break-words">다른 결제 방법은 <a href={OPEN_KAKAO_URL} target="_blank" rel="noreferrer" className="underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">오픈카톡으로 문의</a>해 주세요. 매칭 ID {match.id}</p>}
                                   />
@@ -10874,9 +10880,7 @@ export default function MyPage() {
                                 {match.contact_exchange_status === "approved" ? (
                                   <>
                                     <p className="text-xs font-semibold text-neutral-900">번호 교환 완료</p>
-                                    <p className="mt-1 text-sm font-semibold text-emerald-700">
-                                      {match.counterparty_phone ?? "번호 정보를 불러오는 중입니다."}
-                                    </p>
+                                    <OneOnOneExchangedContact contact={match} />
                                     <p className="mt-1 text-[11px] text-neutral-500">
                                       외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
                                     </p>

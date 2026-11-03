@@ -45,6 +45,7 @@ const nudge = load('lib/dating-1on1-contact-nudge.ts');
 const nudgeUI = load('components/dating/OneOnOneContactNudge.tsx', { '@/lib/dating-1on1-contact-nudge': nudge });
 const notice = load('components/PaymentCardNotice.tsx', { '@/lib/payment-card-notice': load('lib/payment-card-notice.ts') });
 const Offer = load('components/dating/OneOnOneContactOffer.tsx', {
+  '@/lib/dating-private-contact': load('lib/dating-private-contact.ts'),
   // The support panel has its own SQL/API/mobile suite; isolate this payment-copy contract.
   '@/components/dating/ContactCarePanel': { default: () => null },
   '@/lib/use-contact-payment-tracking': { useContactPaymentTracking: () => ({ buttonRef: { current: null }, trackClick() {} }) },
@@ -144,6 +145,7 @@ function fixture(options = {}) {
     }; return q;
   } };
   const helper = load('lib/contact-payment-recovery.ts', {
+    '@/lib/dating-private-contact': load('lib/dating-private-contact.ts'),
     '@/lib/contact-intro-offer': load('lib/contact-intro-offer.ts'),
     '@/lib/contact-intro-offer-server': { readContactIntroOffer: async () => options.offer ?? null },
     '@/lib/dating-1on1': { getDatingOneOnOneCardsByIds: async () => new Map(options.missingCard ? [] : [['c2', card]]) },
@@ -278,7 +280,7 @@ test('a newly granted included benefit never reopens a paid READY checkout', asy
 });
 test('both matching surfaces use the same offer without altering approved phone rendering', () => {
   for (const file of ['app/mypage/page.tsx', 'components/dating/OneOnOneHomePanel.tsx']) {
-    const src = read(file); assert.ok(src.includes('<OneOnOneContactOffer')); assert.ok(src.includes('match.counterparty_phone'));
+    const src = require('./fixtures/private-contact-contract.cjs').withoutPrivateView(read(file)); assert.ok(src.includes('<OneOnOneContactOffer')); assert.ok(src.includes('match.counterparty_phone'));
   }
 });
 

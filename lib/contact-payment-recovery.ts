@@ -7,6 +7,7 @@ import { LEGACY_ONE_ON_ONE_CONTACT_PRICE_KRW, ONE_ON_ONE_CONTACT_PRICE_KRW } fro
 import { CONTACT_INTRO_PRICE } from "@/lib/contact-intro-offer";
 import { readContactIntroOffer } from "@/lib/contact-intro-offer-server";
 import { getTossPaymentByOrderId } from "@/lib/toss-payments";
+import { parsePayerContact, type PayerContactChoice } from "@/lib/dating-private-contact";
 
 export type ContactPaymentRecovery = {
   matchId: string;
@@ -16,6 +17,7 @@ export type ContactPaymentRecovery = {
   photoUrl: string | null;
   amount: number;
   state: "retry" | "paid" | "pending" | "unavailable";
+  payerContact?: PayerContactChoice;
 };
 
 // Never accept arbitrary redirect destinations, even from stored/provider data.
@@ -36,6 +38,7 @@ export async function getContactPaymentRecovery(admin: SupabaseClient, userId: s
   if (orderRes.error) throw orderRes.error;
   const order = orderRes.data;
   if (!order || order.product_type !== "one_on_one_contact_exchange" || !order.product_ref_id) return null;
+  const payerContact = order.product_meta?.payerContact == null ? null : parsePayerContact(order.product_meta.payerContact);
   if (![ONE_ON_ONE_CONTACT_PRICE_KRW, LEGACY_ONE_ON_ONE_CONTACT_PRICE_KRW].includes(Number(order.amount))) {
     if (Number(order.amount) !== CONTACT_INTRO_PRICE) return null;
     const offer = await readContactIntroOffer(admin, userId, order.product_ref_id, true);
@@ -64,6 +67,7 @@ export async function getContactPaymentRecovery(admin: SupabaseClient, userId: s
   const view: ContactPaymentRecovery = {
     matchId: match.id, name: card.name, region: card.region, age: card.age,
     photoUrl: card.photo_signed_urls[0] ?? null, amount: Number(order.amount), state: "unavailable",
+    ...(payerContact ? { payerContact } : {}),
   };
   if (order.status === "paid" || match.contact_exchange_status === "approved" || match.contact_exchange_paid_at) {
     view.state = "paid";

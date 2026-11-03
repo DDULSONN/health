@@ -8,6 +8,7 @@ import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import { isContactIntroOffer, type ContactIntroOffer } from "@/lib/contact-intro-offer";
 import { useContactPaymentTracking } from "@/lib/use-contact-payment-tracking";
 import ContactCarePanel from "@/components/dating/ContactCarePanel";
+import { normalizeContactInstagram, type PayerContactChoice } from "@/lib/dating-private-contact";
 
 type Props = {
   matchId: string;
@@ -16,7 +17,7 @@ type Props = {
   processing: boolean;
   nudge?: OneOnOneContactNudgeSummary | null;
   nudgeProcessing: boolean;
-  onExchange: (matchId: string, offerId?: string) => void;
+  onExchange: (matchId: string, offerId?: string, payerContact?: PayerContactChoice) => void;
   onNudge: (matchId: string, preset: OneOnOneContactNudgePresetKey) => void;
   help?: ReactNode;
   compact?: boolean;
@@ -25,6 +26,12 @@ type Props = {
 export default function OneOnOneContactOffer({ matchId, name, included, processing, nudge, nudgeProcessing, onExchange, onNudge, help }: Props) {
   const priceDescriptionId = useId();
   const [offer, setOffer] = useState<ContactIntroOffer | null>(null);
+  const [instagramAvailable, setInstagramAvailable] = useState(false);
+  const [shareInstagram, setShareInstagram] = useState(false);
+  const [instagram, setInstagram] = useState("");
+  const [contactError, setContactError] = useState("");
+  const instagramId = useId();
+  useEffect(() => { setShareInstagram(false); setInstagram(""); setContactError(""); setInstagramAvailable(false); }, [matchId, included]);
   useEffect(() => {
     if (included) return;
     let disposed = false;
@@ -40,6 +47,7 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         const body = await res.json();
         if (disposed || request.signal.aborted) return;
         setOffer(res.ok && isContactIntroOffer(body.offer) && body.offer.matchId === matchId ? body.offer : null);
+        setInstagramAvailable(res.ok && body.instagramContactAvailable === true);
       } catch { if (!disposed && !request.signal.aborted) setOffer(null); }
       finally { window.clearTimeout(timeout); }
     };
@@ -66,10 +74,29 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         {discount.active ? <>첫 교환 25% 할인 <span className="ml-1 font-normal text-neutral-400 line-through">20,000원</span>
           <span className="ml-1 font-normal text-neutral-500">· {new Date(discount.expiresAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}까지</span></> : "진행 중인 할인 주문 · 기존 금액 유지"}
       </p> : null}
+      {!included && instagramAvailable && !discount ? <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3 text-xs text-neutral-700">
+        <label className="flex min-h-6 cursor-pointer items-center gap-2">
+          <input type="checkbox" checked={shareInstagram} disabled={processing} onChange={event => { setShareInstagram(event.target.checked); setContactError(""); }} className="h-4 w-4 accent-[#f0003d]" />
+          내 번호 대신 인스타 공개
+        </label>
+        {shareInstagram ? <div className="mt-2">
+          <label htmlFor={instagramId} className="sr-only">내 인스타그램 아이디</label>
+          <input id={instagramId} value={instagram} onChange={event => { setInstagram(event.target.value); setContactError(""); }} disabled={processing}
+            autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={31} placeholder="@내 인스타 아이디"
+            aria-invalid={Boolean(contactError)} className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-900" />
+          <p className="mt-2 leading-5">나는 상대 번호를 보고, 상대는 내 인스타를 봐요.<br />짐툴 채팅도 열려요. 사이트에서 내 번호는 공개하지 않아요.</p>
+          <p className="mt-1 text-[11px] text-neutral-500">연락받을 수 있는 본인 계정인지 확인해 주세요.</p>
+        </div> : null}
+      </div> : null}
+      {contactError ? <p role="alert" className="mt-2 text-xs text-red-600">{contactError}</p> : null}
       <button ref={buttonRef} type="button" disabled={processing} aria-describedby={!included ? priceDescriptionId : undefined} onClick={() => {
+        if (shareInstagram && (included || !instagramAvailable || discount)) { setContactError("공개수단을 다시 확인해 주세요. 인스타 대신 번호로 자동 변경하지 않아요."); return; }
+        const useInstagram = !included && instagramAvailable && !discount && shareInstagram;
+        const normalized = normalizeContactInstagram(instagram);
+        if (useInstagram && !normalized) { setContactError("인스타 아이디를 확인해 주세요."); return; }
         // Measurement is fire-and-forget; it must never gate payment or free exchanges.
         trackClick();
-        onExchange(matchId, discount?.offerId);
+        onExchange(matchId, discount?.offerId, useInstagram && normalized ? { mode: "instagram", instagram: normalized } : undefined);
       }}
         className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-3 py-2 text-sm font-semibold text-white hover:bg-[#d90037] disabled:opacity-50">
         {processing ? (included ? "교환 중..." : "결제 준비 중...") : included ? "무료로 번호교환" : "연락처 교환하기"}
@@ -83,6 +110,7 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         <details className="mt-2 text-[11px] leading-5 text-neutral-500">
           <summary className="min-h-[44px] cursor-pointer content-center py-2">연락처 교환 안내</summary>
           <p className="mt-1">한 분이 결제를 완료하면 두 분 모두 연락처를 확인할 수 있어요. 각각 결제할 필요는 없어요.</p>
+          {shareInstagram ? <p className="mt-1">인스타 공개는 짐툴 안에서 내 번호를 숨기는 기능이에요. 상대에게 직접 전화·문자를 보내면 발신번호가 보일 수 있어요.</p> : null}
           <p className="mt-1">연락처 공개는 실제 대화나 만남을 보장하지 않아요. 상대의 프로필과 한마디를 확인한 뒤 결정해 주세요.</p>
           {help}
         </details>

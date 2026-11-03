@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import type { PayerContactChoice } from "@/lib/dating-private-contact";
+import OneOnOneExchangedContact from "@/components/dating/OneOnOneExchangedContact";
 import FriendRecommendButton from "@/components/dating/sharing/FriendRecommendButton";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import DatingReportButton, { type DatingReportTargetType, type DatingReportResult } from "@/components/DatingReportButton";
@@ -84,6 +86,9 @@ type OneOnOneMatchPreview = {
   action_required?: boolean;
   counterparty_card?: OneOnOneCardPreview | null;
   counterparty_phone?: string | null;
+  counterparty_instagram?: string | null;
+  contact_chat_url?: string | null;
+  my_contact_method?: "phone" | "instagram";
   contact_nudge?: OneOnOneContactNudgeSummary | null;
   source_final_responded_at?: string | null;
   candidate_responded_at?: string | null;
@@ -197,7 +202,7 @@ export default function OneOnOneHomePanel({
     matchId: string,
     action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => void;
-  onContactCheckout: (matchId: string, offerId?: string) => void;
+  onContactCheckout: (matchId: string, offerId?: string, payerContact?: PayerContactChoice) => void;
   onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
   onAutoSelect: (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => void | Promise<void>;
   onRefreshRecommendations: (sourceCardId: string) => void;
@@ -418,7 +423,7 @@ export default function OneOnOneHomePanel({
               </div> : focusedMatch?.counterparty_card ? <OneOnOneCandidateCard compact
                 card={focusedMatch.counterparty_card} reportTarget={{ type: "one_on_one_match", id: focusedMatch.id }}
                 onReported={onReported} badge={getOneOnOneMatchLabel(focusedMatch)} note={oneOnOneContactLabel(focusedMatch.contact_exchange_status)}>
-                {focusedMatch.counterparty_phone ? <p className="mt-2 text-sm font-black text-emerald-700">{focusedMatch.counterparty_phone}</p> : null}
+                {focusedMatch.contact_exchange_status === "approved" ? <OneOnOneExchangedContact contact={focusedMatch} /> : null}
                 <OneOnOneMatchActions match={focusedMatch} contactExchangeIncluded={plusContactExchangeIncluded}
                   processing={processingMatchIds.includes(focusedMatch.id)} contactProcessing={processingContactIds.includes(focusedMatch.id)}
                   nudgeProcessing={processingNudgeIds.includes(focusedMatch.id)} onMatchAction={onMatchAction}
@@ -720,7 +725,7 @@ export default function OneOnOneHomePanel({
                       badgeClassName={match.action_required || match.state === "mutual_accepted" ? "bg-emerald-100 text-emerald-700" : "bg-white text-neutral-600"}
                       note={oneOnOneContactLabel(match.contact_exchange_status)}
                     >
-                      {match.counterparty_phone ? <p className="mt-2 text-sm font-black text-emerald-700">{match.counterparty_phone}</p> : null}
+                      {match.contact_exchange_status === "approved" ? <OneOnOneExchangedContact contact={match} /> : null}
                       <OneOnOneMatchActions
                         match={match}
                         contactExchangeIncluded={plusContactExchangeIncluded}
@@ -886,7 +891,7 @@ function OneOnOneMatchActions({
     matchId: string,
     action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => void;
-  onContactCheckout: (matchId: string, offerId?: string) => void;
+  onContactCheckout: (matchId: string, offerId?: string, payerContact?: PayerContactChoice) => void;
   onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
 }) {
   if (match.role === "source" && match.state === "proposed") {

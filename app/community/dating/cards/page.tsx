@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import type { PayerContactChoice } from "@/lib/dating-private-contact";
 import ViewerSexSelection from "@/components/dating/ViewerSexSelection";
 import FriendRecommendButton, { FriendRecommendationBasketButton } from "@/components/dating/sharing/FriendRecommendButton";
 import { hideReportedMatches, hideReportedRecommendations } from "@/lib/dating-report-visibility";
@@ -2653,7 +2654,7 @@ function OpenCardsContent() {
   );
 
   const handleOneOnOneContactCheckout = useCallback(
-    async (matchId: string, contactIntroOfferId?: string) => {
+    async (matchId: string, contactIntroOfferId?: string, payerContact?: PayerContactChoice) => {
       if (oneOnOneContactCheckoutLocksRef.current.has(matchId)) return;
       oneOnOneContactCheckoutLocksRef.current.add(matchId);
       setProcessingOneOnOneContactIds((prev) => [...prev, matchId]);
@@ -2665,6 +2666,7 @@ function OpenCardsContent() {
             productType: "one_on_one_contact_exchange",
             matchId,
             ...(contactIntroOfferId ? { contactIntroOfferId } : {}),
+            ...(payerContact ? { payerContact } : {}),
           }),
         });
         const body = (await res.json().catch(() => ({}))) as {

@@ -39,6 +39,8 @@ import { getContactPaymentRecovery } from "@/lib/contact-payment-recovery";
 import { AllPassOfferError, createAllPassProfileOfferCheckout, readAllPassProfileOffer } from "@/lib/all-pass-profile-offer-server";
 import { ContactIntroError, createContactIntroCheckout, readContactIntroOffer } from "@/lib/contact-intro-offer-server";
 import { isContactIntroId } from "@/lib/contact-intro-offer";
+import { parsePayerContact } from "@/lib/dating-private-contact";
+import { preflightPrivateContact, privateContactEnabled } from "@/lib/dating-private-contact-server";
 
 import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
 import { getCityViewPurchasePreview } from "@/lib/dating-purchase-fulfillment";
@@ -86,6 +88,7 @@ type CreateBody = {
   recoveryOrderId?: unknown;
   allPassOfferId?: unknown;
   contactIntroOfferId?: unknown;
+  payerContact?: unknown;
 };
 
 type OneOnOneMatchRow = {
@@ -341,6 +344,46 @@ export async function POST(req: Request) {
     let paymentAmount = config.amount;
     let orderNameOverride: string | null = null;
     const admin = createAdminClient();
+    let payerContact;
+    try { payerContact = body.payerContact == null ? null : parsePayerContact(body.payerContact); }
+    catch (error) { return json(400, { ok: false, message: error instanceof Error ? error.message : "연락처를 확인해 주세요." }); }
+    if (payerContact) {
+      if (productType !== "one_on_one_contact_exchange" || !privateContactEnabled()) {
+        return json(409, { ok: false, message: "인스타 연락처 선택은 아직 준비 중이에요." });
+      }
+      // Never reuse a phone-only quote or silently replace a stored choice.
+      if (body.recoveryOrderId !== undefined || body.contactIntroOfferId !== undefined) {
+        return json(409, { ok: false, message: "기존 주문은 공개수단을 바꿀 수 없어요. 매칭 화면에서 다시 확인해 주세요." });
+      }
+    }
+    if (body.recoveryOrderId !== undefined) {
+      const recoveryOrderId = normalizeFailureOrderId(body.recoveryOrderId);
+      if (productType !== "one_on_one_contact_exchange" || !recoveryOrderId) {
+        return json(400, { ok: false, code: "INVALID_RECOVERY", message: "다시 시도할 주문을 확인해 주세요." });
+      }
+      const recovery = await getContactPaymentRecovery(admin, user.id, recoveryOrderId);
+      if (!recovery || recovery.view.matchId !== body.matchId || recovery.view.state !== "retry") {
+        return json(409, { ok: false, code: "RECOVERY_NOT_READY", message: "결제 또는 매칭 상태가 변경되었어요. 결제 내역과 내 매칭을 확인해 주세요." });
+      }
+      if (recovery.view.payerContact) {
+        // Resume only the same private order. An expired attempt or a newly
+        // granted free benefit must never fall through to phone disclosure.
+        const included = (await getActiveOneOnOnePlus(admin, user.id))?.contact_exchange_included;
+        if (!recovery.checkoutUrl || included) return json(409, { ok: false, code: "PRIVATE_CONTACT_RESELECT",
+          message: "매칭 화면에서 공개할 연락처를 다시 선택해 주세요. 인스타 선택을 번호 공개로 자동 변경하지 않아요." });
+        try { await preflightPrivateContact(admin, recovery.view.matchId, user.id, recovery.view.payerContact.instagram); }
+        catch { return json(409, { ok: false, code: "PRIVATE_CONTACT_UNAVAILABLE", message: "공개 설정을 확인하지 못했어요. 결제하지 말고 잠시 후 다시 확인해 주세요." }); }
+        return json(200, { ok: true, checkoutUrl: recovery.checkoutUrl, amount: recovery.view.amount, reusedOrder: true });
+      }
+      if (recovery.checkoutUrl) {
+        // A benefit may have been granted after the failed attempt. Keep the
+        // existing free-fulfillment path instead of reopening a paid checkout.
+        const recoveryPlus = await getActiveOneOnOnePlus(admin, user.id);
+        if (!recoveryPlus?.contact_exchange_included) {
+          return json(200, { ok: true, checkoutUrl: recovery.checkoutUrl, amount: recovery.view.amount, reusedOrder: true });
+        }
+      }
+    }
     if (body.contactIntroOfferId !== undefined && productType !== "one_on_one_contact_exchange") {
       return json(400, { ok: false, code: "INVALID_OFFER_PRODUCT", message: "연락처 교환 할인 상품을 확인해 주세요." });
     }
@@ -353,6 +396,7 @@ export async function POST(req: Request) {
       // Before the generic recovery/cancel-ready path: pilot orders are immutable
       // and serialized per pair. Expired existing orders retain their own price.
       if (!includedContact && offer && (offer.active || offer.hasOrder)) {
+        if (payerContact) return json(409, { ok: false, message: "기존 할인 주문은 번호 교환 방식으로만 이용할 수 있어요." });
         return json(200, await createContactIntroCheckout(admin, user, offer, getBaseUrl(req)));
       }
     } else if (body.contactIntroOfferId !== undefined) {
@@ -365,24 +409,6 @@ export async function POST(req: Request) {
     if (productType === "dating_all_pass_30d") {
       const offer = await readAllPassProfileOffer(admin, user.id);
       if (offer?.state === "active") return json(200, await createAllPassProfileOfferCheckout(admin, user, offer.offerId, getBaseUrl(req)));
-    }
-    if (body.recoveryOrderId !== undefined) {
-      const recoveryOrderId = normalizeFailureOrderId(body.recoveryOrderId);
-      if (productType !== "one_on_one_contact_exchange" || !recoveryOrderId) {
-        return json(400, { ok: false, code: "INVALID_RECOVERY", message: "다시 시도할 주문을 확인해 주세요." });
-      }
-      const recovery = await getContactPaymentRecovery(admin, user.id, recoveryOrderId);
-      if (!recovery || recovery.view.matchId !== body.matchId || recovery.view.state !== "retry") {
-        return json(409, { ok: false, code: "RECOVERY_NOT_READY", message: "결제 또는 매칭 상태가 변경되었어요. 결제 내역과 내 매칭을 확인해 주세요." });
-      }
-      if (recovery.checkoutUrl) {
-        // A benefit may have been granted after the failed attempt. Keep the
-        // existing free-fulfillment path instead of reopening a paid checkout.
-        const recoveryPlus = await getActiveOneOnOnePlus(admin, user.id);
-        if (!recoveryPlus?.contact_exchange_included) {
-          return json(200, { ok: true, checkoutUrl: recovery.checkoutUrl, amount: recovery.view.amount, reusedOrder: true });
-        }
-      }
     }
     let productRefId: string | null = null;
     let productMeta: Record<string, unknown> = {};
@@ -674,6 +700,7 @@ export async function POST(req: Request) {
       }
       const activePlus = await getActiveOneOnOnePlus(admin, user.id);
       if (activePlus?.contact_exchange_included) {
+        if (payerContact) return json(409, { ok: false, message: "기존 플러스 무료 교환은 번호 교환 방식으로 제공돼요." });
         const fulfilled = await grantOneOnOneContactExchange(admin, {
           matchId,
           userId: user.id,
@@ -724,11 +751,16 @@ export async function POST(req: Request) {
         });
       }
 
+      if (payerContact) {
+        try { await preflightPrivateContact(admin, matchId, user.id, payerContact.instagram); }
+        catch { return json(409, { ok: false, code: "PRIVATE_CONTACT_UNAVAILABLE", message: "인스타 공개 설정이나 매칭 상태를 확인하지 못했어요. 결제는 진행하지 않았어요. 잠시 후 다시 확인해 주세요." }); }
+      }
       const readyOrderIds = duplicateOrders.filter((row) => row.status === "ready").map((row) => row.id);
       await cancelReadyOrders(admin, readyOrderIds);
 
       productRefId = matchId;
-      productMeta = { matchId };
+      productMeta = { matchId, ...(payerContact ? { payerContact } : {}) };
+      if (payerContact) orderNameOverride = "1:1 연락처 교환 · 내 인스타 공개";
     }
 
     if (productType === "swipe_premium_30d") {

@@ -241,7 +241,7 @@ function createRoute(bindings) {
   const src = read('app/api/payments/toss/create/route.ts'), ast = ts.createSourceFile('route.ts', src, ts.ScriptTarget.Latest, true);
   const fn = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === 'POST');
   const js = ts.transpileModule(fn.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText.replace(/^export /gm, '');
-  const globals = { ...model, ensureAllowedMutationOrigin: () => null,
+  const globals = { ...model, ...load('lib/dating-private-contact.ts'), privateContactEnabled: () => false, ensureAllowedMutationOrigin: () => null,
     getRequestAuthContext: async () => ({ user: { id: id(1) } }), isTossConfigured: () => true,
     json: (status, body) => Response.json(body, { status }), parseProductType: v => v,
     PRODUCT_CONFIG: { one_on_one_contact_exchange: { amount: 20000, orderName: '1:1 번호 교환' } },
@@ -253,9 +253,15 @@ for (const explicit of [true, false]) test('actual create route, optional ID=' +
   const f = helperFixture();
   const handler = createRoute({ ...f.helper, createAdminClient: () => f.db,
     getContactPaymentRecovery: () => { throw Error('MUST_NOT_CANCEL_OR_REPLACE_PILOT'); } });
-  const result = await handler(req({ amount: 1, recoveryOrderId: 'irrelevant', ...explicit ? { contactIntroOfferId: id(1) } : {} }));
+  const result = await handler(req({ amount: 1, ...explicit ? { contactIntroOfferId: id(1) } : {} }));
   assert.equal(result.status, 200); assert.equal((await result.json()).amount, 15000);
   assert.equal(f.calls.filter(c => c.create).length, 1);
+});
+test('an explicit invalid recovery cannot fall through to a new promotional purchase',async()=>{
+  const f=helperFixture();
+  const handler=createRoute({...f.helper,createAdminClient:()=>f.db,normalizeFailureOrderId:()=>null});
+  const result=await handler(req({recoveryOrderId:'irrelevant',contactIntroOfferId:id(1)}));
+  assert.equal(result.status,400);assert.equal(f.calls.filter(c=>c.create).length,0);
 });
 for (const options of [{ quote: null }, { quote: offer({ active: false }) }, { quote: offer({ offerId: id(99) }) }]) test('actual create route: missing/expired/foreign offer never falls through to full-price charge ' + JSON.stringify(options), async () => {
   const f = helperFixture(options); const handler = createRoute({ ...f.helper, createAdminClient: () => f.db });

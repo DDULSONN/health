@@ -75,6 +75,8 @@ const unitFiles = [
   'check-account-recovery-safety.cjs',
   'check-contact-payment-conversion.cjs',
   'check-contact-checkout-integration.cjs',
+  'check-private-contact.cjs',
+  'check-private-contact-client.cjs',
   'check-contact-presentation.cjs',
   'check-contact-care.cjs',
   'check-admin-contact-vouchers.cjs',

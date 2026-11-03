@@ -5,6 +5,7 @@ const fs = require('node:fs'), path = require('node:path'), crypto = require('no
 const ts = require('typescript'), assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 function contract(source) {
+  source = require('./fixtures/private-contact-contract.cjs').withoutPrivateView(source);
   // Git uses LF on Linux and may check out CRLF on Windows. JSX text retains
   // source line endings even when the printer's newLine option is specified.
   source = source.replace(/\r\n?/g, '\n');

@@ -48,7 +48,7 @@ test('top contact offers only mount for actionable participant records and prese
 });
 
 test('new entry points reuse existing locks, authority and contact callbacks', () => {
-  const home=read('components/dating/OneOnOneHomePanel.tsx'),my=read('app/mypage/page.tsx');
+  const home=read('components/dating/OneOnOneHomePanel.tsx'),my=require('./fixtures/private-contact-contract.cjs').withoutPrivateView(read('app/mypage/page.tsx'));
   assert.match(home,/OneOnOneNextSteps matches=\{activeMatches\} renderContact=/);
   assert.match(home,/onExchange=\{onContactCheckout\} onNudge=\{onContactNudge\}/);
   assert.match(my,/processing=\{processingOneOnOneContactExchangeIds.includes\(match.id\)\}/);

@@ -161,6 +161,7 @@ for(const scenario of ["before24","at24","after30","legacyPolicy","alreadySent",
       return scenario==="schemaMissing"?{data:null,error:{code:"PGRST205"}}:{data:scenario==="alreadySent"?[sent]:[],error:null};
     }).then(ok,bad);}};return q;}};
     const route=loadFile("app/api/dating/1on1/matches/my/route.ts",{
+      "@/lib/dating-private-contact-server":{loadPrivateDisclosures:async()=>new Map()},
       "@/lib/dating-1on1-contact-nudge":helpers,
       "@/lib/dating-1on1-contact-nudge-policy":{loadOneOnOneContactNudgeDelayHours:async()=>scenario==="legacyPolicy"?24:0,loadOneOnOneContactGreetingsAvailable:async()=>false},
       "@/lib/dating-1on1":{getDatingOneOnOneCardsByIds:async()=>new Map([["source-card",{name:"본인"}],["candidate-card",{name:"상대"}]]),getDatingOneOnOneCardPhonesByIds:async(_db,ids)=>{if(scenario!=="approved")assert.deepEqual(ids,[]);return new Map();}},

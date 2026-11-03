@@ -76,6 +76,8 @@ async function mount() { states = []; refs = []; render(); for (const effect of 
     return q;
   } };
   const paymentRoute = load("app/api/payments/toss/create/route.ts", (id) => {
+    if (id.endsWith("dating-private-contact")) return load("lib/dating-private-contact.ts");
+    if (id.endsWith("dating-private-contact-server")) return { privateContactEnabled: () => false };
     if (id === "next/server") return require(id);
     if (id.endsWith("supabase/request")) return { getRequestAuthContext: async () => ({ user: { id: "viewer", email: "viewer@example.test" } }) };
     if (id.endsWith("supabase/server")) return { createAdminClient: () => paymentDb };

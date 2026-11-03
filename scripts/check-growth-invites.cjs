@@ -111,6 +111,7 @@ test('reviewed registration guards preserve post-success analytics; redirects/pa
    .replace('import { normalizeOneOnOneMatchId } from "@/lib/dating-1on1-match-navigation";\n','')
    .replace(/^[ \t]*matchId: order\.product_type === "one_on_one_contact_exchange"\n[ \t]*\? normalizeOneOnOneMatchId\(order\.product_meta\?\.matchId\) \?\? normalizeOneOnOneMatchId\(order\.product_ref_id\) : undefined,\n/gm,'') : read(p);
   if (p.endsWith('/toss/create/route.ts')) {
+    source=require('./fixtures/private-contact-contract.cjs').withoutPrivateAdditions(source,p);
     // Remove only the explicitly tested pilot preflight + duplicate-discount
     // guard. All existing product creation/fulfillment logic stays pinned.
     source=source.replace(/^import .* from "@\/lib\/contact-intro-offer(?:-server)?";\n/gm,'')

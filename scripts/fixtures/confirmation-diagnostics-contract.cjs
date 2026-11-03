@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 // Retain the pre-diagnostics approval/fulfillment hash in older safety suites.
 // Remove ONLY these exact, separately integration-tested diagnostic changes.
 function withoutConfirmationDiagnostics(source) {
+  source = require('./private-contact-contract.cjs').withoutPrivateConfirmation(source);
   source = source.replace(/\r\n/g, '\n');
   const changes = [
     ['import { getPaymentConfirmationFailureCode, getPaymentConfirmationFailureMessage, recordPaymentConfirmationFailure } from "@/lib/payment-confirmation-diagnostics";\n', ''],

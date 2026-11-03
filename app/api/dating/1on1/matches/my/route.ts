@@ -1,4 +1,5 @@
 import type { DatingOneOnOneMatchRow } from "@/lib/dating-1on1";
+import { loadPrivateDisclosures } from "@/lib/dating-private-contact-server";
 import {
   canConfirmOneOnOneContactNudge,
   getOneOnOneContactNudgeEligibility,
@@ -158,6 +159,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to load phone details." }, { status: 500 });
   }
 
+  const disclosures = await loadPrivateDisclosures(admin, rows.filter(row => row.contact_exchange_status === "approved"))
+    .catch(() => null);
+  if (!disclosures) return NextResponse.json({ error: "연락처 공개 설정을 확인하지 못했어요. 잠시 후 다시 확인해 주세요." }, { status: 503, headers: { "Cache-Control": "private, no-store" } });
+  if (rows.some(row => {
+    const disclosure = disclosures.get(row.id);
+    return disclosure && (![row.source_user_id, row.candidate_user_id].includes(disclosure.payer_user_id) || row.contact_exchange_paid_by_user_id !== disclosure.payer_user_id);
+  })) return NextResponse.json({ error: "연락처 공개 설정 확인이 필요해요." }, { status: 503, headers: { "Cache-Control": "private, no-store" } });
+
   const { available: nudgeSchemaAvailable, readReceiptsAvailable, rows: nudgeRows } =
     await loadOneOnOneContactNudges(admin, rows.map(row => row.id));
 
@@ -182,8 +191,11 @@ export async function GET(req: Request) {
       const counterpartyCard = cardMap.get(counterpartyCardId) ?? null;
       const verifiedProfilePhone = profilePhoneMap.get(counterpartyUserId) ?? null;
       const legacyCardPhone = phoneMap.get(counterpartyCardId) ?? null;
+      const disclosure = disclosures.get(row.id);
+      const exchangeVisible = row.contact_exchange_status === "approved" && (!disclosure || row.state === "mutual_accepted");
+      const hideCounterpartyPhone = disclosure?.payer_user_id === counterpartyUserId;
       const counterpartyPhone =
-        row.contact_exchange_status === "approved"
+        exchangeVisible && !hideCounterpartyPhone
           ? formatPhoneForDisplay(verifiedProfilePhone) ?? formatPhoneForDisplay(legacyCardPhone)
           : null;
       const nudges = nudgesByMatchId.get(row.id) ?? [];
@@ -197,6 +209,9 @@ export async function GET(req: Request) {
         candidate_card: cardMap.get(row.candidate_card_id) ?? null,
         counterparty_card: counterpartyCard,
         counterparty_phone: counterpartyPhone,
+        counterparty_instagram: exchangeVisible && hideCounterpartyPhone ? disclosure.instagram : null,
+        my_contact_method: disclosure?.payer_user_id === user.id ? "instagram" : "phone",
+        contact_chat_url: exchangeVisible && disclosure ? `/chat/one-on-one/${row.id}` : null,
         contact_nudge: {
           available: nudgeSchemaAvailable,
           read_receipts_available: nudgeSchemaAvailable && readReceiptsAvailable,

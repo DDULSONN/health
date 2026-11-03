@@ -7,7 +7,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 function load(file, deps = {}, globals = {}) {
   const mod = {exports: {}};
-  const code = ts.transpileModule(read(file), {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}}).outputText;
+  const code = ts.transpileModule(read(file), {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true}}).outputText;
   new Function('require', 'module', 'exports', ...Object.keys(globals), code)(name => {
     if (Object.hasOwn(deps, name)) return deps[name];
     if (name.startsWith('@/')) return load(name.slice(2) + '.ts', deps, globals);
@@ -41,7 +41,7 @@ function providerFixture() {
     async getTossPaymentByOrderId(key) {calls.push({type:'getOrder'});return payments.get(key) || null;},
   };
 }
-async function runtime({provider = providerFixture()} = {}) {
+async function runtime({provider = providerFixture(), privateContact = false} = {}) {
   const {PGlite} = require('@electric-sql/pglite');
   const db = new PGlite();
   await db.exec(`create schema auth; create table auth.users(id uuid primary key);
@@ -63,13 +63,28 @@ async function runtime({provider = providerFixture()} = {}) {
       values('${id(10)}','${id(20)}','${id(21)}','${id(1)}','${id(2)}','mutual_accepted','awaiting_applicant_payment');`);
   const definition = read('supabase/sql/toss_test_payment_orders.sql').match(/create table if not exists public\.toss_test_payment_orders \([\s\S]*?\n\);/)[0];
   await db.exec(definition);
+  await db.exec(read('supabase/sql/toss_payment_order_refunds.sql'));
   await db.exec('create role anon; create role authenticated; create role service_role bypassrls;');
   await db.exec(read('supabase/sql/payment_confirmation_failures.sql'));
+  if (privateContact) {
+    await db.exec(`alter table auth.users add column deleted_at timestamptz, add column banned_until timestamptz;
+      alter table profiles add column phone_verified boolean default true;
+      create table dating_user_blocks(blocker_user_id uuid,blocked_user_id uuid);
+      create table dating_1on1_admin_user_blocks(user_a_id uuid,user_b_id uuid);
+      create table dating_contact_blocks(user_id uuid,block_type text,value_hash text);
+      create table dating_1on1_phone_blocks(user_id uuid,phone_hash text);`);
+    await db.exec(read('supabase/sql/dating_1on1_private_contact.sql'));
+  }
   await db.exec("alter table toss_test_payment_orders drop constraint toss_test_payment_orders_product_type_check; alter table toss_test_payment_orders add check(product_type='one_on_one_contact_exchange')");
   const calls = [], flags = {failPaidWriteOnce:false, failFulfillmentOnce:false, blocked:false};
-  const tables = new Set(['profiles','dating_1on1_cards','dating_1on1_match_proposals','dating_1on1_contact_nudges','toss_test_payment_orders','payment_confirmation_failures']);
-  const col = key => {if (key==='*' || /^[a-z_]+$/.test(key)) return key; if (key === 'product_meta->>profileAllPassOfferKey') return "product_meta->>'profileAllPassOfferKey'"; throw Error('Unexpected column');};
-  const admin = {from(table) {
+  const tables = new Set(['profiles','dating_1on1_cards','dating_1on1_match_proposals','dating_1on1_contact_nudges','toss_test_payment_orders','payment_confirmation_failures','dating_1on1_private_contacts']);
+  const col = key => {if (key==='*' || /^[a-z_][a-z0-9_]*$/.test(key)) return key; if (key === 'product_meta->>profileAllPassOfferKey') return "product_meta->>'profileAllPassOfferKey'"; throw Error('Unexpected column');};
+  const admin = {async rpc(name, params) {
+    if (!['check_private_contact_exchange','approve_private_contact_exchange','private_contact_messages'].includes(name)) throw Error('Unexpected RPC: '+name);
+    const keys=Object.keys(params); if(keys.some(k=>!/^p_[a-z_]+$/.test(k))) throw Error('Invalid RPC key');
+    try { const result=await db.query(`select public.${name}(${keys.map((k,i)=>`${k}=>$${i+1}`).join(',')}) as result`,Object.values(params)); return {data:result.rows[0].result,error:null}; }
+    catch(error){return {data:null,error:{code:error.code,message:error.message}};}
+  },from(table) {
     if (!tables.has(table)) throw Error('Unexpected table: ' + table);
     let fields='*', single=false, operation='select', payload, limit, offset, sorting, pairUser;
     const filters=[];
@@ -108,6 +123,8 @@ async function runtime({provider = providerFixture()} = {}) {
   const cardPhoneReader=load('lib/dating-1on1.ts',cardDeps).getDatingOneOnOneCardPhonesByIds;
   const contactBlocks={
     normalizeDatingContactPhone:normalize,hasDatingContactPhoneBlockBetween:async()=>flags.blocked,
+    hasDatingContactBlockBetween:async()=>flags.blocked,
+    hashDatingContactBlockValue:(kind,value)=>require('node:crypto').createHash('sha256').update(kind+':'+value).digest('hex'),
     getDatingContactBlockMapForUsers:async()=>new Map(),isDatingContactPhoneBlockedPair:()=>flags.blocked,
     getDatingProfilePhoneMapForUsers:async(_admin,ids)=>new Map((await db.query('select user_id,phone_e164 from profiles where user_id=any($1::uuid[])',[ids])).rows.map(r=>[r.user_id,r.phone_e164])),
   };
@@ -116,7 +133,7 @@ async function runtime({provider = providerFixture()} = {}) {
     '@/lib/supabase/server':{createAdminClient:()=>admin},
     '@/lib/toss-payments':provider,
     '@/lib/dating-purchase-fulfillment':unavailable('fulfillment'),
-    '@/lib/dating-1on1-plus':{getActiveOneOnOnePlus:async()=>null},
+    '@/lib/dating-1on1-plus':{getActiveOneOnOnePlus:async()=>flags.includedContact?{contact_exchange_included:true}:null},
     '@/lib/dating-swipe':unavailable('swipe'), '@/lib/admin':{isAllowedAdminUser:()=>false},
     '@/lib/contact-intro-offer-server':{ContactIntroError:OfferError,readContactIntroOffer:async()=>null},
     '@/lib/all-pass-profile-offer-server':{AllPassOfferError:OfferError},
@@ -129,13 +146,14 @@ async function runtime({provider = providerFixture()} = {}) {
       getDatingOneOnOneCardsByIds:async(_admin,ids)=>new Map((await db.query('select id,user_id,birth_year,status,name,region from dating_1on1_cards where id=any($1::uuid[])',[ids])).rows.map(r=>[r.id,{...r,age:2026-r.birth_year,photo_signed_urls:[]}]))},
   };
   const quietConsole={...console,error:(message)=>calls.push({diagnostic:message}),warn:(message)=>calls.push({diagnostic:message})};
-  function routes(userId=id(1)) {
+  function routes(userId=id(1), enabled=privateContact) {
     const d={...deps,'@/lib/supabase/request':{getRequestAuthContext:async()=>({user:userId?{id:userId}:null})}};
-    const globals={process:{env:{}},console:quietConsole};
+    const globals={process:{env:{ONE_ON_ONE_INSTAGRAM_CONTACT_ENABLED: enabled ? 'true':'false'}},console:quietConsole};
     return {
       create:load('app/api/payments/toss/create/route.ts',d,globals).POST,
       confirm:load('app/api/payments/toss/confirm/route.ts',d,globals).POST,
       mine:load('app/api/dating/1on1/matches/my/route.ts',d,globals).GET,
+      privateChat:load('app/api/dating/1on1/private-chat/route.ts',d,globals),
       recovery:order=>load('lib/contact-payment-recovery.ts',d,globals).getContactPaymentRecovery(admin,userId,order),
     };
   }

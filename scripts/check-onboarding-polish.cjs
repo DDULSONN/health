@@ -10,7 +10,7 @@ function declarations(source,names){
   assert.equal(Object.keys(result).length,names.length);return result;
 }
 for(const [file,expected] of Object.entries(contract.files))test(file+' preserves reviewed save, validation and action handlers',()=>{
- const actual=Object.fromEntries(Object.entries(declarations(read(file),Object.keys(expected))).map(([name,source])=>[name,createHash('sha256').update(source).digest('hex')]));
+ const actual=Object.fromEntries(Object.entries(declarations(require('./fixtures/private-contact-contract.cjs').withoutPrivateView(read(file)),Object.keys(expected))).map(([name,source])=>[name,createHash('sha256').update(source).digest('hex')]));
  assert.deepEqual(actual,expected,'Review behavioral changes before updating the onboarding contract.');
 });
 test('first-sex presentation makes no requests and keeps pending/error feedback',()=>{

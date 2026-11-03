@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { fulfillPrivateContact, preflightPrivateContact } from "@/lib/dating-private-contact-server";
+import { parsePayerContact } from "@/lib/dating-private-contact";
 import { isOneOnOnePairAgeEligible } from "@/lib/dating-1on1-age";
 import { normalizeOneOnOneMatchId } from "@/lib/dating-1on1-match-navigation";
 import { DATING_AGE_INELIGIBLE_MESSAGE } from "@/lib/dating-age";
@@ -351,6 +353,7 @@ async function ensureOneOnOneExchangeFulfilled(
   admin: ReturnType<typeof createAdminClient>,
   order: TossOrderRow
 ) {
+  if (order.product_meta?.payerContact != null) return fulfillPrivateContact(admin, order);
   const matchId =
     (typeof order.product_meta?.matchId === "string" ? order.product_meta.matchId.trim() : "") ||
     order.product_ref_id?.trim() ||
@@ -936,6 +939,8 @@ export async function POST(req: Request) {
     // Revalidate old ready orders before asking the payment provider to charge.
     if (order.product_type === "one_on_one_contact_exchange") {
       const matchId = (typeof order.product_meta?.matchId === "string" ? order.product_meta.matchId.trim() : "") || order.product_ref_id?.trim();
+      const storedContact = order.product_meta?.payerContact == null ? null : parsePayerContact(order.product_meta.payerContact);
+      if (storedContact) await preflightPrivateContact(admin, matchId ?? "", user.id, storedContact.instagram);
       const pairRes = await admin.from("dating_1on1_match_proposals")
         .select("source_card_id,candidate_card_id,source_user_id,candidate_user_id").eq("id", matchId ?? "").maybeSingle();
       if (pairRes.error) throw pairRes.error;

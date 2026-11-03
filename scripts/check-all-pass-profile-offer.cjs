@@ -194,7 +194,7 @@ test('actual create POST: explicit and existing buttons use server price; expire
  for(const explicit of [true,false]) {
   const f=helperFixture();
   const create=actualFunction('app/api/payments/toss/create/route.ts','POST',{
-   ...routeCommon,...f.helper,createAdminClient:()=>f.db,parseProductType:v=>v,
+   ...routeCommon,...load('lib/dating-private-contact.ts'),privateContactEnabled:()=>false,...f.helper,createAdminClient:()=>f.db,parseProductType:v=>v,
    PRODUCT_CONFIG:{dating_all_pass_30d:{amount:39900}},getBaseUrl:()=> 'https://helchang.com',
   });
   const res=await create(request({productType:'dating_all_pass_30d',amount:1,...explicit?{allPassOfferId:id(1)}:{}}));
@@ -205,7 +205,7 @@ test('actual create POST: explicit and existing buttons use server price; expire
   {productType:'apply_credits',allPassOfferId:id(1)}]) {
   const f=helperFixture({rpcError:{code:'OFFER_EXPIRED'}});
   const create=actualFunction('app/api/payments/toss/create/route.ts','POST',{
-   ...routeCommon,...f.helper,createAdminClient:()=>f.db,parseProductType:v=>v,
+   ...routeCommon,...load('lib/dating-private-contact.ts'),privateContactEnabled:()=>false,...f.helper,createAdminClient:()=>f.db,parseProductType:v=>v,
    PRODUCT_CONFIG:{dating_all_pass_30d:{amount:39900},apply_credits:{amount:9900}},getBaseUrl:()=> 'https://helchang.com',
   });
   const res=await create(request(body));assert.equal(res.status,body.productType==='apply_credits'?400:409);

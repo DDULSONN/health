@@ -16,6 +16,9 @@ function canonical(node, ast, omitClasses = false) {
   result.dispose(); return text;
 }
 function fingerprint(code, name) {
+  code = name === 'OneOnOneContactOffer'
+    ? require('./fixtures/private-contact-contract.cjs').withoutPrivateAdditions(code, files.OneOnOneContactOffer)
+    : require('./fixtures/private-contact-contract.cjs').withoutPrivateView(code);
   code = code.replaceAll('(matchId: string, offerId?: string) => void', '(matchId: string) => void');
   const ast = tree(code), fn = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name);
   assert.ok(fn); return hash(canonical(fn, ast, true));
@@ -23,6 +26,7 @@ function fingerprint(code, name) {
 // Pin non-visual payment setup and the actual checkout button separately from
 // legitimate greeting layout/copy changes. Never baseline a changed payment path.
 function paymentContract(code) {
+  code = require('./fixtures/private-contact-contract.cjs').withoutPrivateAdditions(code, files.OneOnOneContactOffer);
   const ast=tree(code),fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='OneOnOneContactOffer');
   const parts=fn.body.statements.filter(n=>!ts.isReturnStatement(n)).map(n=>canonical(n,ast));
   function visit(n){
