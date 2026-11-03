@@ -8,6 +8,31 @@ const settle=async()=>{for(let i=0;i<6;i++)await new Promise(setImmediate);};
 const message=(content='안녕하세요 🙂')=>({id:'1',mine:true,content,created_at:new Date().toISOString()});
 const response=items=>Response.json({items});
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
+function offerView(){
+  const states=[],effects=[],pending=[],listeners={},exchanges=[];let si=0,ei=0,props={matchId:'match-a',included:false,processing:false,nudgeProcessing:false,onExchange:(...args)=>exchanges.push(args),onNudge(){}},nextBody={offer:null,instagramContactAvailable:true};
+  const helper={exports:{}};new Function('module','exports',compile('lib/dating-private-contact.ts'))(helper,helper.exports);
+  const m={exports:{}};new Function('require','module','exports','window','fetch',compile('components/dating/OneOnOneContactOffer.tsx'))(name=>{
+    if(name==='react')return {...React,useId:()=> 'test-id',useState:initial=>{const i=si++;if(!(i in states))states[i]=initial;return[states[i],v=>{states[i]=v;}];},useEffect:(fn,deps)=>{const i=ei++;if(!effects[i]||deps.some((d,j)=>!Object.is(d,effects[i].deps[j])))pending.push(()=>{effects[i]?.cleanup?.();effects[i]={deps,cleanup:fn()};});}};
+    if(name==='@/lib/dating-private-contact')return helper.exports;
+    if(name==='@/lib/contact-intro-offer')return {isContactIntroOffer:v=>!!v?.offerId};
+    if(name==='@/lib/dating-contact-price')return {ONE_ON_ONE_CONTACT_PRICE_KRW:18000};
+    if(name==='@/lib/use-contact-payment-tracking')return {useContactPaymentTracking:()=>({buttonRef:null,trackClick(){}})};
+    if(name.startsWith('@/components/'))return {__esModule:true,default:()=>null,ReceivedContactNudge:()=>null,SentContactNudgeReply:()=>null};
+    return require(name);
+  },m,m.exports,{setTimeout,clearTimeout,addEventListener:(k,f)=>{listeners[k]=f;},removeEventListener:k=>{delete listeners[k];}},async()=>Response.json(nextBody));
+  function render(){si=ei=0;const tree=m.exports.default(props);while(pending.length)pending.shift()();return tree;}
+  const get=(type,predicate=()=>true)=>nodes(render()).find(n=>n.type===type&&predicate(n));render();
+  return {exchanges,render,get,async ready(){await settle();render();},change:delta=>{props={...props,...delta};render();},async refresh(body){nextBody=body;await listeners.focus();await settle();render();},unmount:()=>effects.forEach(e=>e?.cleanup?.())};
+}
+for(const change of ['included','disabled','quote'])test('delayed '+change+' preserves Instagram choice and requires explicit phone opt-in',async()=>{
+  const v=offerView();try{await v.ready();v.get('input',n=>n.props.type==='checkbox').props.onChange({target:{checked:true}});
+    v.get('input',n=>n.props.placeholder==='@내 인스타 아이디').props.onChange({target:{value:'my_runner'}});
+    if(change==='included')v.change({included:true});else await v.refresh({instagramContactAvailable:false,offer:change==='quote'?{offerId:'offer-a',matchId:'match-a',amount:15000,active:false}:null});
+    assert.equal(v.get('input',n=>n.props.type==='checkbox').props.checked,true);assert.equal(v.get('input',n=>n.props.placeholder==='@내 인스타 아이디').props.value,'my_runner');
+    v.get('button',n=>n.props.onClick&&text(n).includes('교환')).props.onClick();assert.equal(v.exchanges.length,0);assert.match(text(v.render()),/번호로 자동 변경하지 않아요/);
+    v.get('input',n=>n.props.type==='checkbox').props.onChange({target:{checked:false}});v.get('button',n=>n.props.onClick&&text(n).includes('교환')).props.onClick();assert.equal(v.exchanges.length,1);assert.equal(v.exchanges[0][2],undefined);
+  }finally{v.unmount();}
+});
 function nodes(n){return Array.isArray(n)?n.flatMap(nodes):n&&typeof n==='object'?[n,...nodes(n.props?.children)]:[];}
 function text(n){return Array.isArray(n)?n.map(text).join(''):n&&typeof n==='object'?text(n.props?.children):String(n??'');}
 function view(fetch,crypto=global.crypto){

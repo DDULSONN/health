@@ -31,7 +31,8 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
   const [instagram, setInstagram] = useState("");
   const [contactError, setContactError] = useState("");
   const instagramId = useId();
-  useEffect(() => { setShareInstagram(false); setInstagram(""); setContactError(""); setInstagramAvailable(false); }, [matchId, included]);
+  // A delayed benefit/quote must not reset an explicit privacy choice.
+  useEffect(() => { setShareInstagram(false); setInstagram(""); setContactError(""); setInstagramAvailable(false); }, [matchId]);
   useEffect(() => {
     if (included) return;
     let disposed = false;
@@ -74,7 +75,7 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         {discount.active ? <>첫 교환 25% 할인 <span className="ml-1 font-normal text-neutral-400 line-through">20,000원</span>
           <span className="ml-1 font-normal text-neutral-500">· {new Date(discount.expiresAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}까지</span></> : "진행 중인 할인 주문 · 기존 금액 유지"}
       </p> : null}
-      {!included && instagramAvailable && !discount ? <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3 text-xs text-neutral-700">
+      {(!included && instagramAvailable && !discount) || shareInstagram ? <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3 text-xs text-neutral-700">
         <label className="flex min-h-6 cursor-pointer items-center gap-2">
           <input type="checkbox" checked={shareInstagram} disabled={processing} onChange={event => { setShareInstagram(event.target.checked); setContactError(""); }} className="h-4 w-4 accent-[#f0003d]" />
           내 번호 대신 인스타 공개
@@ -86,6 +87,7 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
             aria-invalid={Boolean(contactError)} className="min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-900" />
           <p className="mt-2 leading-5">나는 상대 번호를 보고, 상대는 내 인스타를 봐요.<br />짐툴 채팅도 열려요. 사이트에서 내 번호는 공개하지 않아요.</p>
           <p className="mt-1 text-[11px] text-neutral-500">연락받을 수 있는 본인 계정인지 확인해 주세요.</p>
+          {included || !instagramAvailable || discount ? <p className="mt-1 text-[11px] text-red-600">현재 조건에서는 인스타 공개를 사용할 수 없어요. 번호 공개에 동의할 때만 선택을 해제해 주세요.</p> : null}
         </div> : null}
       </div> : null}
       {contactError ? <p role="alert" className="mt-2 text-xs text-red-600">{contactError}</p> : null}
