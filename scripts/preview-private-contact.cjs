@@ -16,7 +16,7 @@ async function start({port=3198}={}) {
     const origin=`http://127.0.0.1:${server.address().port}`;
     try {
       res.setHeader('Cache-Control','no-store');
-      if(req.headers.host!==new URL(origin).host || (req.method==='POST'&&req.headers.origin!==origin)) {res.statusCode=403;return res.end();}
+      if(req.headers.host!==new URL(origin).host || (['POST','PATCH'].includes(req.method)&&req.headers.origin!==origin)) {res.statusCode=403;return res.end();}
       const url=new URL(req.url,origin);
       if(url.pathname==='/fixture.js'){res.setHeader('Content-Type','text/javascript');return res.end(fs.readFileSync(path.join(output,'fixture.js')));}
       if(url.pathname==='/fixture.css'){res.setHeader('Content-Type','text/css');return res.end(css);}
@@ -24,12 +24,17 @@ async function start({port=3198}={}) {
         res.setHeader('Content-Type','application/json; charset=utf-8');
         let body='';for await(const chunk of req){body+=chunk;if(body.length>16000)throw Error('Body too large');}
         if(url.pathname==='/api/preview/reset'&&req.method==='POST'){await f.db.close();f=await runtime({privateContact:true});return res.end('{"ok":true}');}
-        const request=new Request(url,{method:req.method,headers:req.headers,...(req.method==='POST'?{body}:{})});
+        const request=new Request(url,{method:req.method,headers:req.headers,...(['POST','PATCH'].includes(req.method)?{body}:{})});
         const routes=f.routes(req.headers['x-preview-role']==='recipient'?id(2):id(1));let response;
         if(url.pathname==='/api/payments/toss/create'&&req.method==='POST')response=await routes.create(request);
         else if(url.pathname==='/api/payments/toss/confirm'&&req.method==='POST')response=await routes.confirm(request);
         else if(url.pathname==='/api/dating/1on1/matches/my'&&req.method==='GET')response=await routes.mine(request);
-        else if(url.pathname==='/api/dating/1on1/private-chat'&&['GET','POST'].includes(req.method))response=await routes.privateChat[req.method](request);
+        else if(url.pathname==='/api/dating/1on1/private-chat'&&['GET','POST','PATCH'].includes(req.method))response=await routes.privateChat[req.method](request);
+        else if(url.pathname==='/api/dating/1on1/private-chat/inbox'&&req.method==='GET')response=await routes.privateInbox(request);
+        else if(url.pathname==='/api/preview/notifications'&&req.method==='GET') {
+          const result=await f.db.query('select meta_json,is_read from notifications where user_id=$1 order by created_at desc',[req.headers['x-preview-role']==='recipient'?id(2):id(1)]);
+          return res.end(JSON.stringify({items:result.rows}));
+        }
         else if(url.pathname==='/api/dating/1on1/contact-intro-offer')return res.end('{"offer":null,"instagramContactAvailable":true}');
         else if(url.pathname==='/api/dating/1on1/contact-care/policy')return res.end('{"active":false}');
         else if(url.pathname.startsWith('/api/analytics/')){res.statusCode=204;return res.end();}

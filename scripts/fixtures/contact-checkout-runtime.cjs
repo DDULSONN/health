@@ -74,15 +74,19 @@ async function runtime({provider = providerFixture(), privateContact = false} = 
       create table dating_contact_blocks(user_id uuid,block_type text,value_hash text);
       create table dating_1on1_phone_blocks(user_id uuid,phone_hash text);`);
     await db.exec(read('supabase/sql/dating_1on1_private_contact.sql'));
+    await db.exec(`create table notifications(id uuid primary key default gen_random_uuid(),user_id uuid references auth.users(id),
+      actor_id uuid,type text check(type in('comment')),post_id uuid,comment_id uuid,meta_json jsonb default '{}',
+      is_read boolean default false,created_at timestamptz default now());`);
+    await db.exec(read('supabase/sql/dating_1on1_private_chat_inbox.sql'));
   }
   await db.exec("alter table toss_test_payment_orders drop constraint toss_test_payment_orders_product_type_check; alter table toss_test_payment_orders add check(product_type='one_on_one_contact_exchange')");
   const calls = [], flags = {failPaidWriteOnce:false, failFulfillmentOnce:false, blocked:false};
   const tables = new Set(['profiles','dating_1on1_cards','dating_1on1_match_proposals','dating_1on1_contact_nudges','toss_test_payment_orders','payment_confirmation_failures','dating_1on1_private_contacts']);
   const col = key => {if (key==='*' || /^[a-z_][a-z0-9_]*$/.test(key)) return key; if (key === 'product_meta->>profileAllPassOfferKey') return "product_meta->>'profileAllPassOfferKey'"; throw Error('Unexpected column');};
   const admin = {async rpc(name, params) {
-    if (!['check_private_contact_exchange','approve_private_contact_exchange','private_contact_messages'].includes(name)) throw Error('Unexpected RPC: '+name);
+    if (!['check_private_contact_exchange','approve_private_contact_exchange','private_contact_messages','private_chat_contexts','private_chat_inbox','read_private_chat'].includes(name)) throw Error('Unexpected RPC: '+name);
     const keys=Object.keys(params); if(keys.some(k=>!/^p_[a-z_]+$/.test(k))) throw Error('Invalid RPC key');
-    try { const result=await db.query(`select public.${name}(${keys.map((k,i)=>`${k}=>$${i+1}`).join(',')}) as result`,Object.values(params)); return {data:result.rows[0].result,error:null}; }
+    try { const result=await db.query(`select public.${name}(${keys.map((k,i)=>`${k}=>$${i+1}`).join(',')}) as result`,keys.map(k=>k==='p_contexts'?JSON.stringify(params[k]):params[k])); return {data:result.rows[0].result,error:null}; }
     catch(error){return {data:null,error:{code:error.code,message:error.message}};}
   },from(table) {
     if (!tables.has(table)) throw Error('Unexpected table: ' + table);
@@ -154,6 +158,7 @@ async function runtime({provider = providerFixture(), privateContact = false} = 
       confirm:load('app/api/payments/toss/confirm/route.ts',d,globals).POST,
       mine:load('app/api/dating/1on1/matches/my/route.ts',d,globals).GET,
       privateChat:load('app/api/dating/1on1/private-chat/route.ts',d,globals),
+      privateInbox:load('app/api/dating/1on1/private-chat/inbox/route.ts',d,globals).GET,
       recovery:order=>load('lib/contact-payment-recovery.ts',d,globals).getContactPaymentRecovery(admin,userId,order),
     };
   }

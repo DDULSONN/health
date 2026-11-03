@@ -35,14 +35,15 @@ for(const change of ['included','disabled','quote'])test('delayed '+change+' pre
 });
 function nodes(n){return Array.isArray(n)?n.flatMap(nodes):n&&typeof n==='object'?[n,...nodes(n.props?.children)]:[];}
 function text(n){return Array.isArray(n)?n.map(text).join(''):n&&typeof n==='object'?text(n.props?.children):String(n??'');}
-function view(fetch,crypto=global.crypto){
+function view(fetch,crypto=global.crypto,options={}){
   const calls=[],states=[],refs=[],effects=[],callbacks=[],pending=[],listeners={},intervals=new Map();
+  const reads=[],observers=[];
   let si=0,ri=0,ei=0,ci=0,props={matchId:'match-a'};
   const same=(a,b)=>a&&b&&a.length===b.length&&a.every((x,i)=>Object.is(x,b[i]));
   const helper=transport((url,init)=>{calls.push({url,...init});return fetch(url,init);},crypto);
   const m={exports:{}},doc={visibilityState:'visible',addEventListener:(k,f)=>{listeners[k]=f;},removeEventListener:k=>{delete listeners[k];}};
   const win={setInterval:(fn)=>{intervals.set(1,fn);return 1;},clearInterval:id=>intervals.delete(id),addEventListener:(k,f)=>{listeners[k]=f;},removeEventListener:k=>{delete listeners[k];}};
-  new Function('require','module','exports','window','document',compile('components/dating/OneOnOnePrivateChat.tsx'))(name=>{
+  new Function('require','module','exports','window','document','IntersectionObserver',compile('components/dating/OneOnOnePrivateChat.tsx'))(name=>{
     if(name==='react')return {...React,
       useState:initial=>{const i=si++;if(!(i in states))states[i]=initial;return [states[i],v=>{states[i]=typeof v==='function'?v(states[i]):v;}];},
       useRef:initial=>refs[ri++]??={current:initial},
@@ -50,18 +51,33 @@ function view(fetch,crypto=global.crypto){
       useEffect:(fn,deps)=>{const i=ei++;if(!same(effects[i]?.deps,deps))pending.push(()=>{effects[i]?.cleanup?.();effects[i]={deps,cleanup:fn()};});},
     };
     if(name==='@/lib/private-contact-chat-client')return helper;
+    if(name==='@/lib/private-chat-inbox-client')return {privateChatUpdated(){},readPrivateChat:async(match,through,signal)=>{reads.push({match,through,signal});if(options.read)await options.read();}};
     return require(name);
-  },m,m.exports,win,doc);
-  function render(){si=ri=ei=ci=0;const tree=m.exports.default(props);while(pending.length)pending.shift()();return tree;}
+  },m,m.exports,win,doc,options.observe?class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}disconnect(){this.closed=true;}}:undefined);
+  function render(){si=ri=ei=ci=0;const tree=m.exports.default(props);if(options.observe)for(const n of nodes(tree))if(n.props?.ref)n.props.ref.current??={scrollTop:0,scrollHeight:100,clientHeight:100};while(pending.length)pending.shift()();return tree;}
   const get=type=>nodes(render()).find(n=>n.type===type);
   render();
-  return {calls,render,listeners,doc,get,states,async ready(){await settle();render();},
+  return {calls,render,listeners,doc,get,states,reads,visible:value=>observers.filter(o=>!o.closed).forEach(o=>o.fn([{isIntersecting:value}])),async ready(){await settle();render();},
     type:value=>get('textarea').props.onChange({target:{value}}),
     submit:()=>get('form').props.onSubmit({preventDefault(){}}),
     switchMatch:matchId=>{props={matchId};render();},
     unmount:()=>{for(const e of effects)e?.cleanup?.();},
   };
 }
+
+test('read receipt requires rendered last message and visible page, never just a background fetch',async()=>{
+  const v=view(async()=>response([{...message(),mine:false}]),global.crypto,{observe:true});try{
+    await v.ready();assert.equal(v.reads.length,0);v.visible(false);assert.equal(v.reads.length,0);
+    v.doc.visibilityState='hidden';v.visible(true);assert.equal(v.reads.length,0);
+    v.doc.visibilityState='visible';v.listeners.visibilitychange();await settle();assert.equal(v.reads.length,1);assert.equal(v.reads[0].through,'1');
+  }finally{v.unmount();}
+});
+test('switching room cancels old read acknowledgement without clearing the new room badge',async()=>{
+  const pending=deferred(),v=view(async()=>response([{...message(),mine:false}]),global.crypto,{observe:true,read:()=>pending.promise});try{
+    await v.ready();v.visible(true);assert.equal(v.reads.length,1);v.switchMatch('match-b');assert.equal(v.reads[0].signal.aborted,true);
+    pending.resolve();await v.ready();v.visible(true);await settle();assert.equal(v.reads.at(-1).match,'match-b');
+  }finally{v.unmount();}
+});
 
 for(const phase of ['fetch','body'])test('chat deadline releases '+phase+' even if abort is ignored; no automatic resend',async()=>{
   let calls=0;const t=transport(()=>{calls++;return phase==='fetch'?new Promise(()=>{}):Promise.resolve({ok:true,json:()=>new Promise(()=>{})});});

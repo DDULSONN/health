@@ -77,6 +77,7 @@ const unitFiles = [
   'check-contact-checkout-integration.cjs',
   'check-private-contact.cjs',
   'check-private-contact-client.cjs',
+  'check-private-chat-inbox.cjs',
   'check-contact-presentation.cjs',
   'check-contact-care.cjs',
   'check-admin-contact-vouchers.cjs',

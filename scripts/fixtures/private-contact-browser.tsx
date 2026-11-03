@@ -4,9 +4,14 @@ import { useEffect, useState } from "react";
 import OneOnOneContactOffer from "@/components/dating/OneOnOneContactOffer";
 import OneOnOneExchangedContact from "@/components/dating/OneOnOneExchangedContact";
 import OneOnOnePrivateChat from "@/components/dating/OneOnOnePrivateChat";
+import PrivateChatInbox from "@/components/dating/PrivateChatInbox";
 import type { ExchangedContact, PayerContactChoice } from "@/lib/dating-private-contact";
 const matchId="00000000-0000-4000-8000-000000000010";
 const role=new URLSearchParams(location.search).get('role')==='recipient'?'recipient':'payer';
+if (!new URLSearchParams(location.search).has('role')) {
+  const saved = sessionStorage.getItem('private-preview-role');
+  if (saved) location.replace(location.pathname+'?role='+saved);
+} else sessionStorage.setItem('private-preview-role',role);
 const originalFetch=window.fetch.bind(window);
 window.fetch=(input,init={})=>{
   const url=new URL(String(input),location.origin);
@@ -15,6 +20,7 @@ window.fetch=(input,init={})=>{
   return originalFetch(input,{...init,headers});
 };
 function App(){
+  const [notes,setNotes]=useState<{meta_json:{notification_title:string;notification_body:string;notification_route:string};is_read:boolean}[]>([]);
   const [match,setMatch]=useState<(ExchangedContact&{contact_exchange_status:string})|null>(null);
   const [order,setOrder]=useState<{orderId:string;amount:number;choice?:PayerContactChoice}|null>(null);
   const [working,setWorking]=useState(false),[error,setError]=useState('');
@@ -29,6 +35,7 @@ function App(){
     const b=await r.json();if(!r.ok)throw Error(b.message);await reload();setOrder(null);
   }catch(e){setError((e as Error).message);}finally{setWorking(false);}}
   const chat=location.pathname.startsWith('/chat/');
+  const inbox=location.pathname==='/chat';
   return <>
     <header className="border-b border-neutral-100 bg-white"><div className="mx-auto flex max-w-lg items-center justify-between px-5 py-5"><a className="text-xl font-black" href={'/?role='+role}>짐툴</a><span className="text-xs text-neutral-500">로컬 미리보기</span></div></header>
     <main className="mx-auto max-w-lg px-4 pb-20 pt-5">
@@ -37,7 +44,9 @@ function App(){
         <a className={`flex-1 rounded-lg py-2 text-center ${role==='recipient'?'bg-white font-semibold shadow-sm':'text-neutral-500'}`} href="/?role=recipient">상대방 화면</a>
       </nav>
       <p className="mb-4 text-xs leading-5 text-neutral-500">가상 회원 · 로컬 DB · 실제 결제/문자 발송 없음</p>
-      {chat?<OneOnOnePrivateChat matchId={matchId}/>:<section className="rounded-2xl border border-neutral-200 bg-white p-5">
+      <a href={'/chat?role='+role} className="mb-3 block text-sm underline">채팅탭</a>
+      {inbox?<><PrivateChatInbox/><button className="mt-4 text-sm underline" onClick={async()=>{const r=await fetch('/api/preview/notifications');setNotes((await r.json()).items);}}>알림 확인</button>
+        {notes.map((n,i)=><a key={i} href={n.meta_json.notification_route} className="mt-3 block rounded-xl border bg-white p-3 text-sm"><strong>{n.meta_json.notification_title}</strong><p>{n.meta_json.notification_body}</p><span>{n.is_read?'읽음':'읽지 않음'}</span></a>)}</>:chat?<OneOnOnePrivateChat matchId={matchId}/>:<section className="rounded-2xl border border-neutral-200 bg-white p-5">
         <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-base font-bold">{role==='payer'?'수빈':'지훈'} <span className="text-sm font-normal text-neutral-500">/ {role==='payer'?'29':'30'}세 / 서울</span></p><p className="mt-1 text-xs text-neutral-500">가상 프로필</p></div><span className="whitespace-nowrap rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">서로 수락</span></div>
         {error?<p role="alert" className="mb-3 text-sm text-red-600">{error}</p>:null}
         {order?<div className="rounded-xl border border-neutral-200 p-4">

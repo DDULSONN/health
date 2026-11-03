@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { privateChatMessageId, requestPrivateChat, type PrivateChatMessage } from "@/lib/private-contact-chat-client";
+import { privateChatUpdated, readPrivateChat } from "@/lib/private-chat-inbox-client";
 export default function OneOnOnePrivateChat({ matchId }: { matchId: string }) {
   const [items, setItems] = useState<PrivateChatMessage[]>([]);
   const [content, setContent] = useState("");
@@ -10,6 +11,10 @@ export default function OneOnOnePrivateChat({ matchId }: { matchId: string }) {
   const pending = useRef<{ content: string; clientId: string } | null>(null);
   const locked = useRef(false);
   const generation = useRef(0);
+  const viewport = useRef<HTMLDivElement | null>(null);
+  const end = useRef<HTMLDivElement | null>(null);
+  const nearBottom = useRef(true);
+  const acknowledged = useRef("");
   const load = useCallback(async (signal: AbortSignal) => {
     if (locked.current) return;
     const version = ++generation.current;
@@ -22,6 +27,7 @@ export default function OneOnOnePrivateChat({ matchId }: { matchId: string }) {
   }, [matchId]);
   useEffect(() => {
     setItems([]); setLoaded(false); setContent(""); setSending(false); pending.current = null; locked.current = false; generation.current++;
+    acknowledged.current = ""; nearBottom.current = true;
     let controller = new AbortController();
     const refresh = () => { if (document.visibilityState === "hidden" || locked.current) return; controller.abort(); controller = new AbortController(); void load(controller.signal); };
     refresh(); const timer = window.setInterval(refresh, 15000);
@@ -30,6 +36,33 @@ export default function OneOnOnePrivateChat({ matchId }: { matchId: string }) {
     const invalidate = () => { generation.current += 1; };
     return () => { controller.abort(); invalidate(); window.clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
   }, [load]);
+  useEffect(() => {
+    if (viewport.current && nearBottom.current) viewport.current.scrollTop = viewport.current.scrollHeight;
+  }, [items]);
+  useEffect(() => {
+    // Cursor is the last displayed message, including our own reply. Otherwise an
+    // older incoming message outside the latest 100 can leave an uncleareable badge.
+    const through = items.at(-1)?.id;
+    if (!loaded || !through || acknowledged.current === through || !end.current || typeof IntersectionObserver === "undefined") return;
+    const controller = new AbortController();
+    let visible = false, pendingRead = false;
+    const acknowledge = async () => {
+      if (!visible || document.visibilityState !== "visible" || pendingRead || controller.signal.aborted) return;
+      pendingRead = true;
+      try {
+        await readPrivateChat(matchId, through, controller.signal);
+        if (!controller.signal.aborted) { acknowledged.current = through; privateChatUpdated(); }
+      } catch { /* Keep unread on failure; the next successful poll retries acknowledgement. */ }
+      finally { pendingRead = false; }
+    };
+    const observer = new IntersectionObserver(entries => {
+      visible = entries.some(entry => entry.isIntersecting); void acknowledge();
+    }, { threshold: 1 });
+    observer.observe(end.current);
+    const onVisible = () => void acknowledge();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { controller.abort(); observer.disconnect(); document.removeEventListener("visibilitychange", onVisible); };
+  }, [items, loaded, matchId]);
   async function send() {
     const text = content.trim();
     if (!loaded || !text || text.length > 1000 || locked.current) return;
@@ -41,18 +74,21 @@ export default function OneOnOnePrivateChat({ matchId }: { matchId: string }) {
         body: JSON.stringify({ matchId, ...pending.current }) });
       if (version !== generation.current) return;
       if (!body.response.ok || !body.items) { if ([401,409].includes(body.response.status)) { setItems([]); setLoaded(false); } throw new Error(body.error); }
-      setItems(body.items); setContent(""); pending.current = null; setError("");
+      nearBottom.current = true; setItems(body.items); setContent(""); pending.current = null; setError(""); privateChatUpdated();
     } catch (err) { if (version === generation.current) setError((err instanceof Error ? err.message : "연결을 확인해 주세요.") + " 작성한 내용은 유지돼요. 재시도해도 같은 메시지는 중복 저장하지 않아요."); }
     finally { if (version === generation.current) { locked.current = false; setSending(false); } }
   }
   return <section className="mx-auto max-w-lg rounded-2xl border border-neutral-200 bg-white p-4 text-neutral-900">
+    <a href="/chat" className="mb-3 inline-block py-1 text-xs text-neutral-500">‹ 채팅 목록</a>
     <h1 className="text-lg font-bold">1:1 대화</h1>
     <p className="mt-1 text-xs leading-5 text-neutral-500">연락처를 교환한 상대와 나누는 대화예요. 서로 예의를 지켜 주세요.</p>
-    <div className="my-4 min-h-64 space-y-3" aria-label="대화 내역">
+    <div ref={viewport} onScroll={() => { const box = viewport.current; if (box) nearBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 80; }}
+      className="my-4 max-h-[55dvh] min-h-64 space-y-3 overflow-y-auto overscroll-contain" aria-label="대화 내역">
       {loaded && !items.length ? <p className="py-16 text-center text-sm text-neutral-400">가볍게 인사를 건네보세요.</p> : null}
       {items.map(item => <div key={item.id} className={`flex ${item.mine ? "justify-end" : "justify-start"}`}>
         <p className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm leading-6 ${item.mine ? "bg-rose-50 text-neutral-900" : "bg-neutral-100"}`}>{item.content}</p>
       </div>)}
+      <div ref={end} className="h-px" aria-hidden="true" />
     </div>
     {error ? <p role="alert" className="mb-3 text-xs leading-5 text-red-600">{error} <button type="button" className="underline" onClick={() => void load(new AbortController().signal)}>다시 확인</button></p> : null}
     <form onSubmit={event => { event.preventDefault(); void send(); }} className="flex items-end gap-2">

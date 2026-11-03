@@ -6,14 +6,15 @@ import { privateContactContext } from "@/lib/dating-private-contact-server";
 
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie, Authorization" };
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-async function handle(request: Request, write: boolean) {
+async function handle(request: Request, write: boolean, read = false) {
   if (write) { const blocked = ensureAllowedMutationOrigin(request); if (blocked) return blocked; }
   const context = await getRequestAuthContext(request).catch(() => null);
   if (!context) return NextResponse.json({ error: "로그인 상태를 확인하지 못했어요. 잠시 후 다시 확인해 주세요." }, { status: 503, headers });
   const { user } = context;
   if (!user || user.deleted_at) return NextResponse.json({ error: "로그인이 필요해요." }, { status: 401, headers });
   const input = write ? await request.json().catch(() => null) : Object.fromEntries(new URL(request.url).searchParams);
-  if (!input || typeof input.matchId !== "string" || !uuid.test(input.matchId) || (write &&
+  if (!input || typeof input.matchId !== "string" || !uuid.test(input.matchId) || (read &&
+    (typeof input.through !== "string" || !/^[1-9][0-9]{0,18}$/.test(input.through))) || (write && !read &&
     (typeof input.content !== "string" || !input.content.trim() || input.content.length > 1000 || !uuid.test(String(input.clientId ?? ""))))) {
     return NextResponse.json({ error: "보낼 내용을 확인해 주세요." }, { status: 400, headers });
   }
@@ -29,6 +30,11 @@ async function handle(request: Request, write: boolean) {
     if (disclosure.error || !disclosure.data) throw new Error("PRIVATE_UNAVAILABLE");
     // Block hashes belong to the payer even when the recipient opens this chat.
     const params = await privateContactContext(admin, input.matchId, disclosure.data.payer_user_id, disclosure.data.instagram);
+    if (read) {
+      const result = await admin.rpc("read_private_chat", { ...params, p_user: user.id, p_through: input.through });
+      if (result.error) throw result.error;
+      return NextResponse.json(result.data, { headers });
+    }
     const { data, error } = await admin.rpc("private_contact_messages", { ...params, p_user: user.id,
       p_content: write ? input.content.trim() : null, p_client_id: write ? input.clientId : null });
     if (error) throw error;
@@ -42,3 +48,4 @@ async function handle(request: Request, write: boolean) {
 }
 export const GET = (request: Request) => handle(request, false);
 export const POST = (request: Request) => handle(request, true);
+export const PATCH = (request: Request) => handle(request, true, true);

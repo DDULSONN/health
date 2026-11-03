@@ -7,6 +7,7 @@ import { fetchClientJson } from "@/lib/client-json-request";
 import { DATING_CHAT_REPORT_REASONS } from "@/lib/dating-chat-report-reasons";
 import { createClient } from "@/lib/supabase/client";
 import ChatPeerProfile from "@/components/ChatPeerProfile";
+import PrivateChatInbox from "@/components/dating/PrivateChatInbox";
 import { isChatPagination, mergeChatMessages, mergeLatestChatPage, type ChatMessage, type ChatPagination } from "@/lib/chat-messages";
 
 type ChatSourceKind = "open" | "paid" | "swipe";
@@ -851,6 +852,7 @@ export default function ChatPage() {
       {!loading ? (
         <div className="grid items-start gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
           <aside className="space-y-4">
+            {currentUserId ? <PrivateChatInbox key={currentUserId} /> : null}
             <section className="rounded-[24px] border border-black/5 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-bold text-neutral-900">채팅방</h2>

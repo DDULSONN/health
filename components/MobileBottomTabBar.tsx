@@ -1,4 +1,5 @@
 "use client";
+import { PRIVATE_CHAT_UPDATED } from "@/lib/private-chat-inbox-client";
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -122,7 +123,7 @@ function MobileBottomTabBarContent() {
       chatBadgeCache = { value: nextBadge, expiresAt: Date.now() + CHAT_BADGE_CACHE_TTL_MS };
       setChatBadge(nextBadge);
     } catch {
-      setChatBadge({ unreadCount: 0, availableCount: 0 });
+      // A transient load failure must not pretend all messages were read.
     }
   }, []);
 
@@ -142,7 +143,12 @@ function MobileBottomTabBarContent() {
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
+    const onChatUpdated = () => { void loadChatBadge({ force: true }); };
+    const timer = window.setInterval(onFocus, 60000);
+    window.addEventListener(PRIVATE_CHAT_UPDATED, onChatUpdated);
     return () => {
+      window.clearInterval(timer);
+      window.removeEventListener(PRIVATE_CHAT_UPDATED, onChatUpdated);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };

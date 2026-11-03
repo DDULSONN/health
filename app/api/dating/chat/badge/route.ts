@@ -2,6 +2,7 @@ import { isMissingDatingChatRelation, listDatingChatConnections } from "@/lib/da
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { loadPrivateChatInbox } from "@/lib/private-chat-inbox";
 
 type ThreadRow = {
   id: string;
@@ -27,19 +28,21 @@ export async function GET(req: Request) {
   const admin = createAdminClient();
 
   try {
-    const [connections, threadsRes] = await Promise.all([
+    const [connections, threadsRes, privateChats] = await Promise.all([
       listDatingChatConnections(admin, user.id),
       admin
         .from("dating_chat_threads")
         .select("id,source_kind,source_id,user_a_id,user_b_id,status,user_a_hidden_at,user_b_hidden_at")
         .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`),
+      loadPrivateChatInbox(admin, user.id),
     ]);
+    const privateUnread = privateChats.reduce((sum, item) => sum + item.unread_count, 0);
 
     if (threadsRes.error) {
       if (isMissingDatingChatRelation(threadsRes.error)) {
         return NextResponse.json({
           ok: true,
-          unreadCount: 0,
+          unreadCount: privateUnread,
           availableCount: connections.length,
         });
       }
@@ -92,7 +95,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      unreadCount: Math.max(0, Number(unreadRes.count ?? 0)),
+      unreadCount: Math.max(0, Number(unreadRes.count ?? 0)) + privateUnread,
       availableCount,
     });
   } catch (error) {
