@@ -13,6 +13,7 @@ import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
 import OneOnOneContactOffer from "@/components/dating/OneOnOneContactOffer";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
+import OneOnOneProfileStateNotice from "@/components/dating/OneOnOneProfileStateNotice";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
 import OneOnOneNextSteps from "@/components/dating/OneOnOneNextSteps";
 import OneOnOneContactList from "@/components/dating/OneOnOneContactList";
@@ -50,6 +51,7 @@ type OneOnOneCardPreview = {
   preferred_partner_text?: string | null;
   photo_signed_urls?: string[];
   status?: string | null;
+  archived?: boolean;
 };
 
 type OneOnOneRecommendationGroup = {
@@ -399,7 +401,9 @@ export default function OneOnOneHomePanel({
           </div>
         ) : (
           <div className="flex flex-col gap-5">
-            {!hasOneOnOneCard && !profileDraftAvailable ? (
+            {!hasOneOnOneCard && myCards[0]?.status === "rejected" ? (
+              <OneOnOneProfileStateNotice profile={myCards[0]} showManageLink />
+            ) : !hasOneOnOneCard && !profileDraftAvailable ? (
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
             <p className="text-base font-semibold text-neutral-900">내 소개를 올리면 추천이 시작돼요</p>
             <p className="mt-2 text-[13px] leading-6 text-neutral-600">

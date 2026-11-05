@@ -59,7 +59,7 @@ async function main(){
         window.setInterval=(callback,delay,...args)=>{const timer=set(callback,delay,...args);if(delay===60000)window.careTestTimers.add(timer);return timer;};
         window.clearInterval=timer=>{window.careTestTimers.delete(timer);return clear(timer);};
       });
-      await member.locator('summary').click();
+      await member.locator('summary').first().click();
       const select=member.getByLabel(claimMode?'교환할 상대':'추가 지급 교환권으로 교환할 상대',{exact:true});
       await select.selectOption(id(20));page.on('dialog',d=>d.accept());
       await button.evaluate(b=>{b.click();b.click();});
@@ -67,8 +67,8 @@ async function main(){
       await until(()=>page.evaluate(()=>window.careTestTimers.size===1));
       assert.equal(redeems,1);assert.equal(checks,0);assert.equal(await button.isEnabled(),false);assert.equal(await select.isEnabled(),true);
       if(scenario==='collapsed'){
-        await member.locator('summary').click();await until(()=>page.evaluate(()=>window.careTestTimers.size===0));await page.clock.runFor(180001);assert.equal(checks,0);
-        await member.locator('summary').click();
+        await member.locator('summary').first().click();await until(()=>page.evaluate(()=>window.careTestTimers.size===0));await page.clock.runFor(180001);assert.equal(checks,0);
+        await member.locator('summary').first().click();
       }else if(scenario==='hidden'){
         await page.evaluate(()=>Object.defineProperty(document,'visibilityState',{configurable:true,get:()=> 'hidden'}));
         await page.clock.runFor(180001);assert.equal(checks,0);

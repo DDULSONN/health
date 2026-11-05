@@ -29,7 +29,7 @@ async function main() {
       else resolve();
     });
   });
-  const cssRoot = path.join(root, '.next/static/css');
+  const cssRoot = process.env.CONTACT_CONVERSION_CSS_DIR || path.join(root, '.next/static/css');
   const css = fs.readdirSync(cssRoot).filter(name => name.endsWith('.css')).map(name => fs.readFileSync(path.join(cssRoot, name), 'utf8')).join('\n');
   const server = http.createServer((req, res) => {
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'");
@@ -44,6 +44,9 @@ async function main() {
   let browser, passed = 0;
   try {
     browser = await chromium.launch({ channel: 'msedge', headless: true });
+    if (process.argv.includes('--profile-state')) {
+      passed = await require('./test-profile-state-browser.cjs')({ browser, origin, output });
+    }
     if (process.argv.includes('--engagement')) {
       passed = await require('./test-matching-engagement-browser.cjs')({ browser, origin, output });
     }
@@ -65,7 +68,7 @@ async function main() {
     if (process.argv.includes('--admin-counts')) {
       passed = await require('./test-admin-active-counts-browser.cjs')({ browser, origin, output });
     }
-    for (const surface of process.argv.includes('--engagement') || process.argv.includes('--hides') || process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') || process.argv.includes('--new-candidates') || process.argv.includes('--admin-counts') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
+    for (const surface of process.argv.includes('--profile-state') || process.argv.includes('--engagement') || process.argv.includes('--hides') || process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') || process.argv.includes('--new-candidates') || process.argv.includes('--admin-counts') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
       for (const scenario of ['success', 'quota-stale', 'repeat-rotation', 'sequence-rotation', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'timeout-read', 'timeout-core-read', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
         if (scenario === 'timeout-core-read' && surface !== 'home') continue;
         const noChange = scenario.startsWith('no-change');

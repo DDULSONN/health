@@ -61,7 +61,7 @@ async function main(){
     const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
     await page.goto(origin);assert.equal(reads,0,'collapsed panels do not fetch full order or match lists');assert.equal(writes,0);
     const member=page.getByRole('region',{name:'회원 화면'}),admin=page.getByRole('region',{name:'관리자 화면'});
-    await member.locator('summary').click();await member.getByLabel('내가 결제한 상대').waitFor();
+    await member.locator('summary').first().click();await member.getByLabel('내가 결제한 상대').waitFor();
     const contactTime=new Date(Date.now()-36*3600000);const localTime=new Date(contactTime.getTime()-contactTime.getTimezoneOffset()*60000).toISOString().slice(0,16);
     await member.getByLabel('내가 결제한 상대').selectOption(id(100));await member.getByLabel('첫 연락을 보낸 시각').fill(localTime);
     await member.getByLabel('연락 방법과 상황').fill('카카오톡으로 처음 연락한 뒤 24시간이 지났지만 답장이 오지 않았어요.');
@@ -95,11 +95,11 @@ async function main(){
     await member.getByText('교환권 사용 완료',{exact:true}).waitFor();assert.equal(writes,4);
     assert.equal(await member.getByRole('link',{name:'연락처 확인'}).getAttribute('href'),`/community/dating/cards?tab=one_on_one&matchId=${id(20)}#selected-one-on-one-match`);
     claim={...claim,status:'rejected',used_at:null,used_match_id:null,review_note:'증빙의 첫 연락 시각이 필요합니다.'};
-    await page.reload();await member.locator('summary').click();await member.getByLabel('내가 결제한 상대').waitFor();
+    await page.reload();await member.locator('summary').first().click();await member.getByLabel('내가 결제한 상대').waitFor();
     assert.equal(await member.getByText(/부족한 내용을 보완해 다시 신청/).count(),1);
     assert.equal(await member.getByRole('button',{name:'교환권 신청',exact:true}).count(),1);
     claim={...claim,status:'needs_info',supplement_due_at:new Date(Date.now()+72*3600000).toISOString()};
-    await page.reload();await member.locator('summary').click();await member.getByText('추가 자료가 필요해요',{exact:true}).waitFor();
+    await page.reload();await member.locator('summary').first().click();await member.getByText('추가 자료가 필요해요',{exact:true}).waitFor();
     assert.equal(await member.getByRole('button',{name:'추가 자료 제출',exact:true}).count(),1);
     await member.getByLabel(/대화 캡처/).setInputFiles({name:'too-large.png',mimeType:'image/png',buffer:Buffer.alloc(3_000_001)});
     await member.getByRole('alert').waitFor();assert.equal(await member.getByRole('button',{name:'추가 자료 제출',exact:true}).isEnabled(),false);
@@ -108,9 +108,9 @@ async function main(){
     await admin.getByLabel('회원에게 표시할 검토 사유').fill('추가 자료가 제출되지 않아 반려합니다.');
     page.once('dialog',d=>d.accept());await admin.getByRole('button',{name:'반려',exact:true}).click();await admin.getByText('반려했습니다.',{exact:true}).waitFor();
     assert.equal(claim.status,'rejected');
-    active=false;claim=null;await page.reload();await member.locator('summary').click();await member.getByText(/현재 신규 신청을 받지/).waitFor();
+    active=false;claim=null;await page.reload();await member.locator('summary').first().click();await member.getByText(/현재 신규 신청을 받지/).waitFor();
     assert.equal(await member.getByRole('button',{name:'교환권 신청',exact:true}).count(),0);
-    installed=false;await page.reload();await member.locator('summary').click();await member.getByRole('alert').waitFor();
+    installed=false;await page.reload();await member.locator('summary').first().click();await member.getByRole('alert').waitFor();
     assert.equal(await member.getByRole('button',{name:'교환권 신청',exact:true}).count(),0);
     // The current site-wide notice takes precedence; never stack two modal notices.
     // Follow the current announcement window instead of a past release date.
@@ -136,14 +136,14 @@ async function main(){
     noticeStarted=noticeNow;const beforeExcluded=policyReads;await page.goto(origin+'/payments/success?notice');await page.waitForTimeout(600);assert.equal(policyReads,beforeExcluded,'notice never fetches or interrupts checkout');
     noticeStarted=noticeNow-48*3600000+2500;await page.goto(origin+'/?notice');await page.getByRole('dialog').waitFor();await page.getByRole('dialog').waitFor({state:'hidden',timeout:5000});
     await page.goto(origin+'/#contact-care');await member.getByLabel('내가 결제한 상대').waitFor();
-    assert.equal(await member.locator('details').getAttribute('open'),'','support deep link opens the form without a second click');
+    assert.equal(await member.locator('details').first().getAttribute('open'),'','support deep link opens the form without a second click');
     await page.goto(origin+'/mypage?section=matching&match=one_on_one&care=1');await member.getByLabel('내가 결제한 상대').waitFor();
-    assert.equal(await member.locator('details').getAttribute('open'),'','login return query opens support even without the URL fragment');
+    assert.equal(await member.locator('details').first().getAttribute('open'),'','login return query opens support even without the URL fragment');
     // Additional operator vouchers are visible before opening My Page details.
     claim={id:id(500),user_id:id(1),match_id:id(10),status:'approved',evidence_count:0,used_at:null,used_match_id:null};
     manualRemaining=3;manualHistory=[];
     await page.goto(origin);await member.getByText('보유 4장',{exact:true}).waitFor();
-    await member.locator('summary').click();await member.getByText('추가 지급 교환권 3장 · 사용 전까지 유지',{exact:true}).waitFor();
+    await member.locator('summary').first().click();await member.getByText('추가 지급 교환권 3장 · 사용 전까지 유지',{exact:true}).waitFor();
     for(const width of [320,390,768]){
       await page.setViewportSize({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       await page.screenshot({path:path.join(output,`manual-vouchers-${width}.png`),fullPage:true});

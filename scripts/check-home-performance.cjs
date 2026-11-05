@@ -171,7 +171,8 @@ const movedFunctions = {
   oneOnOneContactLabel: 'c7bcaf1620f1111c3b164ec6f71a6fb090a751162a2048cca29473e6a949d577',
 };
 for (const [name, hash] of Object.entries(movedFunctions)) test('extraction preserves rendering/behavior byte-for-byte: ' + name, () => {
-  let code = require('./fixtures/private-contact-contract.cjs').withoutPrivateView(read('components/dating/OneOnOneHomePanel.tsx')).replaceAll('(matchId: string, offerId?: string) => void', '(matchId: string) => void');
+  const profileView = require('./fixtures/profile-state-contract.cjs').withoutProfileStateNotice(read('components/dating/OneOnOneHomePanel.tsx'), 'components/dating/OneOnOneHomePanel.tsx');
+  let code = require('./fixtures/private-contact-contract.cjs').withoutPrivateView(profileView).replaceAll('(matchId: string, offerId?: string) => void', '(matchId: string) => void');
   if (name === 'OneOnOneHomePanel') {
     // The separately tested GET-only quota check is the sole permitted addition.
     const quotaCheck = '                          onCheckUsage={onReload}\n';

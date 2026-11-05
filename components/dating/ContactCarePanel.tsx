@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { fetchClientJson } from "@/lib/client-json-request";
 import { CONTACT_CARE_MESSAGES, contactCareApplicationIssue, type ContactCareStatus } from "@/lib/contact-care";
 import { oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
+import { contactCareMatchLabel } from "@/lib/contact-care-presentation";
 import { CareTransportError, careAttemptRecorded, careClientError, fetchCareJson, snapshotCareEvidence, type CareAttempt } from "@/lib/contact-care-client";
 
 const inputClass = "mt-1 w-full min-w-0 rounded-lg border border-neutral-300 bg-white p-2 text-sm text-neutral-900";
@@ -175,19 +176,19 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   const canApply = !guideOnly && data && ((data.active && !data.claim) || claim?.status === "rejected" && data.active || claim?.status === "needs_info");
   const applicationIssue = contactCareApplicationIssue({ selected, first, reason, explanation, evidenceCount: files.length, confirmed, stale,
     supplement: claim?.status === "needs_info" ? { dueAt: claim.supplement_due_at } : undefined, now });
+  const policy = <div className="space-y-2 text-[11px] leading-5">
+    {data?.active || claim ? <p>번호교환 후 72시간 이내, 결제한 회원이 신청할 수 있어요. 캡처를 검토해 승인하면 다음 번호교환에 쓸 교환권 1장을 드려요. 증빙 신청을 통한 보상은 계정당 1회이며, 교환권은 사용 전까지 유지돼요.</p> : <p>연락처 교환 지원 가능 여부와 교환권 내역을 확인할 수 있어요.</p>}
+    <p>교환 직후 무응답·잠수는 첫 연락 후 24시간 이상 응답이 없을 때, 스캠·사칭 의심은 즉시 신청할 수 있어요. 단순 거절·대화 불만·대화가 이어진 뒤 관계 중단은 제외해요. 신청만으로 자동 지급되거나 상대가 제재되지는 않아요.</p>
+    <p>웹에서 직접 결제한 번호교환이 대상이에요. 시행 전에 결제했어도 번호교환 후 72시간 이내라면 신청할 수 있어요. 앱 내 결제·별도 입금 또는 목록에 없는 건은 고객센터로 문의해 주세요.</p>
+    <p>취소·환불·무료 교환은 대상이 아니며, 스캠 의심은 별도 조사·환불 검토가 필요할 수 있어요.</p>
+  </div>;
   return <details ref={details} id={matchId ? undefined : "contact-care"} className="mb-3 rounded-xl border border-neutral-200 bg-white px-3 text-xs text-neutral-600"
-    onToggle={e => { setExpanded(e.currentTarget.open); if (e.currentTarget.open && !pending.current) void load(); }}>
+    onToggle={e => { if (e.target !== e.currentTarget) return; setExpanded(e.currentTarget.open); if (e.currentTarget.open && !pending.current) void load(); }}>
     <summary className="min-h-[44px] cursor-pointer content-center py-2 font-medium text-neutral-700">{guideOnly ? <>
       교환 직후 연락이 끊기면? · 지원 기준
       <span className="mt-0.5 block text-[11px] font-normal leading-5 text-neutral-500">교환권 지원은 증빙 검토·승인이 필요해요.</span>
     </> : matchId ? "연락이 닿지 않거나 문제가 있나요? · 지원 신청" : <>연락처 교환 지원 · 신청 내역 / 교환권{remaining != null && remaining > 0 ? <span className="ml-2 inline-block rounded-full bg-rose-50 px-2 py-0.5 font-semibold text-rose-700">보유 {remaining}장</span> : null}</>}</summary>
     {expanded ? <div className="space-y-3 pb-3">
-      {data?.active || claim ? <p>번호교환 후 72시간 이내, 결제한 회원이 신청할 수 있어요. 캡처를 검토해 승인하면 다음 번호교환에 쓸 교환권 1장을 드려요. 증빙 신청을 통한 보상은 계정당 1회이며, 교환권은 사용 전까지 유지돼요.</p> : <p>연락처 교환 지원 가능 여부와 교환권 내역을 확인할 수 있어요.</p>}
-      <p className="text-[11px] leading-5">교환 직후 무응답·잠수는 첫 연락 후 24시간 이상 응답이 없을 때, 스캠·사칭 의심은 즉시 신청할 수 있어요. 단순 거절·대화 불만·대화가 이어진 뒤 관계 중단은 제외해요. 신청만으로 자동 지급되거나 상대가 제재되지는 않아요.</p>
-      <p className="text-[11px] leading-5">웹에서 직접 결제한 번호교환이 대상이에요. 시행 전에 결제했어도 번호교환 후 72시간 이내라면 신청할 수 있어요. 앱 내 결제·별도 입금 또는 목록에 없는 건은 고객센터로 문의해 주세요.</p>
-      {data && !data.active ? <p>현재 신규 신청을 받지 않아요. 이미 지급된 교환권과 신청 내역은 유지돼요.</p> : null}
-      {guideOnly && data?.active ? <p>교환 완료 후 마이페이지의 해당 상대 카드에서 신청하세요. 취소·환불·무료 교환은 대상이 아니며, 스캠 의심은 별도 조사·환불 검토가 필요할 수 있어요.</p> : null}
-      {!guideOnly && matchId && data?.claim && !claim ? <p>다른 매칭에 신청 또는 지급 내역이 있어요. 상단 ‘연락처 교환 지원 · 신청 내역 / 교환권’에서 확인해 주세요.</p> : null}
       {busy ? <p role="status">확인 중...</p> : null}
       {error ? <p role="alert" className="text-red-700">{error}</p> : null}
       {info ? <p role="status" className="text-emerald-700">{info}</p> : null}
@@ -195,37 +196,52 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
         <p>{CONTACT_CARE_MESSAGES.CARE_CHECKOUT}</p>
         <p className="text-[11px]">이 화면을 열어두면 1분 간격으로 다시 확인해요. 별도 결제는 하지 마세요.</p>
       </div> : null}
-      <button type="button" className={buttonClass} disabled={busy} onClick={() => void load()}>내역 다시 확인</button>
-      {!guideOnly && !matchId && data && (manualRemaining > 0 || !!data.manual_history?.length) ? <div className="space-y-2 rounded-lg bg-neutral-50 p-3">
+      {!guideOnly && !matchId && data && (manualRemaining > 0 || !!data.manual_history?.length) ? <div data-care-vouchers className="space-y-2 rounded-lg bg-neutral-50 p-3">
         <p className="font-semibold text-neutral-900">추가 지급 교환권 {manualRemaining}장 · 사용 전까지 유지</p>
         <p>쌍방 수락한 상대와 번호를 교환할 때 1장씩 사용해요. 별도 결제는 없어요.</p>
         {manualRemaining > 0 ? <>
           <label className="block">교환할 상대<select aria-label="추가 지급 교환권으로 교환할 상대" className={inputClass} value={target} onChange={e => setTarget(e.target.value)} disabled={busy || stale}>
-            <option value="">쌍방 수락한 상대 선택</option>{data.matches.map(m => <option key={m.id} value={m.id}>{m.name} · {m.id.slice(0, 8)}</option>)}
+            <option value="">쌍방 수락한 상대 선택</option>{data.matches.map(m => <option key={m.id} value={m.id}>{contactCareMatchLabel(m, data.matches)}</option>)}
           </select></label>
           {!data.matches.length ? <p>지금 교환 가능한 쌍방 수락 매칭이 없어요. 교환권은 그대로 남아요.</p> : null}
-          <button type="button" className={buttonClass} disabled={busy || stale || !target || target === checkoutMatch} onClick={() => void send("redeem_manual")}>이 매칭에 교환권 사용</button>
+          {target && data.matches.some(m => m.id === target) ? <a href={oneOnOneMatchHref(target)} className="inline-flex min-h-11 items-center text-[11px] underline underline-offset-4">선택한 상대 프로필 확인</a> : null}
+          <button type="button" className={`${buttonClass} w-full`} disabled={busy || stale || !target || target === checkoutMatch} onClick={() => void send("redeem_manual")}>이 매칭에 교환권 사용</button>
         </> : null}
         {data.manual_history?.length ? <details><summary className="min-h-[44px] cursor-pointer content-center">최근 교환권 사용 내역</summary>
           <ul>{data.manual_history.map(item => <li key={item.used_match_id}><a className="inline-flex min-h-[44px] items-center underline" href={oneOnOneMatchHref(item.used_match_id)}>{date(item.used_at)} · 연락처 확인</a></li>)}</ul>
         </details> : null}
       </div> : null}
-      {claim && !guideOnly ? <div className="space-y-2 rounded-lg bg-neutral-50 p-3">
+      {claim && !guideOnly ? <div data-care-claim className="space-y-2 rounded-lg bg-neutral-50 p-3">
         <p className="font-semibold text-neutral-900">{claim.status === "pending" ? "신청 검토 중" : claim.status === "needs_info" ? "추가 자료가 필요해요" : claim.status === "rejected" ? "신청 결과 · 반려" : claim.used_at ? "교환권 사용 완료" : "교환권 1장 · 사용 전까지 유지"}</p>
-        <p className="break-all text-[11px]">신청 ID {claim.id}</p>
-        {claim.review_note ? <p className="whitespace-pre-wrap break-words">{claim.review_note}</p> : null}
+        {claim.status !== "approved" && claim.review_note ? <p className="whitespace-pre-wrap break-words">{claim.review_note}</p> : null}
         {claim.supplement_due_at ? <p>추가 자료 제출: {date(claim.supplement_due_at)}까지 · 최초 신청은 유지돼요.</p> : null}
-        <div className="flex flex-wrap gap-3">{Array.from({ length: claim.evidence_count }, (_, i) => <a key={i} className="inline-flex min-h-[44px] items-center underline" target="_blank" rel="noreferrer" href={`/api/dating/1on1/contact-care/evidence?claimId=${claim.id}&index=${i}`}>제출한 캡처 {i + 1}</a>)}</div>
         {claim.status === "approved" && !claim.used_at && (matchId || manualRemaining === 0) ? <>
           <label className="block">교환할 상대<select aria-label="교환할 상대" className={inputClass} value={target} onChange={e => setTarget(e.target.value)} disabled={busy || stale}>
-            <option value="">쌍방 수락한 상대 선택</option>{data!.matches.map(m => <option key={m.id} value={m.id}>{m.name} · {m.id.slice(0, 8)}</option>)}
+            <option value="">쌍방 수락한 상대 선택</option>{data!.matches.map(m => <option key={m.id} value={m.id}>{contactCareMatchLabel(m, data!.matches)}</option>)}
           </select></label>
           {!data!.matches.length ? <p>지금 교환 가능한 쌍방 수락 매칭이 없어요. 교환권은 그대로 남아요.</p> : null}
-          <button type="button" className={buttonClass} disabled={busy || stale || !target || target === checkoutMatch} onClick={() => void send("redeem")}>이 매칭에 교환권 사용</button>
+          {target && data!.matches.some(m => m.id === target) ? <a href={oneOnOneMatchHref(target)} className="inline-flex min-h-11 items-center text-[11px] underline underline-offset-4">선택한 상대 프로필 확인</a> : null}
+          <button type="button" className={`${buttonClass} w-full`} disabled={busy || stale || !target || target === checkoutMatch} onClick={() => void send("redeem")}>이 매칭에 교환권 사용</button>
         </> : null}
         {claim.used_at ? <a className="inline-flex min-h-[44px] items-center underline" href={oneOnOneMatchHref(claim.used_match_id)}>연락처 확인</a> : null}
+        <details data-care-claim-details>
+          <summary className="min-h-11 cursor-pointer content-center text-[11px] text-neutral-500">신청 상세 내역</summary>
+          <p className="break-all text-[11px]">신청 ID {claim.id}</p>
+          {claim.status === "approved" && claim.review_note ? <p className="whitespace-pre-wrap break-words">{claim.review_note}</p> : null}
+          <div className="flex flex-wrap gap-3">{Array.from({ length: claim.evidence_count }, (_, i) => <a key={i} className="inline-flex min-h-[44px] items-center underline" target="_blank" rel="noreferrer" href={`/api/dating/1on1/contact-care/evidence?claimId=${claim.id}&index=${i}`}>제출한 캡처 {i + 1}</a>)}</div>
+        </details>
       </div> : null}
-      {canApply ? <form className="space-y-3" onSubmit={e => { e.preventDefault(); void send("apply"); }}>
+      <button type="button" className={buttonClass} disabled={busy} onClick={() => void load()}>내역 다시 확인</button>
+      {data && !data.active ? <p>현재 신규 신청을 받지 않아요. 이미 지급된 교환권과 신청 내역은 유지돼요.</p> : null}
+      {!guideOnly && matchId && data?.claim && !claim ? <p>다른 매칭에 신청 또는 지급 내역이 있어요. 상단 ‘연락처 교환 지원 · 신청 내역 / 교환권’에서 확인해 주세요.</p> : null}
+      {guideOnly ? <>{policy}{data?.active ? <p>교환 완료 후 마이페이지의 해당 상대 카드에서 신청하세요.</p> : null}</> : <details data-care-policy className="border-t border-neutral-100 pt-1">
+        <summary className="min-h-11 cursor-pointer content-center font-medium text-neutral-700">교환권 지원 기준 보기</summary>
+        {policy}
+      </details>}
+      {canApply ? <details data-care-application open={Boolean(matchId) || !remaining || claim?.status === "needs_info" || claim?.status === "rejected"}>
+        <summary className="min-h-11 cursor-pointer content-center font-medium text-neutral-700">{claim?.status === "needs_info" ? "추가 자료 보내기" : "연락이 닿지 않아요 · 지원 신청"}</summary>
+        <p className="mb-3 text-[11px] leading-5">번호교환 후 72시간 이내 신청 · 무응답은 첫 연락 후 24시간부터 · 증빙 검토 후 승인</p>
+        <form className="space-y-3" onSubmit={e => { e.preventDefault(); void send("apply"); }}>
         {claim?.status === "rejected" ? <p>최초 신청 기한 안이라면 부족한 내용을 보완해 다시 신청할 수 있어요.</p> : null}
         <label className="block">내가 결제한 상대<select className={inputClass} value={payment} onChange={e => setPayment(e.target.value)} required disabled={busy || stale}>
           <option value="">결제 건 선택</option>{payments.map(p => <option key={p.order_id} value={p.order_id}>{p.name} · {new Date(p.exchanged_at!).toLocaleDateString("ko-KR")}</option>)}
@@ -255,8 +271,8 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
         <label className="flex min-h-[44px] items-start gap-2"><input type="checkbox" className="mt-1" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} disabled={busy || stale} required /><span>제출 내용은 사실이며 필요한 부분만 첨부했어요. 관리자가 캡처를 확인한 뒤 지급 여부를 결정하는 점을 확인했어요.</span></label>
         {applicationIssue ? <p id={applicationHintId} role="status" className="text-[11px] leading-5 text-neutral-600">{applicationIssue}</p> : null}
         <button className={buttonClass} aria-describedby={applicationIssue ? applicationHintId : undefined} disabled={busy || preparingFiles || !!applicationIssue}>{claim?.status === "needs_info" ? "추가 자료 제출" : "교환권 신청"}</button>
-      </form> : null}
-      <p className="text-[11px] leading-5">결과는 이곳에서 확인해 주세요. 캡처는 검토 종료 후 30일까지만 열람할 수 있어요. 잘못된 번호·사이트 오류·환불 문의는 고객센터에서 별도로 확인해요.</p>
+      </form></details> : null}
+      {!guideOnly && claim ? <p className="text-[11px] leading-5">결과는 이곳에서 확인해 주세요. 캡처는 검토 종료 후 30일까지만 열람할 수 있어요.</p> : null}
       <a href="https://open.kakao.com/o/s2gvTdhi" target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center underline">고객센터 문의</a>
     </div> : null}
   </details>;

@@ -1,0 +1,30 @@
+{
+  "app/mypage/page.tsx": [
+    {
+      "before": "import OneOnOneActionNotice from \"@/components/dating/OneOnOneActionNotice\";\nimport OneOnOneProfileSummary from \"@/components/dating/OneOnOneProfileSummary\";\nimport FriendRecommendButton from \"@/components/dating/sharing/FriendRecommendButton\";\nimport OneOnOneExpansionPanel from \"@/components/dating/OneOnOneExpansionPanel\";\n",
+      "after": "import OneOnOneActionNotice from \"@/components/dating/OneOnOneActionNotice\";\nimport OneOnOneProfileSummary from \"@/components/dating/OneOnOneProfileSummary\";\nimport OneOnOneProfileStateNotice from \"@/components/dating/OneOnOneProfileStateNotice\";\nimport { oneOnOneProfileState } from \"@/lib/dating-1on1-profile-state\";\nimport FriendRecommendButton from \"@/components/dating/sharing/FriendRecommendButton\";\nimport OneOnOneExpansionPanel from \"@/components/dating/OneOnOneExpansionPanel\";\n"
+    },
+    {
+      "before": "                      }`}\n                    >\n                      {isArchivedOneOnOneCard ? \"노출 종료\" : item.status}\n                    </span>\n                  </div>\n                  {isArchivedOneOnOneCard ? (\n                    <p className=\"mt-2 rounded-lg bg-neutral-100 px-3 py-2 text-xs leading-5 text-neutral-600\">\n                      프로필 노출은 종료됐습니다. 다시 이용하려면 아래에서 프로필을 그대로 올릴 수 있어요.\n                    </p>\n                  ) : null}\n                  <p className=\"mt-1 text-xs text-neutral-500\">\n                    신청일 {new Date(item.created_at).toLocaleString(\"ko-KR\")}\n",
+      "after": "                      }`}\n                    >\n                      {oneOnOneProfileState(item).label}\n                    </span>\n                  </div>\n                  {item.status === \"rejected\" ? <div className=\"mt-2\"><OneOnOneProfileStateNotice profile={item} /></div> : null}\n                  <p className=\"mt-1 text-xs text-neutral-500\">\n                    신청일 {new Date(item.created_at).toLocaleString(\"ko-KR\")}\n"
+    },
+    {
+      "before": "                  <p className=\"mt-1 text-xs text-neutral-700\">장점: {item.strengths_text}</p>\n                  <p className=\"mt-1 text-xs text-neutral-700\">원하는 점: {item.preferred_partner_text}</p>\n                  {item.admin_note && (\n                    <div className=\"mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2\">\n                      <p className=\"text-xs font-medium text-amber-800\">운영 메모: {item.admin_note}</p>\n                    </div>\n                  )}\n                  {Array.isArray(item.photo_signed_urls) && item.photo_signed_urls.length > 0 && (\n                    <div className=\"mt-3 grid grid-cols-2 gap-2\">\n",
+      "after": "                  <p className=\"mt-1 text-xs text-neutral-700\">장점: {item.strengths_text}</p>\n                  <p className=\"mt-1 text-xs text-neutral-700\">원하는 점: {item.preferred_partner_text}</p>\n                  {Array.isArray(item.photo_signed_urls) && item.photo_signed_urls.length > 0 && (\n                    <div className=\"mt-3 grid grid-cols-2 gap-2\">\n"
+    }
+  ],
+  "components/dating/OneOnOneHomePanel.tsx": [
+    {
+      "before": "import OneOnOneContactOffer from \"@/components/dating/OneOnOneContactOffer\";\nimport OneOnOneProfileSummary from \"@/components/dating/OneOnOneProfileSummary\";\nimport OneOnOneIncomingRequests from \"@/components/dating/OneOnOneIncomingRequests\";\nimport OneOnOneNextSteps from \"@/components/dating/OneOnOneNextSteps\";\n",
+      "after": "import OneOnOneContactOffer from \"@/components/dating/OneOnOneContactOffer\";\nimport OneOnOneProfileSummary from \"@/components/dating/OneOnOneProfileSummary\";\nimport OneOnOneProfileStateNotice from \"@/components/dating/OneOnOneProfileStateNotice\";\nimport OneOnOneIncomingRequests from \"@/components/dating/OneOnOneIncomingRequests\";\nimport OneOnOneNextSteps from \"@/components/dating/OneOnOneNextSteps\";\n"
+    },
+    {
+      "before": "  photo_signed_urls?: string[];\n  status?: string | null;\n};\n\n",
+      "after": "  photo_signed_urls?: string[];\n  status?: string | null;\n  archived?: boolean;\n};\n\n"
+    },
+    {
+      "before": "        ) : (\n          <div className=\"flex flex-col gap-5\">\n            {!hasOneOnOneCard && !profileDraftAvailable ? (\n          <div className=\"rounded-xl border border-neutral-200 bg-neutral-50 p-4\">\n            <p className=\"text-base font-semibold text-neutral-900\">내 소개를 올리면 추천이 시작돼요</p>\n",
+      "after": "        ) : (\n          <div className=\"flex flex-col gap-5\">\n            {!hasOneOnOneCard && myCards[0]?.status === \"rejected\" ? (\n              <OneOnOneProfileStateNotice profile={myCards[0]} showManageLink />\n            ) : !hasOneOnOneCard && !profileDraftAvailable ? (\n          <div className=\"rounded-xl border border-neutral-200 bg-neutral-50 p-4\">\n            <p className=\"text-base font-semibold text-neutral-900\">내 소개를 올리면 추천이 시작돼요</p>\n"
+    }
+  ]
+}

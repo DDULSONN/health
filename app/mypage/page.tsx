@@ -30,6 +30,8 @@ import OneOnOneCandidateRegionNotice from "@/components/dating/OneOnOneCandidate
 import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
+import OneOnOneProfileStateNotice from "@/components/dating/OneOnOneProfileStateNotice";
+import { oneOnOneProfileState } from "@/lib/dating-1on1-profile-state";
 import FriendRecommendButton from "@/components/dating/sharing/FriendRecommendButton";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import CandidateImpression from "@/components/dating/CandidateImpression";
@@ -10257,14 +10259,10 @@ export default function MyPage() {
                         datingStatusColor[item.status] ?? "bg-neutral-100 text-neutral-700"
                       }`}
                     >
-                      {isArchivedOneOnOneCard ? "노출 종료" : item.status}
+                      {oneOnOneProfileState(item).label}
                     </span>
                   </div>
-                  {isArchivedOneOnOneCard ? (
-                    <p className="mt-2 rounded-lg bg-neutral-100 px-3 py-2 text-xs leading-5 text-neutral-600">
-                      프로필 노출은 종료됐습니다. 다시 이용하려면 아래에서 프로필을 그대로 올릴 수 있어요.
-                    </p>
-                  ) : null}
+                  {item.status === "rejected" ? <div className="mt-2"><OneOnOneProfileStateNotice profile={item} /></div> : null}
                   <p className="mt-1 text-xs text-neutral-500">
                     신청일 {new Date(item.created_at).toLocaleString("ko-KR")}
                     {item.reviewed_at ? ` / 최근 검토 ${new Date(item.reviewed_at).toLocaleString("ko-KR")}` : ""}
@@ -10350,11 +10348,6 @@ export default function MyPage() {
                   )}
                   <p className="mt-1 text-xs text-neutral-700">장점: {item.strengths_text}</p>
                   <p className="mt-1 text-xs text-neutral-700">원하는 점: {item.preferred_partner_text}</p>
-                  {item.admin_note && (
-                    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
-                      <p className="text-xs font-medium text-amber-800">운영 메모: {item.admin_note}</p>
-                    </div>
-                  )}
                   {Array.isArray(item.photo_signed_urls) && item.photo_signed_urls.length > 0 && (
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       {item.photo_signed_urls.map((url, idx) => (

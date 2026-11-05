@@ -67,7 +67,7 @@ async function main(){
         return route.fulfill({json:{active:true,claim,manual_remaining:manualRemaining,manual_history:manualHistory,payments:!claim?[{id:id(10),order_id:id(100),name:'예시 상대',exchanged_at:new Date(Date.now()-48*3600000).toISOString()}]:[],matches:(manualRemaining>0||claim?.status==='approved'&&!claim.used_at)?[{id:id(20),name:'새 상대'}]:[]}});
       });
       const member=page.getByRole('region',{name:'회원 화면'});
-      await page.goto(origin);await member.locator('summary').click();
+      await page.goto(origin);await member.locator('summary').first().click();
       if(scenario==='initial-read-fails'){
         await member.getByRole('alert').waitFor();assert.doesNotMatch(await member.getByRole('alert').innerText(),/Failed to fetch/);assert.equal(posts,0);
         failReads=false;await member.getByRole('button',{name:'내역 다시 확인'}).click();await member.getByLabel('내가 결제한 상대').waitFor();assert.equal(reads,2);

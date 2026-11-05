@@ -21,6 +21,7 @@ function contract(source) {
 // One reviewed, type-only API metadata addition; keep the pre-existing action
 // contract pinned instead of rebasing matching/payment handlers with new UI.
 function withoutNewCandidateNoticeType(source) {
+  source = require('./fixtures/profile-state-contract.cjs').withoutProfileStateNotice(source, 'app/mypage/page.tsx');
   source = source.replace(/\r\n?/g, '\n');
   const line = '  new_candidate_notice?: import("@/lib/dating-1on1-new-candidate-notice").OneOnOneNewCandidateNotice | null;\n';
   assert.equal(source.split(line).length, 2, 'exactly one reviewed optional metadata type');
