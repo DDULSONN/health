@@ -1137,6 +1137,60 @@ test('history-aware real API rotates 30 times, preserves photos and rejects unav
   assert.deepEqual(tables.dating_1on1_match_proposals, pairBefore);
 });
 
+for (const alreadySeen of [false, true]) test(`regional adjacent ages through actual refresh/read APIs preserve quota, safety and photos: seen=${alreadySeen}`, async () => {
+  const tables = fixture(100);
+  tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_recommendation_page_history = [];
+  const own = tables.dating_1on1_cards[0], candidates = tables.dating_1on1_cards.slice(1);
+  candidates.forEach((c, i) => {
+    if (i >= 13 && i < 63) { c.region = '대전 서구'; c.birth_year = own.birth_year - 2; }
+    if (i >= 63) c.region = '부산';
+  });
+  tables.profiles.find(p => p.user_id === 'user-c13').is_banned = true;
+  tables.dating_user_blocks = [{ blocker_user_id: 'user-c14', blocked_user_id: own.user_id }];
+  tables.dating_1on1_match_proposals = [
+    pair({ id: 'rejected', candidate_card_id: 'c15', candidate_user_id: 'user-c15', state: 'candidate_rejected' }),
+    pair({ id: 'mutual', candidate_card_id: 'c16', candidate_user_id: 'user-c16', state: 'mutual_accepted' }),
+  ];
+  candidates[17].birth_year = 2012;
+  candidates[18].status = 'withdrawn';
+  const seen = new Set((alreadySeen ? candidates : candidates.slice(0, 13)).map(c => c.user_id));
+  tables.dating_1on1_candidate_impressions = [...seen].map(candidate_user_id => ({
+    viewer_user_id: own.user_id, candidate_user_id, first_seen_at: new Date(now - day).toISOString(),
+  }));
+  const matchesBefore = structuredClone(tables.dating_1on1_match_proposals);
+  const observedRegional = new Set();
+  for (let round = 0; round < 3; round++) {
+    const at = now + round * (day + 31000);
+    const before = (await runApi(tables, { atTime: at - 1 })).body.items[0];
+    const result = await runRefresh(tables, { atTime: at });
+    assert.equal(result.response.status, 200);
+    const read = await runApi(tables, { atTime: at + 1 });
+    const after = read.body.items[0], page = [...after.recommendations, ...after.admin_recommendations];
+    assert.equal(page.length, 13);
+    assert.equal(new Set(ids(page)).size, 13);
+    assert.equal(after.recommendations.filter(c => c.region === '대전 서구').length, 5,
+      'real region lookup mixes regional alternatives without replacing all preferred-age candidates');
+    assert.ok(page.filter(c => rules.isCandidateInSourceAgeRange({ ...source, age: 30 }, c)).length >= 8);
+    assert.ok(page.every(c => !['c13', 'c14', 'c15', 'c16', 'c17', 'c18'].includes(c.id)));
+    assert.ok(page.every(c => c.photo_signed_urls.length > 0 && !Object.hasOwn(c, 'phone')));
+    const newlySeen = page.filter(c => !seen.has(c.user_id));
+    assert.equal(result.body.changed_candidate_count, newlySeen.length);
+    assert.equal(result.body.refresh_consumed, newlySeen.length > 0);
+    assert.equal(after.refresh_remaining, before.refresh_remaining - (newlySeen.length ? 1 : 0));
+    assert.ok(read.calls.every(q => !q.insert && !q.update && !q.delete));
+    after.recommendations.filter(c => c.region === '대전 서구').forEach(c => observedRegional.add(c.id));
+    for (const c of newlySeen) {
+      seen.add(c.user_id);
+      tables.dating_1on1_candidate_impressions.push({ viewer_user_id: own.user_id, candidate_user_id: c.user_id,
+        first_seen_at: new Date(at + 2).toISOString() });
+    }
+    assert.deepEqual(ids(allCandidates((await runApi(tables, { atTime: at + 3 })).body)), ids(page));
+  }
+  assert.equal(observedRegional.size, 15, 'consecutive API refreshes cannot circle the same regional subset');
+  assert.deepEqual(tables.dating_1on1_match_proposals, matchesBefore);
+});
+
 test('history read failure stops a new refresh before any quota RPC or photo response', async () => {
   const tables = fixture(40);
   tables.dating_1on1_recommendation_pages = [];

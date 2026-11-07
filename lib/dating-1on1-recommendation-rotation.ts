@@ -54,6 +54,7 @@ export function rotateRecommendationPage<T extends RecommendationCandidate>(
     return [c.id, { km, gap, ageMatch, band,
       near: km != null && km <= 90 && gap <= 6,
       suitable: km != null && ((km <= 180 && ageMatch) || (km <= 90 && gap <= 6)),
+      regionalComparable: km != null && km <= 180 && (ageMatch || gap <= 3 || (km <= 90 && gap <= 6)),
       fresh: !lastSeen.has(c.id) && !context.handled.has(c.id) && !isRecentlyHandledCandidate(c, at),
     }] as const;
   }));
@@ -73,18 +74,39 @@ export function rotateRecommendationPage<T extends RecommendationCandidate>(
   });
   const select = (pool: T[], limit: number) => {
     const picked: T[] = [], used = new Set<string>();
-    const add = (rows: T[], cap = limit) => {
+    let adjacentRegionalCount = 0;
+    const add = (rows: T[], cap = limit, capAdjacentAges = false) => {
       for (const c of fair(rows)) {
         if (picked.length >= cap) break;
-        if (!used.has(c.id)) { picked.push(c); used.add(c.id); }
+        if (used.has(c.id)) continue;
+        const adjacentRegional = meta(c).regionalComparable && !meta(c).suitable;
+        if (capAdjacentAges && adjacentRegional && adjacentRegionalCount >= Math.floor(limit / 2)) continue;
+        picked.push(c); used.add(c.id);
+        if (adjacentRegional) adjacentRegionalCount++;
       }
     };
     add(pool.filter(c => meta(c).fresh && meta(c).suitable && !priorIds.has(c.id)));
-    if (picked.length < limit && pool.some(c => meta(c).fresh && meta(c).ageMatch && (meta(c).km ?? 0) > 180)) {
-      const localCount = picked.filter(c => meta(c).near).length;
-      const localCap = Math.min(limit, picked.length + Math.max(0, Math.floor(limit / 2) - localCount));
-      add(pool.filter(c => meta(c).near && !priorIds.has(c.id)), localCap);
-      add(pool.filter(c => meta(c).near), localCap);
+    // Prefer a comparable regional alternative before a distant unseen profile
+    // or reinserting the previous local cards. Beyond the existing 90km local
+    // band, only preferred ages or gaps of up to three years get this priority.
+    // Preferred ages still rank first within this pool.
+    // Exclude the last three pages so this does not create a local A/B loop or
+    // prevent widening once recently available regional choices are exhausted.
+    const regionalAlternatives = pool.filter(c => meta(c).regionalComparable && !recentIds.has(c.id));
+    // This priority must not replace the entire page with ages outside the
+    // preferred range. The ordinary fallback can still fill a truly scarce pool.
+    add(regionalAlternatives.filter(c => meta(c).fresh), limit, true);
+    const hasUnseenWider = pool.some(c => meta(c).fresh && meta(c).ageMatch && (meta(c).km ?? 0) > 180);
+    // Once regional choices have been seen, retain the existing half-nearby,
+    // half-unseen-wider mix. Familiar regional candidates must not starve every
+    // unseen wider profile forever, even when the nearby pool fills many pages.
+    const regionalCount = picked.filter(c => meta(c).regionalComparable).length;
+    const regionalCap = hasUnseenWider
+      ? Math.min(limit, picked.length + Math.max(0, Math.floor(limit / 2) - regionalCount)) : limit;
+    add(regionalAlternatives, regionalCap, true);
+    if (picked.length < limit && hasUnseenWider) {
+      add(pool.filter(c => meta(c).near && !priorIds.has(c.id)), regionalCap);
+      add(pool.filter(c => meta(c).near), regionalCap);
     }
     add(pool.filter(c => meta(c).fresh && meta(c).ageMatch && meta(c).km != null && !priorIds.has(c.id)));
     // Revisit suitable people before promoting unrelated ages merely because

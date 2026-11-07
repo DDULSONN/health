@@ -165,3 +165,104 @@ test('adjacent ages rotate too when the strict age-compatible pool is very small
   }
   assert.equal(seen.size, 81);
 });
+
+for (const sex of ['male', 'female']) {
+  test(`regional adjacent ages rotate before distant novelty or immediate local repeats (${sex})`, () => {
+    const source = card('source', { sex, age: 28 });
+    const targetSex = sex === 'male' ? 'female' : 'male';
+    // Just outside the directional preferred age range, not an extreme age gap.
+    const adjacentAge = sex === 'male' ? 30 : 26;
+    const locals = Array.from({ length: 13 }, (_, i) => card(`local${i}`, { sex: targetSex }));
+    const regional = Array.from({ length: 40 }, (_, i) => card(`regional${i}`, {
+      sex: targetSex, region: '120', age: adjacentAge,
+    }));
+    const distant = Array.from({ length: 80 }, (_, i) => card(`distant${i}`, { sex: targetSex, region: '400' }));
+    const pool = [...locals, ...regional, ...distant];
+    for (const previouslySeen of [false, true]) {
+      const ctx = context(previouslySeen ? [...locals, ...regional] : locals);
+      let previous = { recommendations: locals.slice(0, 10), extraRecommendations: locals.slice(10) };
+      const seenRegional = new Set();
+      for (let step = 0; step < 30; step++) {
+        const at = now + step * 60000;
+        const next = pages.nextRecommendationPage(source, pool, previous, new Date(at).toISOString(), at, ctx);
+        // Familiar but not recently displayed people also deserve a turn before
+        // a 400km jump. Extras retain their existing preferred-age contract.
+        assert.ok(next.recommendations.filter(c => Number(c.region) <= 180).length >= 5,
+          'regional alternatives keep at least half the page');
+        assert.ok(next.recommendations.filter(c => c.age === adjacentAge).length <= 5,
+          'adjacent ages leave preferred-age choices available');
+        assert.equal(next.recommendations.filter(c => ids(previous).includes(c.id)).length, 0, 'do not reinsert the previous local cards unnecessarily');
+        next.recommendations.filter(c => c.id.startsWith('regional')).forEach(c => seenRegional.add(c.id));
+        assert.ok(next.extraRecommendations.every(c => c.age === 28));
+        assert.equal(new Set(ids(next)).size, ids(next).length);
+        ctx.recentPages.push({ at: at - 1, ids: ids(previous) }, { at, ids: ids(next) });
+        previous = next;
+      }
+      assert.equal(seenRegional.size, 40, 'regional alternatives must not become another small repeating set');
+    }
+  });
+}
+
+test('regional preference still respects preferred ages, missing regions and bounded adjacent ages', () => {
+  const source = card('source', { sex: 'male', age: 28 });
+  const previousCards = Array.from({ length: 13 }, (_, i) => card(`old${i}`));
+  const previous = { recommendations: previousCards.slice(0, 10), extraRecommendations: previousCards.slice(10) };
+  const preferred = Array.from({ length: 20 }, (_, i) => card(`preferred${i}`, { region: '120' }));
+  const adjacent = Array.from({ length: 20 }, (_, i) => card(`adjacent${i}`, { region: '120', age: 30 }));
+  const distant = Array.from({ length: 20 }, (_, i) => card(`distant${i}`, { region: '400' }));
+  const ctx = context([...previousCards, ...preferred, ...adjacent]);
+  const next = pages.nextRecommendationPage(source, [...previousCards, ...preferred, ...adjacent, ...distant], previous,
+    new Date(now).toISOString(), now, ctx);
+  assert.equal(next.recommendations.filter(c => c.id.startsWith('preferred')).length, 5, 'preferred age still wins inside the familiar regional half');
+  assert.equal(next.recommendations.filter(c => c.id.startsWith('distant')).length, 5, 'unseen wider candidates still receive a turn');
+  for (const patch of [{ region: 'unknown', age: 30 }, { region: '120', age: 32 }, { region: '120', age: 35 }]) {
+    const unsuitable = Array.from({ length: 40 }, (_, i) => card(`unsuitable${i}`, patch));
+    const fallback = pages.nextRecommendationPage(source, [...previousCards, ...unsuitable, ...distant], previous,
+      new Date(now).toISOString(), now, context(previousCards));
+    assert.ok(all(fallback).every(c => !c.id.startsWith('unsuitable')), 'unknown regions and large gaps cannot displace age-compatible options');
+  }
+});
+
+test('after regional novelty is exhausted, 30 refreshes still widen without losing nearby alternatives', () => {
+  const source = card('source', { sex: 'male', age: 28 });
+  const locals = Array.from({ length: 13 }, (_, i) => card(`local${i}`));
+  const regional = Array.from({ length: 40 }, (_, i) => card(`regional${i}`, { age: 30, region: '120' }));
+  const wider = Array.from({ length: 400 }, (_, i) => card(`wider${i}`, { region: '220' }));
+  const tooFar = Array.from({ length: 50 }, (_, i) => card(`far${i}`, { region: '450' }));
+  const pool = [...locals, ...regional, ...wider, ...tooFar], ctx = context(locals);
+  let previous = { recommendations: locals.slice(0, 10), extraRecommendations: locals.slice(10) };
+  let widenedMain = 0;
+  const regionalSeen = new Set();
+  for (let step = 0; step < 30; step++) {
+    const at = now + step * 60000, seed = new Date(at).toISOString();
+    const next = pages.nextRecommendationPage(source, pool, previous, seed, at, ctx);
+    assert.deepEqual(next, pages.nextRecommendationPage(source, pool, previous, seed, at, ctx));
+    assert.equal(next.recommendations.length, 10);
+    assert.equal(next.extraRecommendations.length, 3);
+    assert.equal(new Set(ids(next)).size, 13);
+    assert.equal(next.recommendations.filter(c => ids(previous).includes(c.id)).length, 0);
+    assert.ok(all(next).every(c => c.region !== '450'), 'expand one available distance band at a time');
+    assert.ok(next.recommendations.filter(c => Number(c.region) <= 180).length >= 5);
+    assert.ok(next.recommendations.filter(c => c.age !== 28).length <= 5, 'adjacent ages cannot replace the whole page');
+    next.recommendations.filter(c => c.id.startsWith('regional')).forEach(c => regionalSeen.add(c.id));
+    widenedMain += next.recommendations.filter(c => c.id.startsWith('wider')).length;
+    ctx.recentPages.push({ at: at - 1, ids: ids(previous) }, { at, ids: ids(next) });
+    const restored = pages.restoreRecommendationPage(source, pool, { refreshed_at: seed,
+      main_candidate_ids: next.recommendations.map(c => c.id), extra_candidate_ids: next.extraRecommendations.map(c => c.id) }, at + 1, ctx);
+    assert.deepEqual(restored, next, 'loading the page does not rerank or charge a refresh');
+    previous = next;
+  }
+  assert.equal(regionalSeen.size, 40);
+  assert.ok(widenedMain >= 100, 'nearby revisits cannot starve unseen wider candidates');
+});
+
+test('adjacent-age priority cap is not a hard filter when the entire eligible pool is scarce', () => {
+  const source = card('source', { sex: 'male', age: 28 });
+  for (const size of [1, 4, 7, 10, 20]) {
+    const pool = Array.from({ length: size }, (_, i) => card(`regional${i}`, { age: 30, region: '120' }));
+    const next = pages.nextRecommendationPage(source, pool, { recommendations: [], extraRecommendations: [] },
+      new Date(now).toISOString(), now, context([]));
+    assert.equal(next.recommendations.length, Math.min(10, size));
+    assert.equal(next.extraRecommendations.length, 0, 'extras retain their preferred-age rule');
+  }
+});
