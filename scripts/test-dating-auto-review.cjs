@@ -32,7 +32,13 @@ async function resolve(j,action){return rows('select resolve_dating_profile_revi
   await db.exec(`update dating_1on1_cards set status='reviewing' where id='${card}'`);
   eq((await job()).revision,first.revision,'status-only updates do not requeue');
   const batch=await claim(); eq(batch.length,2,'claim both');eq((await claim()).length,0,'claimed jobs not duplicated');
-  eq(await finish(batch.find(j=>j.card_id===open)),true,'normal completion');
+  const openBefore = await rows('select * from dating_cards where id=$1',[open]);
+  eq(await finish(batch.find(j=>j.card_id===open),{...good,suspicionLevel:'medium',flags:['instagramId'],textFlags:['instagramId'],summary:'Instagram ID가 입력되어 있습니다.'}),true,'old false positive saved');
+  await resolve(await job('open_card',open),'retry');
+  eq((await job('open_card',open)).state,'queued','saved false positive can be re-reviewed explicitly');
+  eq(await finish((await claim()).find(j=>j.card_id===open)),true,'re-review completes');
+  eq((await job('open_card',open)).result.suspicionLevel,'clear','re-review replaces the old finding');
+  eq(await rows('select * from dating_cards where id=$1',[open]),openBefore,'re-review leaves member profile and official contact unchanged');
   await db.exec(`update dating_1on1_cards set intro_text='새 글' where id='${card}'`);
   eq(await finish(batch.find(j=>j.card_id===card)),false,'stale model output discarded');
   eq((await job()).state,'queued','changed content queued');

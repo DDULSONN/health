@@ -4,6 +4,7 @@ import { buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from
 
 import { createAdminClient } from "@/lib/supabase/server";
 import { combineReview } from "@/lib/dating-review";
+import { AI_REVIEW_INPUT_VERSION, DATING_AI_REVIEW_INPUT_SCOPE, getDatingAiReviewTexts } from "@/lib/dating-ai-review-input";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -124,6 +125,7 @@ export async function analyzeWithGemini(admin: AdminClient, apiKey: string, mode
   const prompt = [
     "특히 1:1 매칭 신청서에 휴대폰 번호, 카카오톡/카톡 ID, 오픈채팅 링크, 인스타/IG 계정, DM 요청, 라인/텔레그램 ID 등 앱 밖 연락처를 적거나 유도하면 high로 판단한다.",
     "인스타라는 말 없이 본문에 단독으로 적힌 영문·숫자·밑줄 아이디도 확인한다. 단순 형식 의심은 medium으로 두고, MBTI·운동 수치·일반 영문과 구분한다. 별도 instagramId 입력란과 상대 이름·카드 ID는 작성자의 본문 연락처로 판단하지 않는다.",
+    DATING_AI_REVIEW_INPUT_SCOPE,
     "너는 소개팅 서비스의 관리자 검수 보조 AI다.",
     "절대 삭제, 거절, 유저 제재를 결정하지 말고 관리자에게 보여줄 의심 사유만 판단한다.",
     "사진 속 SNS 계정·연락처·QR 코드, 합성·생성 이미지나 AI 편집 흔적, 장난 이미지도 확인한다. AI 여부는 확정하지 말고 구체적인 시각적 근거와 불확실성을 표시한다. 피부가 매끈하거나 보정됐다는 이유만으로 AI로 단정하지 않는다.",
@@ -139,7 +141,7 @@ export async function analyzeWithGemini(admin: AdminClient, apiKey: string, mode
     `상태: ${card.status ?? "-"}`,
     `이름/닉네임: ${card.displayName || "-"}`,
     `나이/지역: ${card.age ?? "-"} / ${card.region ?? "-"}`,
-    `텍스트: ${JSON.stringify(card.texts)}`,
+    `텍스트: ${JSON.stringify(getDatingAiReviewTexts(card))}`,
     `일반 검수 플래그: ${heuristic.flags.join(", ") || "없음"}`,
     'JSON 형식: {"suspicionLevel":"clear|low|medium|high","flags":["짧은 사유"],"summary":"관리자가 바로 이해할 한 문장","photoFlags":["사진 관련 사유"],"textFlags":["문구 관련 사유"]}',
   ].join("\n");
@@ -182,7 +184,7 @@ export async function analyzeWithGemini(admin: AdminClient, apiKey: string, mode
     if (!parsed) return { ...heuristic, raw: { ...heuristic.raw, provider: "rules_fallback", geminiParseFailed: true } };
 
     if (parsed.suspicionLevel === "clear" && (parsed.flags.length || parsed.photoFlags.length || parsed.textFlags.length)) parsed.suspicionLevel = "low";
-    return combineReview(heuristic, parsed, incomplete, { provider: "gemini", transport: gatewayToken ? "ai_gateway" : "direct", model: gatewayToken ? gatewayModel : model, rulesVersion: REVIEW_RULES_VERSION });
+    return combineReview(heuristic, parsed, incomplete, { provider: "gemini", transport: gatewayToken ? "ai_gateway" : "direct", model: gatewayToken ? gatewayModel : model, rulesVersion: REVIEW_RULES_VERSION, inputVersion: AI_REVIEW_INPUT_VERSION });
   } catch (error) {
     return {
       ...heuristic,

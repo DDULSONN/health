@@ -28,6 +28,7 @@ const { reviewDatingProfanity } = compile("lib/dating-profanity-review.ts", boun
 const { reviewDatingContactText } = compile("lib/dating-contact-text-review.ts");
 const confirmationRules = compile("lib/dating-review-confirmation.ts");
 const nameRules = compile("lib/dating-1on1-name-review.ts");
+const aiInput = compile("lib/dating-ai-review-input.ts");
 
 for (const value of [
   "씨발", "씨이발 씨발", "씨벌", "씨빨", "시발", "씨.발", "씨 발", "씨@발", "씨1발", "씨\u200b발", "씨\ufeff발",
@@ -364,6 +365,7 @@ function loadRoute(db, options = {}) {
     "@/lib/dating-intro-quality-review": { reviewDatingIntroQuality },
     "@/lib/dating-profanity-review": { reviewDatingProfanity },
     "@/lib/dating-contact-text-review": { reviewDatingContactText },
+    "@/lib/dating-ai-review-input": aiInput,
     "@/lib/dating-review-confirmation": confirmationRules,
     "node:crypto": require("node:crypto"),
     "@/lib/dating-cards-queue": { promotePendingCardsBySex: () => { throw new Error("Unexpected promotion"); } },
@@ -572,6 +574,67 @@ test("denied admin cannot scan or read member data", async () => {
   assert.equal((await route.GET(new Request("https://fixture.invalid"))).status, 403);
   assert.equal(db.calls.length, 0);
 });
+for (const sourceType of sources) test(`${sourceType} manual AI receives only authored prose, not the official contact field`, async () => {
+  let prompt;
+  const route = loadRoute(database(fixtures()), { fetch: async (_, init) => {
+    prompt = JSON.parse(init.body).contents[0].parts[0].text;
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({
+      suspicionLevel: 'clear', flags: [], textFlags: [], photoFlags: [], summary: '정상',
+    }) }] } }] });
+  } });
+  const candidate = {
+    sourceType, displayName: '민수', texts: { name: '민수', job: '개발자',
+      intro: '산책과 운동을 좋아하는 차분한 사람입니다.', strengths: '배려하며 잘 웃어요',
+      ideal: '다정한 분', idealType: '다정한 분', preferredPartner: '다정한 분',
+      instagramId: 'fixture_official_ig', candidateName: 'fixture_recipient', candidateCardId: 'fixture_target',
+    }, photoPaths: ['a', 'b'], bucket: 'fixture',
+  };
+  const before = structuredClone(candidate);
+  const imageStub = { storage: { from: () => ({ download: async () => ({ data: new Blob(['photo']), error: null }) }) } };
+  const result = await route.testAnalyze(imageStub, 'fixture-key', 'fixture-model', candidate);
+  assert.ok(prompt, 'The model call must run; fallback is not a passing result');
+  assert.equal(result.raw.provider, 'gemini');
+  assert.equal(result.raw.inputVersion, aiInput.AI_REVIEW_INPUT_VERSION);
+  assert.equal(result.suspicionLevel, 'clear');
+  const texts = JSON.parse(prompt.split('\n').find(line => line.startsWith('텍스트: ')).slice('텍스트: '.length));
+  assert.deepEqual(Object.keys(texts).sort(), ['ideal', 'idealType', 'intro', 'job', 'preferredPartner', 'strengths']);
+  for (const value of ['fixture_official_ig', 'fixture_recipient', 'fixture_target']) assert.ok(!prompt.includes(value));
+  for (const [field, value] of Object.entries(texts)) assert.equal(value, candidate.texts[field]);
+  assert.deepEqual(candidate, before);
+});
+
+for (const [field, value, expectedLevel] of [
+  ['intro', '운동과 산책을 좋아합니다.\nwinterwalk', 'medium'],
+  ['strengths', '배려하며 잘 웃어요. 인스타 아이디 winterwalk 로 연락 주세요', 'high'],
+  ['idealType', '다정한 분, 카톡 아이디 fixture_kakao 로 연락 주세요', 'high'],
+  ['job', '개발자, 인스타 아이디 winterwalk 로 연락 주세요', 'high'],
+]) test(`AI input filtering preserves real contact findings in ${field}`, async () => {
+  let prompt;
+  const route = loadRoute(database(fixtures()), { fetch: async (_, init) => {
+    prompt = JSON.parse(init.body).contents[0].parts[0].text;
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({
+      suspicionLevel: 'clear', flags: [], textFlags: [], photoFlags: [], summary: '정상',
+    }) }] } }] });
+  } });
+  const imageStub = { storage: { from: () => ({ download: async () => ({ data: new Blob(['photo']), error: null }) }) } };
+  const result = await route.testAnalyze(imageStub, 'fixture-key', 'fixture-model', {
+    sourceType: 'open_card', displayName: '민수', texts: {
+      job: '개발자', intro: '운동과 산책을 좋아합니다.', strengths: '배려하며 잘 웃어요',
+      idealType: '다정한 분', instagramId: 'winterwalk', [field]: value,
+    }, photoPaths: ['a', 'b'], bucket: 'fixture',
+  });
+  assert.ok(prompt.includes(JSON.stringify(value)), 'Authored contact text must still reach AI');
+  assert.equal(result.raw.provider, 'gemini');
+  assert.equal(result.suspicionLevel, expectedLevel);
+  assert.ok(result.textFlags.some(flag => /연락|계정|아이디/.test(flag)));
+});
+
+test('AI prose input keeps long text and never strips contact strings copied into prose', () => {
+  const intro = '산책을 좋아합니다. '.repeat(150) + '인스타 fixture_contact';
+  const result = aiInput.getDatingAiReviewTexts({ texts: { intro, strengths: '', instagramId: 'fixture_contact', futureMetadata: 'ignored' } });
+  assert.deepEqual(result, { intro, strengths: '' });
+});
+
 test("AI clear result cannot erase rule-based sexual flags or severity", async () => {
   const route = loadRoute(database(fixtures()), { fetch: async () => Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({
     suspicionLevel: "clear", flags: [], textFlags: [], photoFlags: [], summary: "정상으로 추정",

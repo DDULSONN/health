@@ -16,16 +16,42 @@ function load(file, mocks = {}, globals = {}) {
 }
 const clear = { suspicionLevel: 'clear', flags: [], photoFlags: [], textFlags: [], summary: '정상', raw: {} };
 const review = load('lib/dating-review.ts');
+const aiInput = load('lib/dating-ai-review-input.ts');
 const card = { sourceType: 'one_on_one', photoPaths: ['a', 'b'], texts: { intro: '운동을 즐깁니다' }, bucket: 'dating-1on1-photos', displayName: '테스트', age: 30 };
-function analyzer(fetcher, downloader = async () => ({ data: new Blob(['image'], {type: 'image/jpeg'}), error: null })) {
+function analyzer(fetcher, downloader = async () => ({ data: new Blob(['image'], {type: 'image/jpeg'}), error: null }), candidate = card) {
   const client = { storage: { from: () => ({ download: downloader }) } };
   const engine = load('lib/admin-dating-card-review.ts', {
     '@/lib/dating-profile-review': { ruleReview: () => ({ ...clear }), cleanText: v => String(v ?? '').trim(), REVIEW_RULES_VERSION: 'test' },
     '@/lib/images': {}, '@/lib/supabase/server': {}, '@/lib/dating-review': review,
+    '@/lib/dating-ai-review-input': aiInput,
   }, { fetch: fetcher });
-  return token => engine.analyzeWithGemini(client, 'test-key', 'test-model', card, token);
+  return token => engine.analyzeWithGemini(client, 'test-key', 'test-model', candidate, token);
 }
 const response = result => ({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(result) }] } }] }) });
+
+for (const transport of ['direct', 'gateway']) test(`${transport} AI input excludes the official Instagram field and recipient metadata`, async () => {
+  const candidate = { ...card, sourceType: 'open_card', texts: {
+    job: '개발자', strengths: '차분하고 산책을 좋아합니다.', idealType: '다정한 분',
+    instagramId: 'fixture_official_ig', candidateName: 'fixture_recipient', targetCardId: 'fixture_target',
+  } };
+  const before = JSON.stringify(candidate);
+  let prompt;
+  const result = await analyzer(async (_, init) => {
+    const body = JSON.parse(init.body);
+    prompt = transport === 'direct' ? body.contents[0].parts[0].text : body.messages[0].content[0].text;
+    // Model fixture flags the legitimate handle if the application leaks it into review input.
+    const output = prompt.includes('fixture_official_ig')
+      ? { ...clear, suspicionLevel: 'medium', flags: ['instagramId'], summary: 'Instagram ID가 입력되어 있습니다.' }
+      : clear;
+    return transport === 'direct' ? response(output)
+      : { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(output) } }] }) };
+  }, undefined, candidate)(transport === 'gateway' ? 'fixture-oidc' : undefined);
+  assert.equal(result.suspicionLevel, 'clear');
+  assert.equal(result.raw.inputVersion, aiInput.AI_REVIEW_INPUT_VERSION);
+  for (const value of ['fixture_official_ig', 'fixture_recipient', 'fixture_target']) assert.ok(!prompt.includes(value));
+  for (const value of ['개발자', '차분하고 산책을 좋아합니다.', '다정한 분']) assert.ok(prompt.includes(value));
+  assert.equal(JSON.stringify(candidate), before, 'Stored profile data must not be stripped or edited');
+});
 test('gateway sends every photo, uses only gateway auth, and preserves evidence', async () => {
   const result = await analyzer(async (url, init) => {
     assert.equal(url, 'https://ai-gateway.vercel.sh/v1/chat/completions');
