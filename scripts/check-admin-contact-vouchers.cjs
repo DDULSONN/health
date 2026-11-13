@@ -8,7 +8,9 @@ test('admin panel is additive; every existing mypage action and condition is unc
  const restored=source.replace(/^const AdminContactVoucherPanel = dynamic\([^\n]*\);\n/m,'')
   .replace(/^ +\{adminUserActivityResult.user \? <AdminContactVoucherPanel userId=\{adminUserActivityResult.user.id\} \/> : null\}\n/m,'');
  assert.notEqual(restored,source);
- assert.equal(require('./check-site-button-tone.cjs').contract(restored),'8aedfb0cf2df6dfd367a2aacc0b3fcd90f9e73fc366bb2686577702b8bc190f2');
+ // Reviewed scarcity hint metadata and moved restore control; all existing
+ // voucher/matching/payment handlers remain pinned. Real-page restore tested.
+ assert.equal(require('./check-site-button-tone.cjs').contract(restored),'ad7b7a93660850405af5f6e8741e3e793b630f210f3f9040cd3980987109f777');
 });
 test('strict grant input / Korean / no caller-selected admin',()=>{
  assert.deepEqual(logic.parseContactVoucherGrant({...input,admin:id(9)}),input);

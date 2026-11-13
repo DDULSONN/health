@@ -1742,6 +1742,28 @@ function hideCandidate(tables, candidate) {
   tables.dating_1on1_candidate_hides.push({ id: 'hide-' + candidate.id, user_id: 'user-source',
     candidate_user_id: candidate.user_id, candidate_card_id: candidate.id, candidate_name: candidate.name, created_at: new Date(now).toISOString() });
 }
+for (const count of [0, 1, 6, 9, 10]) test('scarcity API counts only safety-filtered, unhidden, unsaved candidates: ' + count, async () => {
+  const tables=fixture(count+4);
+  tables.dating_1on1_candidate_hides=[];
+  const [hidden, requested, favorite, banned]=tables.dating_1on1_cards.slice(count+1);
+  hideCandidate(tables, hidden);
+  tables.dating_1on1_match_proposals=[pair({candidate_card_id:requested.id,candidate_user_id:requested.user_id})];
+  tables.dating_1on1_candidate_favorites=[{user_id:'user-source',source_card_id:'source',candidate_card_id:favorite.id}];
+  tables.profiles.find(p=>p.user_id===banned.user_id).is_banned=true;
+  const snapshot=structuredClone(tables);
+  const result=await runApi(tables,{atTime:now});
+  assert.equal(result.response.status,200);
+  const group=result.body.items[0];
+  assert.equal(group.candidate_pool_count,count+1,'existing pool count still includes the separately saved favorite');
+  assert.deepEqual(group.recommendation_availability,count<10?{
+    state:count?'limited':'empty',candidate_count:count,has_hidden_candidates:true,has_request_history:true,has_favorites:true,
+  }:null);
+  assert.ok(allCandidates(result.body).every(c=>![hidden.id,requested.id,banned.id].includes(c.id)));
+  assert.deepEqual(tables,snapshot,'hint GET does not mutate quota, matches, contacts or payment');
+  assert.ok(result.calls.every(q=>!q.insert&&!q.update&&!q.delete));
+  const withoutHint=await runApi(tables,{atTime:now});
+  assert.equal(withoutHint.body.items[0].refresh_remaining,group.refresh_remaining);
+});
 for (const legacy of [false, true]) test('hidden candidates stay excluded through repeated refreshes, favorites, extras and re-created profiles: legacy=' + legacy, async () => {
   const tables = activeFixture(60);
   if (!legacy) { tables.dating_1on1_recommendation_pages = []; tables.dating_1on1_recommendation_page_history = []; }

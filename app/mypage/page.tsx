@@ -1068,6 +1068,7 @@ type MyOneOnOneAutoRecommendationGroup = {
   hidden_candidate_ids?: string[];
   recommendation_region_widened?: boolean;
   new_candidate_notice?: import("@/lib/dating-1on1-new-candidate-notice").OneOnOneNewCandidateNotice | null;
+  recommendation_availability?: import("@/lib/dating-1on1-candidate-availability").OneOnOneCandidateAvailability | null;
   impression_ticket?: string | null;
   source_card_id: string;
   source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";
@@ -10435,6 +10436,9 @@ export default function MyPage() {
                           blocked={!canRefreshAutoRecommendations || Boolean(oneOnOneRefreshReadError)}
                           notice={oneOnOneRefreshNotice?.sourceCardId === item.id ? oneOnOneRefreshNotice : null}
                           onRequest={() => void handleRefreshOneOnOneRecommendations(item.id)} />
+                        {!isArchivedOneOnOneCard && <CandidateHidesPanel enabled={autoRecommendationGroup?.hides_enabled === true}
+                          availability={autoRecommendationGroup?.recommendation_availability}
+                          revision={autoRecommendationGroup} onRestored={() => reloadOneOnOneRecommendations(true, true)} />}
                         {favoriteCandidates.length > 0 && (
                           <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                             <div className="flex items-center justify-between gap-2">
@@ -10506,7 +10510,8 @@ export default function MyPage() {
                             </div>
                           </div>
                         )}
-                        {favoriteCandidates.length === 0 && autoRecommendations.length === 0 && adminAutoRecommendations.length === 0 ? (
+                        {favoriteCandidates.length === 0 && autoRecommendations.length === 0 && adminAutoRecommendations.length === 0 &&
+                          (isArchivedOneOnOneCard || !autoRecommendationGroup?.recommendation_availability) ? (
                         <div className="mt-3 rounded-xl border border-dashed border-neutral-200 bg-white p-3 text-sm text-neutral-500">
                           지금 바로 보여줄 자동 추천 후보가 없어요. 이미 진행 중인 매칭이 있거나, 조건에 맞는 후보가 새로 잡히면 여기서 보여드릴게요.
                         </div>
@@ -10724,8 +10729,6 @@ export default function MyPage() {
                   )}
 
 
-                  {!isArchivedOneOnOneCard && <CandidateHidesPanel enabled={autoRecommendationGroup?.hides_enabled === true}
-                    revision={autoRecommendationGroup} onRestored={() => reloadOneOnOneRecommendations(true, true)} />}
 
                   {waitingCandidateResponses.length > 0 && (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3">

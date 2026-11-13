@@ -59,6 +59,7 @@ type OneOnOneRecommendationGroup = {
   hidden_candidate_ids?: string[];
   recommendation_region_widened?: boolean;
   new_candidate_notice?: import("@/lib/dating-1on1-new-candidate-notice").OneOnOneNewCandidateNotice | null;
+  recommendation_availability?: import("@/lib/dating-1on1-candidate-availability").OneOnOneCandidateAvailability | null;
   impression_ticket?: string | null;
   expansion_enabled?: boolean;
   source_card_id?: string;
@@ -535,6 +536,9 @@ export default function OneOnOneHomePanel({
                           plusOffer={{ cardId: sourceCardId, active: plusActive }}
                           notice={refreshNotice?.sourceCardId === sourceCardId ? refreshNotice : null}
                           onRequest={() => onRefreshRecommendations(sourceCardId)} /> : null}
+                        {onCandidateRestored ? <CandidateHidesPanel enabled={group.hides_enabled === true}
+                          availability={group.recommendation_availability}
+                          revision={group} onRestored={onCandidateRestored} /> : null}
                         <div className="mt-3 space-y-3">
                           {recommendations.map((candidate) => {
                             const candidateId = String(candidate.id ?? "");
@@ -627,8 +631,6 @@ export default function OneOnOneHomePanel({
                           revision={group} blocked={refreshing || processingAutoKeys.length > 0}
                           hidesEnabled={group.hides_enabled === true && Boolean(onCandidateHidden)} onHidden={onCandidateHidden}
                           onSelect={(candidateId, name) => onAutoSelect(sourceCardId, candidateId, name)} onReported={onReported} />
-                        {onCandidateRestored ? <CandidateHidesPanel enabled={group.hides_enabled === true}
-                          revision={group} onRestored={onCandidateRestored} /> : null}
                       </div>
                     );
                   })}

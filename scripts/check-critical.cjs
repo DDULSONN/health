@@ -8,6 +8,7 @@ for (const key of Object.keys(env)) {
   if (/SUPABASE|SOLAPI|RESEND|TOSS|KAKAO|SERVICE_ROLE|CRON_SECRET|PAYMENT_SECRET|SMTP/i.test(key)) delete env[key];
 }
 const unitFiles = [
+  'check-candidate-activity-balance.cjs',
   'check-voucher-profile-ux.cjs',
   'check-onboarding-polish.cjs',
   'check-site-reliability.cjs',
@@ -159,6 +160,7 @@ if (process.argv.includes('--browser')) {
   run([path.join(__dirname, 'check-dating-1on1-action-browser.cjs'), '--resilience'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--expansion'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--hides'], 10 * 60_000);
+  run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--availability'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--engagement'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--impressions'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--new-candidates'], 10 * 60_000);

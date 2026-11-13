@@ -1,5 +1,6 @@
 // Presentation only. Eligibility and consumption remain server-authoritative.
 import type { OneOnOneNewCandidateNotice } from "@/lib/dating-1on1-new-candidate-notice";
+import type { OneOnOneCandidateAvailability } from "@/lib/dating-1on1-candidate-availability";
 
 export type OneOnOneRefreshUsage = {
   source_card_id?: string;
@@ -10,6 +11,7 @@ export type OneOnOneRefreshUsage = {
   recovery_refresh_applied?: boolean;
   recommendation_region_widened?: boolean;
   new_candidate_notice?: OneOnOneNewCandidateNotice | null;
+  recommendation_availability?: OneOnOneCandidateAvailability | null;
   refresh_limit?: number;
   refresh_remaining?: number;
   refresh_bonus_remaining?: number;
@@ -46,7 +48,7 @@ export function shouldShowOneOnOneRefreshReminder(usage?: OneOnOneRefreshUsage |
     !["submitted", "reviewing", "approved"].includes(usage.source_card_status ?? "") ||
     usage.can_refresh !== true || count(usage.refresh_remaining, 1) === null ||
     usage.refresh_used_count !== 0 || count(usage.candidate_pool_count, 1) === null ||
-    usage.recovery_refresh_applied === true || getOneOnOneNewCandidateCopy(usage) !== null) return false;
+    usage.recovery_refresh_applied === true || usage.recommendation_availability != null || getOneOnOneNewCandidateCopy(usage) !== null) return false;
   // Undefined/invalid timestamps are unknown, not proof of an unused allowance.
   if (usage.refresh_used_at === null) return true;
   const lastUsedMs = typeof usage.refresh_used_at === "string" ? Date.parse(usage.refresh_used_at) : NaN;
@@ -55,7 +57,7 @@ export function shouldShowOneOnOneRefreshReminder(usage?: OneOnOneRefreshUsage |
 
 // Disabled can mean loading/error/invalid card, not just an exhausted allowance.
 export function shouldOfferOneOnOnePlus(usage: OneOnOneRefreshUsage | null | undefined, plusActive: boolean) {
-  return !plusActive && usage?.refresh_limit === 1 && usage.refresh_remaining === 0 && usage.can_refresh === false &&
+  return !plusActive && usage?.recommendation_availability == null && usage?.refresh_limit === 1 && usage.refresh_remaining === 0 && usage.can_refresh === false &&
     (usage.refresh_bonus_remaining ?? 0) === 0;
 }
 

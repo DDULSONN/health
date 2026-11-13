@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { fetchClientJson } from "@/lib/client-json-request";
+import { getOneOnOneCandidateAvailabilityCopy, type OneOnOneCandidateAvailability } from "@/lib/dating-1on1-candidate-availability";
 
 const endpoint = "/api/dating/1on1/candidate-hides";
 const smallButton = "min-h-11 rounded-lg px-2 text-xs text-neutral-500 underline-offset-4 hover:underline disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900";
@@ -34,13 +35,16 @@ export function CandidateHideButton({ enabled, sourceCardId, candidateId, ticket
 }
 
 type HiddenItem = { id: string; name: string; created_at: string };
-export function CandidateHidesPanel({ enabled, revision, onRestored }: { enabled: boolean; revision?: unknown; onRestored: () => Promise<void> }) {
+export function CandidateHidesPanel({ enabled, revision, onRestored, availability }: {
+  enabled: boolean; revision?: unknown; onRestored: () => Promise<void>; availability?: OneOnOneCandidateAvailability | null;
+}) {
   const [open, setOpen] = useState(false); const [items, setItems] = useState<HiddenItem[] | null>(null);
   const [error, setError] = useState(""); const [busy, setBusy] = useState(false); const [limit, setLimit] = useState(20);
   const request = useRef<AbortController | null>(null);
   useEffect(() => { setItems(null); setOpen(false); setError(""); setBusy(false); setLimit(20); request.current?.abort(); request.current = null; }, [revision]);
   useEffect(() => () => { request.current?.abort(); request.current = null; }, []);
-  if (!enabled) return null;
+  const availabilityCopy = getOneOnOneCandidateAvailabilityCopy(availability);
+  if (!enabled && !availabilityCopy) return null;
   const load = async () => {
     if (request.current) return;
     const controller = new AbortController(); request.current = controller; setBusy(true); setError("");
@@ -53,8 +57,14 @@ export function CandidateHidesPanel({ enabled, revision, onRestored }: { enabled
     finally { if (request.current === controller) { request.current = null; setBusy(false); } }
   };
   return <div className="mt-2 text-xs text-neutral-500">
-    <button type="button" className={smallButton} aria-expanded={open} disabled={busy} onClick={() => { setOpen(!open); if (!open) void load(); }}>숨긴 후보 {open ? "접기" : "보기"}</button>
-    {open ? <div className="rounded-xl border border-neutral-200 bg-white p-3">
+    {availabilityCopy ? <div data-testid="candidate-availability" className="rounded-xl bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-600">
+      <p className="font-medium text-neutral-700">{availabilityCopy.title}</p>
+      <p>{availabilityCopy.detail}</p>
+      {availabilityCopy.hidden ? <p>{availabilityCopy.hidden}</p> : null}
+      {availabilityCopy.favorites ? <p>{availabilityCopy.favorites}</p> : null}
+    </div> : null}
+    {enabled ? <button type="button" className={smallButton} aria-expanded={open} disabled={busy} onClick={() => { setOpen(!open); if (!open) void load(); }}>숨긴 후보 {open ? "접기" : "보기"}</button> : null}
+    {enabled && open ? <div className="rounded-xl border border-neutral-200 bg-white p-3">
       <p className="text-[11px] leading-5">숨긴 자리는 바로 채우지 않고, 다음 후보 새로고침 때 다시 추천해요. 상대에게 알리지 않으며 기존 요청·매칭은 유지돼요. 해제하면 조건에 맞는 후보가 다시 보여요.</p>
       {busy ? <p role="status">확인 중…</p> : null}
       {error ? <p role="alert" className="text-rose-700">{error}<button type="button" className={smallButton} disabled={busy} onClick={() => void load()}>다시 확인</button></p> : null}

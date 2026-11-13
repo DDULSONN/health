@@ -62,6 +62,7 @@ import { readRecommendationHistory } from "@/lib/dating-1on1-recommendation-hist
 import { getRegionDistanceMeta } from "@/lib/region-distance";
 import { candidateHideUserIdsAt, readCandidateHides } from "@/lib/dating-candidate-hides";
 import { getOneOnOneNewCandidateNotice } from "@/lib/dating-1on1-new-candidate-notice";
+import { getOneOnOneCandidateAvailability } from "@/lib/dating-1on1-candidate-availability";
 
 const RECOMMENDATION_LIMIT = 10;
 const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
@@ -555,6 +556,12 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       can_refresh: refreshAvailability.canRefreshNow || bonusRemaining > 0,
       recovery_refresh_applied: Boolean(getActiveRecommendationRefresh(recoverySeed, nowMs)),
       candidate_pool_count: candidates.filter(notHidden).length,
+      recommendation_availability: getOneOnOneCandidateAvailability({
+        eligibleCount: selectionCandidates.length,
+        hiddenCount: hiddenUserIds.size,
+        excludedByHistoryCount: activeUserIds.size + permanentlyRejectedUserIds.size + blockedUserIds.size,
+        favoriteCount: favoriteCandidates.filter(notHidden).length,
+      }),
       hides_enabled: hiddenCandidates.available,
       hidden_candidate_ids: hiddenCardIds,
       plus: sourcePlus,

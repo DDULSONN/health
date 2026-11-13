@@ -53,6 +53,9 @@ async function main() {
     if (process.argv.includes('--hides')) {
       passed = await require('./test-candidate-hides-home-browser.cjs')({ browser, origin, output });
     }
+    if (process.argv.includes('--availability')) {
+      passed = await require('./test-candidate-availability-browser.cjs')({ browser, origin, output });
+    }
     if (process.argv.includes('--expansion')) {
       passed = await require('./test-expansion-browser.cjs')({ browser, origin, output });
     }
@@ -68,7 +71,7 @@ async function main() {
     if (process.argv.includes('--admin-counts')) {
       passed = await require('./test-admin-active-counts-browser.cjs')({ browser, origin, output });
     }
-    for (const surface of process.argv.includes('--profile-state') || process.argv.includes('--engagement') || process.argv.includes('--hides') || process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') || process.argv.includes('--new-candidates') || process.argv.includes('--admin-counts') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
+    for (const surface of process.argv.includes('--profile-state') || process.argv.includes('--engagement') || process.argv.includes('--hides') || process.argv.includes('--availability') || process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') || process.argv.includes('--new-candidates') || process.argv.includes('--admin-counts') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
       for (const scenario of ['success', 'quota-stale', 'repeat-rotation', 'sequence-rotation', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'timeout-read', 'timeout-core-read', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
         if (scenario === 'timeout-core-read' && surface !== 'home') continue;
         const noChange = scenario.startsWith('no-change');

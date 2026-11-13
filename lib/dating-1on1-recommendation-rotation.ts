@@ -51,7 +51,12 @@ export function rotateRecommendationPage<T extends RecommendationCandidate>(
     const gap = source.age != null && c.age != null ? Math.abs(source.age - c.age) : Infinity;
     const ageMatch = isCandidateInSourceAgeRange(source, c);
     const band = km == null ? 7 : km <= 90 ? 0 : km <= 180 ? 1 : km <= 250 ? 2 : km <= 330 ? 3 : km <= 450 ? 4 : 5;
-    return [c.id, { km, gap, ageMatch, band,
+    const activityAt = Math.max(0, ...[c.last_active_at, c.created_at].map(value => {
+      const time = Date.parse(value ?? "");
+      return Number.isFinite(time) && time <= at ? time : 0;
+    }));
+    const activeRecently = activityAt > 0 && activityAt >= at - 7 * 86400000;
+    return [c.id, { km, gap, ageMatch, band, activeRecently,
       near: km != null && km <= 90 && gap <= 6,
       suitable: km != null && ((km <= 180 && ageMatch) || (km <= 90 && gap <= 6)),
       regionalComparable: km != null && km <= 180 && (ageMatch || gap <= 3 || (km <= 90 && gap <= 6)),
@@ -85,6 +90,14 @@ export function rotateRecommendationPage<T extends RecommendationCandidate>(
         if (adjacentRegional) adjacentRegionalCount++;
       }
     };
+    // Reserve part of a NEW page for recently active, age-compatible regional
+    // candidates before unseen but long-inactive profiles. Never pull somebody
+    // from the last three pages, widen distance for activity alone, or alter a
+    // saved page. Keep at least 40% available for the existing discovery flow.
+    // Fairness remains least-recently-seen within comparable age/distance bands.
+    add(pool.filter(c => meta(c).activeRecently && meta(c).ageMatch &&
+      meta(c).km != null && meta(c).km! <= 180 && !recentIds.has(c.id) &&
+      !context.handled.has(c.id) && !isRecentlyHandledCandidate(c, at)), Math.floor(limit * 0.6));
     add(pool.filter(c => meta(c).fresh && meta(c).suitable && !priorIds.has(c.id)));
     // Prefer a comparable regional alternative before a distant unseen profile
     // or reinserting the previous local cards. Beyond the existing 90km local
