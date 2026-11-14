@@ -30,6 +30,7 @@ function memoryDb(tables, options = {}) {
     let rows = tables[table] ?? [], patch, insert, limit;
     const q = {
       select() { return q; }, order() { return q; },
+      abortSignal(signal) { assert.ok(signal instanceof AbortSignal); return q; },
       limit(n) { limit = n; return q; },
       eq(k, v) { call.filters.push([k, v]); rows = rows.filter(r => r[k] === v); return q; },
       in(k, v) { rows = rows.filter(r => v.includes(r[k])); return q; },
@@ -39,6 +40,7 @@ function memoryDb(tables, options = {}) {
       insert(value) { insert = value; call.write = true; return q; },
       update(value) { patch = value; call.write = true; return q; },
       async execute(single) {
+        if (options.throwTable === table) throw Error('name lookup timed out');
         if (options.failedTable === table) return { data: null, error: { code: '42501' } };
         if (insert) {
           if (options.reserveError) return { data: null, error: { code: options.reserveError } };
@@ -96,7 +98,8 @@ test('mutual acceptance accepts either participant, but canceled contact does no
 function reminderFixture(options = {}) {
   const row = match(options.match), messages = [];
   const tables = { dating_1on1_match_proposals: [row], dating_1on1_reminder_deliveries: options.recent ? [{ id: 'previous', recipient_user_id: recipient, created_at: options.recent, status: options.recentStatus || 'sent' }] : [], admin_open_card_outreach_mail_logs: options.legacy ? [{ id: 'old', user_id: recipient,
-    campaign_key: 'one_on_one_match_pending_24h', success: true, meta: { match_id: id } }] : [] };
+    campaign_key: 'one_on_one_match_pending_24h', success: true, meta: { match_id: id } }] : [],
+    dating_1on1_cards: options.cards ?? [] };
   const db = memoryDb(tables, { ...options, afterReserve: () => {
     if (options.cancelOnReserve) row.state = 'source_skipped';
     if (options.payOnReserve) row.contact_exchange_status = 'approved';
@@ -123,14 +126,31 @@ test('reminder timing has exact 24h/48h boundaries and rollout cutoff', () => {
   for (const [hour, eligible] of [[8, false], [9, true], [19, true], [20, false], [23, false], [0, false]])
     assert.equal(module.isOneOnOneReminderHour(Date.parse(`2026-10-26T${String(hour).padStart(2, '0')}:00:00+09:00`)), eligible);
 });
-test('a pending request sends exactly once with readable Korean, grouped inbox link and a stable provider key', async () => {
+test('a pending request sends exactly once with readable Korean, exact request link and a stable provider key', async () => {
   const f = reminderFixture(); assert.equal(await f.send(), 'sent'); assert.equal(await f.send(), 'skipped');
   assert.equal(f.messages.length, 1); const m = f.messages[0];
-  assert.match(m.text, /tab=one_on_one&focus=incoming#one-on-one-incoming/); assert.match(m.subject, /아직 응답하지 않은/);
-  assert.match(m.text, /수락만으로 결제되지는 않아요/); assert.doesNotMatch(m.text, /읽지 않|matchId=/);
+  assert.ok(m.text.includes(`tab=one_on_one&matchId=${id}#selected-one-on-one-match`)); assert.match(m.subject, /아직 응답하지 않은/);
+  assert.match(m.text, /수락만으로 결제되지는 않아요/); assert.doesNotMatch(m.text, /읽지 않/);
   assert.equal(Buffer.from(m.text).toString('utf8'), m.text); assert.doesNotMatch(m.text, /�|18,000|할인|지금 결제/);
   assert.equal(m.key, `one-on-one-reminder/${id}/${recipient}/selection_pending_24h`);
   assert.equal(f.db.reservations[0].status, 'sent');
+});
+
+test('pending reminder uses only the matching 1:1 profile name, not an account nickname', async () => {
+  const f = reminderFixture({ match: { source_card_id: secondId }, cards: [
+    { id: secondId, user_id: source, name: '프로필 이름' },
+    { id: 'other', user_id: source, name: '다른 프로필' },
+  ] });
+  assert.equal(await f.send(), 'sent'); assert.match(f.messages[0].text, /프로필 이름님이 보낸/);
+  assert.doesNotMatch(f.messages[0].text, /다른 프로필/);
+  for (const options of [
+    { cards: [{ id: secondId, user_id: recipient, name: '잘못된 이름' }] },
+    { failedTable: 'dating_1on1_cards', cards: [{ id: secondId, user_id: source, name: '이름' }] },
+    { throwTable: 'dating_1on1_cards' },
+  ]) {
+    const unknown = reminderFixture({ ...options, match: { source_card_id: secondId } });
+    assert.equal(await unknown.send(), 'sent'); assert.match(unknown.messages[0].text, /^아직 응답하지 않은/);
+  }
 });
 
 for (const status of ['sent', 'failed', 'sending']) test('rolling 24h cap includes previous-day and ambiguous sends: ' + status, async () => {

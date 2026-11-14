@@ -44,6 +44,11 @@ async function main() {
   let browser, passed = 0;
   try {
     browser = await chromium.launch({ channel: 'msedge', headless: true });
+    if (process.argv.includes('--participation')) {
+      passed = await require('./test-matching-participation-browser.cjs')({ browser, origin, output });
+      console.log(JSON.stringify({ passed, output }));
+      return;
+    }
     if (process.argv.includes('--profile-state')) {
       passed = await require('./test-profile-state-browser.cjs')({ browser, origin, output });
     }

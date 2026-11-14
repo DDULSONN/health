@@ -67,7 +67,10 @@ if (require.main === module) {
       ? '763cb90a3de56248792d56130cae5b9aac5bbc39f0c05d68476a94c65be19132'
       // Same article/children/buttons, with a visibility-only observation hook.
       // Same photo links and action children; all profile text uses the shared disclosure.
-      : name === 'OneOnOneCandidateCard' ? '189e9053967893cf779d480e92fae212aa3a360e972816a71e48651ff217123a' : baseline.functions[name];
+      : name === 'OneOnOneCandidateCard' ? '189e9053967893cf779d480e92fae212aa3a360e972816a71e48651ff217123a'
+      // Reviewed sender label/copy only; expand, pagination and accept/reject
+      // children are exercised by participation SSR and actual-page tests.
+      : name === 'OneOnOneIncomingRequests' ? '4f91d61efa993394937b165da22838d88a24ff3d08cedb756275f92e5322e9d1' : baseline.functions[name];
     let source = read(file);
     if (name === 'OneOnOneCandidateCard') {
       // The small, read-only region notice is tested separately. Keep the

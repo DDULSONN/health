@@ -2000,7 +2000,7 @@ function OpenCardsContent() {
       load: async (signal) => {
         const [statusRead, cardsRead, matchesRead] = await Promise.all([
           fetchClientJson<NonNullable<OneOnOneHomeState["status"]> & { error?: string }>("/api/dating/1on1/write-status", { cache: "no-store", signal }, 15000),
-          fetchClientJson<{ items?: OneOnOneHomeState["myCards"]; plus?: OneOnOneHomeState["plus"]; error?: string }>("/api/dating/1on1/my", { cache: "no-store", signal }, 15000),
+          fetchClientJson<{ items?: OneOnOneHomeState["myCards"]; plus?: OneOnOneHomeState["plus"]; has_sent_request?: boolean | null; error?: string }>("/api/dating/1on1/my?participation=1", { cache: "no-store", signal }, 15000),
           fetchClientJson<{ items?: OneOnOneHomeState["matches"]; error?: string }>("/api/dating/1on1/matches/my", { cache: "no-store", signal }, 15000),
         ]);
         const statusRes = statusRead.response, myCardsRes = cardsRead.response, matchesRes = matchesRead.response;
@@ -2014,6 +2014,7 @@ function OpenCardsContent() {
         return {
           status: statusBody,
           myCards: Array.isArray(myCardsBody.items) ? myCardsBody.items : [],
+          hasSentRequest: typeof myCardsBody.has_sent_request === "boolean" ? myCardsBody.has_sent_request : null,
           matches: Array.isArray(matchesBody.items) ? matchesBody.items : [],
           recommendations: [],
           plus: myCardsBody.plus && typeof myCardsBody.plus === "object" ? myCardsBody.plus : null,
@@ -2640,6 +2641,7 @@ function OpenCardsContent() {
           );
         }
         if (action === "select_candidate") {
+          setOneOnOneHome((prev) => prev ? { ...prev, hasSentRequest: true } : prev);
           setOneOnOneActionNotice(buildOneOnOneRequestSentMessage(oneOnOneHome?.matches.find((match) => match.id === matchId)?.counterparty_card?.name));
         }
         await reloadOneOnOneHome();
@@ -2736,6 +2738,7 @@ function OpenCardsContent() {
           }
           throw new Error(body.error ?? "매칭 요청을 보내지 못했어요. 다시 시도해 주세요.");
         }
+        setOneOnOneHome((prev) => prev ? { ...prev, hasSentRequest: true } : prev);
         setOneOnOneActionNotice(buildOneOnOneRequestSentMessage(candidateName));
         await reloadOneOnOneHome();
       } catch (error) {

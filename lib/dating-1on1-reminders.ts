@@ -6,10 +6,11 @@ import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 export type OneOnOneReminderKind = "selection_pending_24h" | "mutual_pending_24h";
 export type OneOnOneReminderMatch = {
   id: string; source_user_id: string; candidate_user_id: string;
+  source_card_id?: string;
   state: string | null; contact_exchange_status: string | null;
   source_selected_at: string | null; source_final_responded_at: string | null;
 };
-export const REMINDER_SELECT = "id,source_user_id,candidate_user_id,state,contact_exchange_status,source_selected_at,source_final_responded_at";
+export const REMINDER_SELECT = "id,source_user_id,candidate_user_id,source_card_id,state,contact_exchange_status,source_selected_at,source_final_responded_at";
 const HOUR = 60 * 60 * 1000;
 const TABLE = "dating_1on1_reminder_deliveries";
 
@@ -65,7 +66,19 @@ export async function sendOneOnOnePendingReminder(admin: SupabaseClient, row: On
 
   let sent = false;
   try {
-    const message = buildOneOnOnePendingReminder(row.id, kind);
+    let sourceName: string | null = null;
+    if (kind === "selection_pending_24h" && row.source_card_id) {
+      // Use this request's 1:1 name, never an unrelated account nickname/card.
+      try {
+        const profile = await admin.from("dating_1on1_cards").select("name")
+          .eq("id", row.source_card_id).eq("user_id", row.source_user_id)
+          .abortSignal(AbortSignal.timeout(2000)).maybeSingle();
+        if (!profile.error && typeof profile.data?.name === "string") sourceName = profile.data.name;
+      } catch {
+        // Optional personalization must not suppress an otherwise valid reminder.
+      }
+    }
+    const message = buildOneOnOnePendingReminder(row.id, kind, sourceName);
     sent = await sendDatingEmailNotification(admin, recipientId, message.emailSubject, message.emailText,
       isCurrent, `one-on-one-reminder/${row.id}/${recipientId}/${kind}`);
   } catch {

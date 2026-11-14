@@ -51,9 +51,9 @@ export function buildOneOnOneSelectionReceivedNotification(
 
   return {
     pushTitle: "1:1 소개팅 요청이 도착했어요",
-    pushBody: `${source}님이 ${candidate} 카드에 관심을 보냈어요.`,
+    pushBody: `${source}님이 요청을 보냈어요. 프로필을 확인해 보세요.`,
     emailSubject: "1:1 소개팅 요청이 도착했어요",
-    emailText: `${source}님이 ${candidate} 카드에 관심을 보냈어요.\n아래 링크에서 상대 프로필을 보고 수락 또는 거절할 수 있어요.${matchEmailFooter(matchId)}`,
+    emailText: `${source}님이 ${candidate} 카드에 관심을 보냈어요.\n아래 링크에서 상대 프로필을 보고 수락 또는 거절로 답해 주세요.\n수락만으로 결제되거나 연락처가 공개되지는 않아요.${matchEmailFooter(matchId)}`,
   };
 }
 
@@ -68,12 +68,13 @@ export function buildOneOnOneAcceptedNotification(counterpartyName: string, matc
   };
 }
 
-export function buildOneOnOnePendingReminder(matchId: string, kind: "selection_pending_24h" | "mutual_pending_24h") {
+export function buildOneOnOnePendingReminder(matchId: string, kind: "selection_pending_24h" | "mutual_pending_24h", sourceName?: string | null) {
   const selection = kind === "selection_pending_24h";
+  const source = String(sourceName ?? "").replace(/[\r\n\u0000-\u001f\u007f]/g, " ").trim().slice(0, 30);
   return {
     emailSubject: selection ? "짐툴 · 아직 응답하지 않은 1:1 요청이 있어요" : "짐툴 · 서로 수락한 1:1 매칭을 확인해 주세요",
     emailText: selection
-      ? "아직 응답하지 않은 1:1 요청이 있어요.\n받은 요청을 모아 보고, 마음에 드는 분에게 수락으로 답해 주세요.\n원하지 않는 요청은 거절할 수 있어요. 수락만으로 결제되지는 않아요.\nhttps://helchang.com/community/dating/cards?tab=one_on_one&focus=incoming#one-on-one-incoming\n안내 발송 후 취소·탈퇴 등으로 상태가 달라질 수 있어요. 링크에서 현재 상태를 확인해 주세요."
+      ? `${source ? `${source}님이 보낸` : "아직 응답하지 않은"} 1:1 요청이 있어요.\n프로필을 확인하고 수락 또는 거절로 답해 주세요.\n수락만으로 결제되지는 않아요. 연락처도 공개되지 않아요.${matchEmailFooter(matchId)}`
       : "서로 수락한 1:1 매칭이 아직 진행 중이에요.\n아래 링크에서 상대 프로필과 현재 상태를 확인할 수 있어요." + matchEmailFooter(matchId),
   };
 }

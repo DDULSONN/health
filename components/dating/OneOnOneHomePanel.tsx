@@ -26,6 +26,7 @@ import CandidateImpression from "@/components/dating/CandidateImpression";
 import CandidateFavoriteButton from "@/components/dating/CandidateFavoriteButton";
 import OneOnOneFavorites from "@/components/dating/OneOnOneFavorites";
 import { getOneOnOneStarterKeys, getOneOnOneStarterGroups } from "@/lib/dating-1on1-starter";
+import { shouldShowFirstOneOnOneRequest } from "@/lib/dating-1on1-participation";
 import { CandidateHideButton, CandidateHidesPanel } from "@/components/dating/CandidateHides";
 import { getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import { VIEWER_SESSION_ERROR } from "@/lib/viewer-session-recovery";
@@ -108,6 +109,7 @@ function canCancelOneOnOneMatchPreview(match: OneOnOneMatchPreview) {
 }
 
 export type OneOnOneHomeState = {
+  hasSentRequest?: boolean | null;
   status: { canWrite?: boolean; totalApplications?: number; phoneVerified?: boolean; reason?: string | null } | null;
   myCards: OneOnOneCardPreview[];
   matches: OneOnOneMatchPreview[];
@@ -293,13 +295,18 @@ export default function OneOnOneHomePanel({
     }
   }
   const shortcutsDisabled = loading || sessionError || Boolean(error);
+  const showFirstRequest = viewerLoggedIn && !shortcutsDisabled && !recommendationsLoading && !recommendationsError &&
+    !arrivedFromOnboarding && !targetMatchId && !focusIncomingRequests && shouldShowFirstOneOnOneRequest({
+      hasSentRequest: data?.hasSentRequest, phoneVerified: data?.status?.phoneVerified,
+      cards: myCards, groups: recommendationGroups, matches,
+    });
   function favoriteBusy(sourceId: string, candidateId: string, busy: boolean) {
     const key = `${sourceId}:${candidateId}`;
     setFavoriteBusyKeys(keys => busy ? [...new Set([...keys, key])] : keys.filter(value => value !== key));
   }
   return (
     <section id="one-on-one-candidates" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-4 shadow-none md:p-6">
-      {arrivedFromOnboarding && viewerLoggedIn && hasOneOnOneCard && !loading && !sessionError && !error ? (
+      {arrivedFromOnboarding && viewerLoggedIn && hasOneOnOneCard && !loading && !sessionError && !error && data?.hasSentRequest !== true ? (
         <div role="status" className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
           <p className="text-sm font-black text-emerald-900">1:1 신청서 작성 완료</p>
           <p className="mt-1 text-xs font-semibold leading-5 text-emerald-700">
@@ -370,6 +377,16 @@ export default function OneOnOneHomePanel({
         </nav>
       ) : null}
       {viewerLoggedIn && hasOneOnOneCard && actionSummary.otherDetail ? <p className="mt-2 break-words text-[11px] leading-5 text-neutral-500">{actionSummary.otherDetail}</p> : null}
+      {showFirstRequest ? <aside aria-label="첫 매칭 요청 안내" className="mt-3 flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/40 px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold leading-5 text-neutral-800">프로필 준비 끝!</p>
+          <p className="text-xs leading-5 text-neutral-600">마음에 드는 분께 먼저 요청해 보세요.</p>
+        </div>
+        <button type="button" onClick={() => jumpToSection(recommendationSectionRef.current)}
+          className="min-h-[44px] shrink-0 rounded-lg px-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-rose-500">
+          후보 확인하기 <span aria-hidden="true">›</span>
+        </button>
+      </aside> : null}
 
       <div className="mt-5">
         {loading ? (

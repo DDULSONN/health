@@ -34,7 +34,8 @@ if (require.main === module) {
   for (const [file, hash] of Object.entries(baseline.files)) {
     test('reviewed presentation contract: ' + file, () => {
       const raw = fs.readFileSync(path.join(root, file), 'utf8');
-      const source = file === 'app/mypage/page.tsx' ? withoutNewCandidateNoticeType(raw) : raw;
+      const source = file === 'app/mypage/page.tsx' ? withoutNewCandidateNoticeType(raw)
+        : file === 'app/community/dating/cards/page.tsx' ? require('./fixtures/matching-participation-contract.cjs').withoutParticipationMetadata(raw) : raw;
       assert.equal(contract(source), hash, 'Non-style changes require behavior tests and a reviewed baseline');
       assert.equal(contract(source.replace(/\r?\n/g, '\r\n')), hash, 'Windows checkout must match');
       assert.equal(contract(source.replace(/\r\n/g, '\n')), hash, 'Linux checkout must match');

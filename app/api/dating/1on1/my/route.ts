@@ -12,6 +12,7 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { NextResponse } from "next/server";
 import { getActiveOneOnOnePlus } from "@/lib/dating-1on1-plus";
 import { getDatingBirthYearErrorMessage, parseDatingBirthYear } from "@/lib/dating-age";
+import { hasSentOneOnOneRequest } from "@/lib/dating-1on1-participation-server";
 
 type InputPayload = {
   id?: string;
@@ -99,6 +100,10 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient();
+  // Only the home encouragement needs this optional, bounded read. Start it in
+  // parallel and keep the existing profile response usable if it fails.
+  const participation = new URL(req.url).searchParams.get("participation") === "1"
+    ? hasSentOneOnOneRequest(admin, user.id) : Promise.resolve(null);
   const activePlus = await getActiveOneOnOnePlus(admin, user.id);
   const { data, error } = await admin
     .from("dating_1on1_cards")
@@ -146,7 +151,7 @@ export async function GET(req: Request) {
         photo_signed_urls,
       };
     });
-    return NextResponse.json({ items, plus: activePlus });
+    return NextResponse.json({ items, plus: activePlus, has_sent_request: await participation }, { headers: { "Cache-Control": "private, no-store" } });
   }
 
   if (error) {
@@ -176,7 +181,7 @@ export async function GET(req: Request) {
     };
   });
 
-  return NextResponse.json({ items, plus: activePlus });
+  return NextResponse.json({ items, plus: activePlus, has_sent_request: await participation }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function PATCH(req: Request) {

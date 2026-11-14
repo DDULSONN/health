@@ -113,6 +113,7 @@ for (const surface of ['home', 'mypage']) {
   for (const scenario of ['success', 'rejected', 'already-handled', 'pair-active', 'network-error', 'read-failure']) {
     test(`${surface}: actual request handler notice is accurate for ${scenario}`, async () => {
       let notice = '이전 요청 성공 안내', posts = 0, reloads = 0;
+      let homeState = { hasSentRequest: false, matches: [] };
       const alerts = [];
       const duplicate = ['already-handled', 'pair-active'].includes(scenario);
       const duplicateMessage = '이미 진행 중인 상대예요. 기존 매칭은 그대로 유지돼요.';
@@ -120,6 +121,7 @@ for (const surface of ['home', 'mypage']) {
       const handler = evaluate('exports.handler = ' + initializer(source, autoName), {
         ...copy, useCallback: fn => fn, processingOneOnOneAutoKeys: [], setProcessingOneOnOneAutoKeys() {},
         setOneOnOneActionNotice: value => { notice = value; }, reloadOneOnOneHome: reload,
+        setOneOnOneHome: update => { homeState = update(homeState); },
         reloadOneOnOneAfterAction: reload, reloadOneOnOneRecommendations: reload,
         alert: value => alerts.push(value), console: { error() {} },
         fetch: async (url, options) => {
@@ -132,6 +134,7 @@ for (const surface of ['home', 'mypage']) {
         },
       }).handler;
       await handler('source', 'target', '테스트상대');
+      if (surface === 'home') assert.equal(homeState.hasSentRequest, ['success', 'read-failure'].includes(scenario));
       assert.equal(posts, 1);
       if (['success', 'read-failure'].includes(scenario)) {
         assert.ok(notice.startsWith('테스트상대님에게 매칭 요청을 보냈어요.'));
@@ -145,11 +148,13 @@ for (const surface of ['home', 'mypage']) {
   }
   for (const ok of [true, false]) test(`${surface}: proposed request clears previous notice and only reports confirmed success (${ok})`, async () => {
     let notice = '이전 요청 성공 안내';
+    let homeState = { hasSentRequest: false };
     const locks = new Set();
     const matches = [{ id: 'proposal', counterparty_card: { name: '새상대' } }];
     const handler = evaluate('exports.handler = ' + initializer(source, 'handleOneOnOneMatchAction'), {
       ...copy, useCallback: fn => fn, oneOnOneMatchActionLocksRef: { current: locks }, setProcessingOneOnOneMatchIds() {},
       oneOnOneHome: { matches }, myOneOnOneMatches: matches, setOneOnOneActionNotice: value => { notice = value; },
+      setOneOnOneHome: update => { homeState = update(homeState); },
       reloadOneOnOneHome: async () => {}, reloadOneOnOneAfterAction: async () => {}, alert() {},
       fetch: async (url, options) => {
         assert.equal(notice, '', 'old success notice must be gone before POST');
@@ -159,6 +164,7 @@ for (const surface of ['home', 'mypage']) {
       },
     }).handler;
     await handler('proposal', 'select_candidate');
+    if (surface === 'home') assert.equal(homeState.hasSentRequest, ok);
     assert.equal(notice, ok ? copy.buildOneOnOneRequestSentMessage('새상대') : '');
     assert.equal(locks.size, 0);
   });

@@ -30,7 +30,7 @@ function fixture() {
     oneOnOneRefreshNeedsReloadRef: { current: true },
     fetch: async (url, init) => {
       assert.ok(url.startsWith(endpoint)); assert.ok(!init.method || init.method === 'GET');
-      calls.push(url); const name = url.slice(endpoint.length);
+      calls.push(url); const name = new URL(url, 'https://fixture.invalid').pathname.slice(endpoint.length);
       if (overrides[name]) return overrides[name](init.signal);
       return Response.json(name === 'write-status' ? { canWrite: false, phoneVerified: true }
         : name === 'my' ? { items: [{ id: 'source', status: 'approved' }], plus: null }

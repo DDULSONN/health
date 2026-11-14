@@ -76,7 +76,9 @@ module.exports=async({browser,origin,output})=>{
         await favorites.locator('article').first().getByRole('button',{name:'매칭 요청 보내기',exact:true}).click();
         await page.getByText(/매칭 요청을 보냈어요|요청이 전달됐어요|요청을 보냈어요/).first().waitFor();
         assert.equal(mutations.filter(p=>p.endsWith('/matches/auto')).length,1);assert.equal(saved.length,3);
-        assert.ok((await panel.innerText()).includes('01000000000'));assert.equal(await page.getByRole('button',{name:/후보 새로고침 · 2회/}).count(),1);
+        // Success copy precedes the existing reload; assert after the contact
+        // returns, rather than sampling the temporary loading view (WebKit).
+        await panel.getByText('01000000000',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:/후보 새로고침 · 2회/}).count(),1);
       }else if(scenario==='onboarding'||scenario==='few'){
         await panel.getByRole('button',{name:/후보 모두 보기/}).waitFor();
         assert.equal(await recommendations.locator('article').count(),scenario==='few'?1:3);
@@ -89,7 +91,7 @@ module.exports=async({browser,origin,output})=>{
         await page.getByText(/매칭 요청을 보냈어요|요청이 전달됐어요|요청을 보냈어요/).first().waitFor();
         assert.equal(mutations.filter(p=>p.endsWith('/matches/auto')).length,1);
       }else if(scenario==='missing'){
-        await panel.getByText('내 소개를 등록하고 후보를 만나보세요',{exact:true}).waitFor();
+        await panel.getByText('내 소개를 올리면 추천이 시작돼요',{exact:true}).waitFor();
         assert.equal(await panel.getByText('1:1 신청서 작성 완료',{exact:true}).count(),0);assert.equal(await panel.getByRole('button',{name:/후보 모두 보기/}).count(),0);
       }else if(scenario==='empty'){
         await panel.getByText('1:1 신청서 작성 완료',{exact:true}).waitFor();assert.equal(await recommendations.locator('article').count(),0);assert.equal(await panel.getByRole('button',{name:/후보 모두 보기/}).count(),0);

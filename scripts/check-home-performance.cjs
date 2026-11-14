@@ -163,7 +163,9 @@ const movedFunctions = {
   // check-entry-profile-flow-browser; save/refresh/checkout handlers stay pinned.
   // Reviewed availability hint and relocation of the same hide/restore panel.
   // No handler changed; actual page tests preserve requests, contact and quota.
-  OneOnOneHomePanel: '32c3a31e7139bbab4b2507179c7e52718c54be8a60ce4024ea6469e97ebe2210',
+  // Reviewed first-request aside/eligibility; separate action/payment contracts
+  // stay pinned. Actual-page tests cover navigation without refresh or submission.
+  OneOnOneHomePanel: 'c80f066ea6f39f6ade67cef77efc95b0a3151dbf3ab51a649c0a36bcfcab3cf8',
   OneOnOneCandidateCard: 'ab83423c6962c84c974052b0bf024392846e572e8f7b2a4b8c7471a8f53a16a8',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',
