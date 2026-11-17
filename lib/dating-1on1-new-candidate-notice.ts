@@ -3,7 +3,9 @@ import type { RecommendationPageVisit } from "@/lib/dating-1on1-recommendation-r
 import { getRegionDistanceMeta } from "@/lib/region-distance";
 
 export type OneOnOneNewCandidateNotice = { state: "waiting" | "updated"; new_candidate_count: number };
-const WEEK_MS = 7 * 86400000;
+// Match the rotation's 30-day exposure window. Otherwise a familiar profile
+// first seen 8 days ago is treated as a repeat by ranking but loses its notice.
+const EXPOSURE_WINDOW_MS = 30 * 86400000;
 
 // Presentation metadata only. Actual views before this page are evidence of a
 // repeat even when the two latest saved pages differ (or have expired).
@@ -20,7 +22,7 @@ export function getOneOnOneNewCandidateNotice({ source, visible, observations, p
   if (!Number.isFinite(nowMs) || !Number.isFinite(pageAt) || pageAt > nowMs || !visible.length) return null;
   const sourceCreated = Date.parse(source.created_at);
   if (!Number.isFinite(sourceCreated)) return null;
-  const since = Math.max(nowMs - WEEK_MS, sourceCreated);
+  const since = Math.max(nowMs - EXPOSURE_WINDOW_MS, sourceCreated);
   const seenBeforePage = new Set(observations.filter(row => Number.isFinite(row.at) && row.at >= since && row.at < pageAt).map(row => row.id));
   const uniqueVisible = [...new Map(visible.map(card => [card.id, card])).values()];
   if (uniqueVisible.filter(card => seenBeforePage.has(card.id)).length < Math.ceil(uniqueVisible.length / 2)) return null;

@@ -55,7 +55,7 @@ test('personal newcomer notice uses earlier actual impressions, not overlap betw
   for (const patch of [
     { observations: [] }, { observations: args.observations.map(o => ({ ...o, at: pageAt })) },
     { observations: args.observations.map(o => ({ ...o, at: now + 1 })) },
-    { observations: args.observations.map(o => ({ ...o, at: now - 8 * day })) },
+    { observations: args.observations.map(o => ({ ...o, at: now - 31 * day })) },
     { visible: [] }, { pageAt: NaN }, { nowMs: NaN }, { pageAt: now + 1 },
     { source: { ...source, created_at: new Date(now).toISOString() } },
   ]) assert.equal(notice({ ...args, ...patch }), null, JSON.stringify(patch));
@@ -91,7 +91,9 @@ test('repeat notice threshold counts unique visible people and only exposures be
   assert.equal(notice({ ...args, observations: seen.map(o=>({...o, at: pageAt})) }), null);
   assert.equal(notice({ ...args, observations: seen.map(o=>({...o, at: now})) }), null);
   assert.equal(notice({ ...args, observations: seen.map(o=>({...o, at: NaN})) }), null);
-  assert.equal(notice({ ...args, observations: seen.map(o=>({...o, at: now-7*day-1})) }), null);
+  assert.equal(notice({ ...args, observations: seen.map(o=>({...o, at: now-30*day-1})) }), null);
+  assert.deepEqual(notice({ ...args, observations: seen.map(o=>({...o, at: now-30*day})) }), { state: 'waiting', new_candidate_count: 0 });
+  assert.deepEqual(notice({ ...args, observations: seen.map(o=>({...o, at: now-8*day})) }), { state: 'waiting', new_candidate_count: 0 });
   assert.deepEqual(notice({ ...args, observations: seen.map(o=>({...o, at: now-7*day})) }), { state: 'waiting', new_candidate_count: 0 });
   assert.equal(notice({ ...args, visible: [...visible,...Array(20).fill(visible[0])], observations: seen.slice(0,4) }), null);
   assert.deepEqual(notice({ ...args, visible: visible.slice(0,9), observations: seen.slice(0,5) }), { state: 'waiting', new_candidate_count: 0 });

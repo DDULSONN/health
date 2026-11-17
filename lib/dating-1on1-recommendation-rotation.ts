@@ -118,6 +118,12 @@ export function rotateRecommendationPage<T extends RecommendationCandidate>(
       ? Math.min(limit, picked.length + Math.max(0, Math.floor(limit / 2) - regionalCount)) : limit;
     add(regionalAlternatives, regionalCap, true);
     if (picked.length < limit && hasUnseenWider) {
+      // The three-page preference is softer than avoiding the CURRENT page.
+      // A scarce local profile must not be pinned on every refresh while other
+      // preferred-age regional people are available on a preceding page.
+      // Keep the regional half and the existing adjacent-age cap; do not widen
+      // distance or age further just to manufacture a different list.
+      add(pool.filter(c => meta(c).regionalComparable && !priorIds.has(c.id)), regionalCap, true);
       add(pool.filter(c => meta(c).near && !priorIds.has(c.id)), regionalCap);
       add(pool.filter(c => meta(c).near), regionalCap);
     }

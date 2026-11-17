@@ -8,6 +8,7 @@ for (const key of Object.keys(env)) {
   if (/SUPABASE|SOLAPI|RESEND|TOSS|KAKAO|SERVICE_ROLE|CRON_SECRET|PAYMENT_SECRET|SMTP/i.test(key)) delete env[key];
 }
 const unitFiles = [
+  'check-operator-page-repair.cjs',
   'check-matching-participation.cjs',
   'check-candidate-activity-balance.cjs',
   'check-voucher-profile-ux.cjs',

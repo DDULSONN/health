@@ -24,6 +24,20 @@ const ids = p => all(p).map(c => c.id);
 const context = pool => ({ limit: 10, extraLimit: 3, handled: new Set(pool.filter(c => c.last_handled_at).map(c => c.id)),
   extraExcluded: new Set(pool.filter(c => c.last_handled_at).map(c => c.id)),
   observations: pool.map(c => ({ id: c.id, at: now - 86400000 })), recentPages: [] });
+
+test('recent regional alternatives are revisited before pinning the same local person on every page', () => {
+  const source = card('source', { sex: 'male' });
+  const local = card('local', { region: '20' });
+  const regional = Array.from({ length: 12 }, (_, i) => card(`regional-${i}`, { region: '120' }));
+  const wider = Array.from({ length: 80 }, (_, i) => card(`wider-${i}`, { region: '220' }));
+  const previous = { recommendations: [local, ...wider.slice(0, 9)], extraRecommendations: wider.slice(9, 12) };
+  const ctx = context([local, ...regional, ...all(previous)]);
+  ctx.recentPages = [{ at: now - 1, ids: ids(previous) }, { at: now - 60000, ids: regional.map(c => c.id) }];
+  const next = pages.nextRecommendationPage(source, [local, ...regional, ...wider], previous, new Date(now).toISOString(), now, ctx);
+  assert.equal(ids(next).includes(local.id), false, 'do not repeat the sole local when preferred-age regional alternatives are available');
+  assert.equal(next.recommendations.filter(c => Number(c.region) <= 180).length, 5, 'retain nearby half instead of jumping entirely to distant profiles');
+  assert.equal(ids(next).filter(id => ids(previous).includes(id)).length, 0);
+});
 function run(source, pool, rounds = 30) {
   const ctx = context(pool), initial = { recommendations: pool.slice(0, 10), extraRecommendations: pool.slice(10, 13) };
   let previous = initial;

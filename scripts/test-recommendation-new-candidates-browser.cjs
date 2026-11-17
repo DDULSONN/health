@@ -20,7 +20,7 @@ module.exports = async function newCandidatesBrowser({ browser, origin, output }
   let passed = 0;
   for (const surface of ['home', 'mypage']) for (const width of [360, 1280]) {
     for (const scenario of ['waiting', 'arrives', 'ordinary', 'legacy', 'quota-empty', 'quota-empty-arrives',
-      'disjoint-history', 'no-page-history', 'current-page-only', 'old-exposures']) {
+      'disjoint-history', 'no-page-history', 'current-page-only', 'old-exposures', 'expired-exposures']) {
       const context = await browser.newContext({ viewport: { width, height: 844 } });
       const page = await context.newPage(); page.setDefaultTimeout(10000);
       const errors = []; let posts = 0, externals = 0, arrived = false;
@@ -46,7 +46,8 @@ module.exports = async function newCandidatesBrowser({ browser, origin, output }
             const recommendations = [{ ...profile, id: arrived ? 'new-candidate' : 'candidate', name: arrived ? '새로 등록한 후보' : '기존 후보', sex: 'male', region: '경기',
               created_at: arrived ? new Date(at - 1000).toISOString() : profile.created_at },
               ...['held-1','held-2'].map(id=>({...profile,id,name:`다른 후보 ${id}`,sex:'male'}))];
-            const observationAt = scenario === 'current-page-only' ? pageAt : scenario === 'old-exposures' ? at - 8 * day : pageAt - day;
+            const observationAt = scenario === 'current-page-only' ? pageAt : scenario === 'old-exposures' ? at - 8 * day
+              : scenario === 'expired-exposures' ? at - 31 * day : pageAt - day;
             const notice = getOneOnOneNewCandidateNotice({ source: profile, visible: recommendations, pageAt, nowMs: at,
               observations: scenario === 'ordinary' ? [] : ['candidate','held-1','held-2'].map(id=>({id,at:observationAt})),
               pages: scenario === 'no-page-history' ? undefined : [{at:pageAt-day,ids:['page-a']},{at:pageAt,ids:[scenario==='disjoint-history'?'page-b':'page-a']}] });
@@ -69,7 +70,7 @@ module.exports = async function newCandidatesBrowser({ browser, origin, output }
         await page.goto(origin + (surface === 'home' ? '/community/dating/cards?tab=one_on_one' : '/mypage?section=matching&matching=one_on_one'));
         await page.getByText(/^기존 후보(?: \/|$)/).first().waitFor();
         const notice = page.getByTestId('new-candidate-notice');
-        const ordinary = ['ordinary', 'legacy', 'current-page-only', 'old-exposures'].includes(scenario);
+        const ordinary = ['ordinary', 'legacy', 'current-page-only', 'expired-exposures'].includes(scenario);
         if (ordinary) assert.equal(await notice.count(), 0);
         else {
           await notice.waitFor(); assert.equal(await notice.count(), 1);
