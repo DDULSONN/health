@@ -35,7 +35,7 @@ test('recent regional alternatives are revisited before pinning the same local p
   ctx.recentPages = [{ at: now - 1, ids: ids(previous) }, { at: now - 60000, ids: regional.map(c => c.id) }];
   const next = pages.nextRecommendationPage(source, [local, ...regional, ...wider], previous, new Date(now).toISOString(), now, ctx);
   assert.equal(ids(next).includes(local.id), false, 'do not repeat the sole local when preferred-age regional alternatives are available');
-  assert.equal(next.recommendations.filter(c => Number(c.region) <= 180).length, 5, 'retain nearby half instead of jumping entirely to distant profiles');
+  assert.equal(next.recommendations.filter(c => Number(c.region) <= 180).length, 10, 'available regional alternatives need not reserve half the page for distant profiles');
   assert.equal(ids(next).filter(id => ids(previous).includes(id)).length, 0);
 });
 function run(source, pool, rounds = 30) {
@@ -227,8 +227,8 @@ test('regional preference still respects preferred ages, missing regions and bou
   const ctx = context([...previousCards, ...preferred, ...adjacent]);
   const next = pages.nextRecommendationPage(source, [...previousCards, ...preferred, ...adjacent, ...distant], previous,
     new Date(now).toISOString(), now, ctx);
-  assert.equal(next.recommendations.filter(c => c.id.startsWith('preferred')).length, 5, 'preferred age still wins inside the familiar regional half');
-  assert.equal(next.recommendations.filter(c => c.id.startsWith('distant')).length, 5, 'unseen wider candidates still receive a turn');
+  assert.equal(next.recommendations.filter(c => c.id.startsWith('preferred')).length, 10, 'preferred-age regional alternatives fill before distant novelty');
+  assert.equal(next.recommendations.filter(c => c.id.startsWith('distant')).length, 0, 'do not force distant profiles into a full regional page');
   for (const patch of [{ region: 'unknown', age: 30 }, { region: '120', age: 32 }, { region: '120', age: 35 }]) {
     const unsuitable = Array.from({ length: 40 }, (_, i) => card(`unsuitable${i}`, patch));
     const fallback = pages.nextRecommendationPage(source, [...previousCards, ...unsuitable, ...distant], previous,
@@ -237,7 +237,7 @@ test('regional preference still respects preferred ages, missing regions and bou
   }
 });
 
-test('after regional novelty is exhausted, 30 refreshes still widen without losing nearby alternatives', () => {
+test('after regional novelty is exhausted, 30 refreshes rotate regional alternatives without forced distant main slots', () => {
   const source = card('source', { sex: 'male', age: 28 });
   const locals = Array.from({ length: 13 }, (_, i) => card(`local${i}`));
   const regional = Array.from({ length: 40 }, (_, i) => card(`regional${i}`, { age: 30, region: '120' }));
@@ -267,7 +267,7 @@ test('after regional novelty is exhausted, 30 refreshes still widen without losi
     previous = next;
   }
   assert.equal(regionalSeen.size, 40);
-  assert.ok(widenedMain >= 100, 'nearby revisits cannot starve unseen wider candidates');
+  assert.equal(widenedMain, 5, 'only the initial scarce page widens; later full regional pages owe no distant quota');
 });
 
 test('adjacent-age priority cap is not a hard filter when the entire eligible pool is scarce', () => {

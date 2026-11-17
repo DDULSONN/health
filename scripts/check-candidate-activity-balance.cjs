@@ -24,17 +24,43 @@ const makeContext = seen => ({ limit:10, extraLimit:3, handled:new Set(), extraE
   observations: seen.map(c => ({ id:c.id, at:at-8*day })), recentPages:[] });
 const plan = (pool, ctx, prior = previous, time = at) => nextRecommendationPage(source, pool, prior, new Date(time).toISOString(), time, ctx);
 
-test('recent compatible regional revisits get six slots; unseen profiles still get four', () => {
+test('nearby unseen profiles fill the page before active revisits, even without recent activity', () => {
   const active = Array.from({ length:30 }, (_,i) => card('active'+i, { last_active_at:new Date(at-day).toISOString() }));
   const unseen = Array.from({ length:40 }, (_,i) => card('unseen'+i));
   const pool = [...previousCards,...active,...unseen], ctx = makeContext([...previousCards,...active]);
   const next = plan(pool,ctx);
-  assert.equal(next.recommendations.filter(c=>c.id.startsWith('active')).length,6);
-  assert.equal(next.recommendations.filter(c=>c.id.startsWith('unseen')).length,4);
+  assert.equal(all(next).filter(c=>c.id.startsWith('active')).length,0);
+  assert.equal(all(next).filter(c=>c.id.startsWith('unseen')).length,13);
   assert.equal(all(next).filter(c=>c.id.startsWith('previous')).length,0);
   assert.deepEqual(plan(pool,ctx),next);
   const restored=restoreRecommendationPage(source,pool,{refreshed_at:new Date(at).toISOString(),main_candidate_ids:next.recommendations.map(c=>c.id),extra_candidate_ids:next.extraRecommendations.map(c=>c.id)},at+1,ctx);
   assert.deepEqual(restored,next,'GET must not rerank the saved page');
+});
+
+for (const lastActive of [null, 'invalid', new Date(at - 180 * day).toISOString()]) {
+  test('closer unseen candidates precede farther active candidates: '+lastActive,()=>{
+    const near=Array.from({length:13},(_,i)=>card('near'+i,{region:String(1+i),last_active_at:lastActive}));
+    const farther=Array.from({length:40},(_,i)=>card('farther'+i,{region:'70',last_active_at:new Date(at-day).toISOString()}));
+    const next=plan([...previousCards,...near,...farther],makeContext(previousCards));
+    assert.ok(all(next).every(c=>c.id.startsWith('near')),'activity is not an eligibility filter or a reservation');
+    assert.deepEqual(next.recommendations.map(c=>Number(c.region)),[1,2,3,4,5,6,7,8,9,10],
+      'unseen candidates in the same age range lead by distance, not activity or random hash');
+  });
+}
+
+test('unseen regional candidates precede closer familiar candidates without an activity quota',()=>{
+  const known=Array.from({length:40},(_,i)=>card('known'+i,{region:'5',last_active_at:new Date(at-day).toISOString()}));
+  const unseen=Array.from({length:13},(_,i)=>card('unseen'+i,{region:'70',last_active_at:null}));
+  const next=plan([...previousCards,...known,...unseen],makeContext([...previousCards,...known]));
+  assert.ok(all(next).every(c=>c.id.startsWith('unseen')));
+});
+
+test('seen but available nearby candidates fill a page before needless distant novelty',()=>{
+  const local=Array.from({length:40},(_,i)=>card('local'+i,{region:'30',last_active_at:null}));
+  const distant=Array.from({length:40},(_,i)=>card('distant'+i,{region:'300',last_active_at:new Date(at-day).toISOString()}));
+  const next=plan([...previousCards,...local,...distant],makeContext([...previousCards,...local]));
+  assert.ok(all(next).every(c=>c.id.startsWith('local')));
+  assert.equal(all(next).length,13);
 });
 
 for (const bad of [{region:'400'},{region:'unknown'},{age:40},{last_active_at:new Date(at+day).toISOString()}, {last_active_at:'invalid'}, {last_active_at:new Date(at-31*day).toISOString()}]) {
@@ -46,7 +72,7 @@ for (const bad of [{region:'400'},{region:'unknown'},{age:40},{last_active_at:ne
   });
 }
 
-test('recent cancelled/skipped candidates do not jump ahead via the activity reservation',()=>{
+test('recent cancelled/skipped candidates do not jump ahead of unseen candidates via activity',()=>{
   const handled=Array.from({length:30},(_,i)=>card('handled'+i,{last_active_at:new Date(at-day).toISOString(),last_handled_at:new Date(at-1000).toISOString()}));
   const unseen=Array.from({length:40},(_,i)=>card('unseen'+i));
   const ctx=makeContext([...previousCards,...handled]);ctx.handled=new Set(handled.map(c=>c.id));

@@ -51,12 +51,7 @@ export function rotateRecommendationPage<T extends RecommendationCandidate>(
     const gap = source.age != null && c.age != null ? Math.abs(source.age - c.age) : Infinity;
     const ageMatch = isCandidateInSourceAgeRange(source, c);
     const band = km == null ? 7 : km <= 90 ? 0 : km <= 180 ? 1 : km <= 250 ? 2 : km <= 330 ? 3 : km <= 450 ? 4 : 5;
-    const activityAt = Math.max(0, ...[c.last_active_at, c.created_at].map(value => {
-      const time = Date.parse(value ?? "");
-      return Number.isFinite(time) && time <= at ? time : 0;
-    }));
-    const activeRecently = activityAt > 0 && activityAt >= at - 7 * 86400000;
-    return [c.id, { km, gap, ageMatch, band, activeRecently,
+    return [c.id, { km, gap, ageMatch, band,
       near: km != null && km <= 90 && gap <= 6,
       suitable: km != null && ((km <= 180 && ageMatch) || (km <= 90 && gap <= 6)),
       regionalComparable: km != null && km <= 180 && (ageMatch || gap <= 3 || (km <= 90 && gap <= 6)),
@@ -66,11 +61,13 @@ export function rotateRecommendationPage<T extends RecommendationCandidate>(
   const meta = (c: T) => metadata.get(c.id)!;
   // Keep age compatibility when widening. Within a comparable region/age band,
   // least recently shown wins BEFORE activity/Plus/hash/recent-cancel preferences.
-  // Exact km must not pin the same nearest handful forever.
+  // Unseen people are ordered by distance before activity/Plus/hash. For revisits,
+  // least-recently-seen still wins inside the regional band: exact km must not
+  // pin the same nearest handful forever. Inactivity is never an exclusion.
   const ranks = (c: T) => {
     const m = meta(c);
     return [m.km == null ? 1 : 0, m.ageMatch ? 0 : Math.max(1, Math.ceil(m.gap / 3)), m.band,
-      lastSeen.get(c.id) ?? 0, tieOrder.get(c.id)!];
+      lastSeen.get(c.id) ?? 0, m.fresh ? m.km ?? Infinity : 0, tieOrder.get(c.id)!];
   };
   const fair = (rows: T[]) => rows.sort((a, b) => {
     const x = ranks(a), y = ranks(b);
@@ -90,14 +87,8 @@ export function rotateRecommendationPage<T extends RecommendationCandidate>(
         if (adjacentRegional) adjacentRegionalCount++;
       }
     };
-    // Reserve part of a NEW page for recently active, age-compatible regional
-    // candidates before unseen but long-inactive profiles. Never pull somebody
-    // from the last three pages, widen distance for activity alone, or alter a
-    // saved page. Keep at least 40% available for the existing discovery flow.
-    // Fairness remains least-recently-seen within comparable age/distance bands.
-    add(pool.filter(c => meta(c).activeRecently && meta(c).ageMatch &&
-      meta(c).km != null && meta(c).km! <= 180 && !recentIds.has(c.id) &&
-      !context.handled.has(c.id) && !isRecentlyHandledCandidate(c, at)), Math.floor(limit * 0.6));
+    // Nearby unseen candidates lead, including older/inactive profiles. Do not
+    // reserve slots for active revisits while suitable unseen people remain.
     add(pool.filter(c => meta(c).fresh && meta(c).suitable && !priorIds.has(c.id)));
     // Prefer a comparable regional alternative before a distant unseen profile
     // or reinserting the previous local cards. Beyond the existing 90km local
@@ -110,22 +101,21 @@ export function rotateRecommendationPage<T extends RecommendationCandidate>(
     // preferred range. The ordinary fallback can still fill a truly scarce pool.
     add(regionalAlternatives.filter(c => meta(c).fresh), limit, true);
     const hasUnseenWider = pool.some(c => meta(c).fresh && meta(c).ageMatch && (meta(c).km ?? 0) > 180);
-    // Once regional choices have been seen, retain the existing half-nearby,
-    // half-unseen-wider mix. Familiar regional candidates must not starve every
-    // unseen wider profile forever, even when the nearby pool fills many pages.
-    const regionalCount = picked.filter(c => meta(c).regionalComparable).length;
-    const regionalCap = hasUnseenWider
-      ? Math.min(limit, picked.length + Math.max(0, Math.floor(limit / 2) - regionalCount)) : limit;
-    add(regionalAlternatives, regionalCap, true);
+    // After regional novelty runs out, rotate available regional people rather
+    // than forcing half the page to distant strangers. Keep the adjacent-age
+    // cap; widen only the slots that compatible regional alternatives cannot fill.
+    add(regionalAlternatives, limit, true);
     if (picked.length < limit && hasUnseenWider) {
       // The three-page preference is softer than avoiding the CURRENT page.
       // A scarce local profile must not be pinned on every refresh while other
       // preferred-age regional people are available on a preceding page.
-      // Keep the regional half and the existing adjacent-age cap; do not widen
-      // distance or age further just to manufacture a different list.
-      add(pool.filter(c => meta(c).regionalComparable && !priorIds.has(c.id)), regionalCap, true);
-      add(pool.filter(c => meta(c).near && !priorIds.has(c.id)), regionalCap);
-      add(pool.filter(c => meta(c).near), regionalCap);
+      // Prefer the older of the two preceding pages, and retain the age cap.
+      add(pool.filter(c => meta(c).regionalComparable && !lastTwoPageIds.has(c.id)), limit, true);
+      add(pool.filter(c => meta(c).regionalComparable && !priorIds.has(c.id)), limit, true);
+      add(pool.filter(c => meta(c).near && !priorIds.has(c.id)), limit);
+      // Only a truly scarce local pool may retain a few current local cards.
+      // Do not return the entire same page when unseen wider alternatives exist.
+      add(pool.filter(c => meta(c).near), Math.max(picked.length, Math.floor(limit / 2)));
     }
     add(pool.filter(c => meta(c).fresh && meta(c).ageMatch && meta(c).km != null && !priorIds.has(c.id)));
     // Revisit suitable people before promoting unrelated ages merely because
