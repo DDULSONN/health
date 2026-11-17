@@ -476,6 +476,81 @@ test('snapshot-backed refresh survives history pruning, activity changes and ack
   assert.equal((await runApi(tables, { atTime: now + day + 101 })).body.items[0].refresh_remaining, 0);
 });
 
+test('saved candidates survive quota rollover, midnight and pruned history without a GET write', async () => {
+  const tables = fixture(80); tables.dating_1on1_recommendation_pages = [];
+  assert.equal((await runRefresh(tables, { atTime: now })).response.status, 200);
+  const savedIds = ids(allCandidates((await runApi(tables, { atTime: now + 1 })).body));
+  for (const offset of [12 * 3600000, day - 1, day, day + 1, 2 * day, 8 * day, 31 * day]) {
+    if (offset >= 8 * day) tables.dating_1on1_recommendation_refresh_events = [];
+    const before = structuredClone(tables), result = await runApi(tables, { atTime: now + offset });
+    assert.equal(result.response.status, 200);
+    assert.deepEqual(ids(allCandidates(result.body)), savedIds, `saved page must not expire at offset ${offset}`);
+    assert.equal(result.body.items[0].refresh_remaining, offset < day ? 0 : 1);
+    assert.equal(result.body.items[0].can_refresh, offset >= day);
+    assert.deepEqual(tables, before);
+    assert.ok(result.calls.every(q => !q.insert && !q.update && !q.delete));
+  }
+});
+
+test('five daily refreshes rotate from the visible saved page, not a reconstructed daily page', async () => {
+  const tables = fixture(100); tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_recommendation_page_history = [];
+  let previous = allCandidates((await runApi(tables, { atTime: now })).body);
+  for (let round = 0; round < 5; round++) {
+    const at = now + round * (day + 1000);
+    assert.deepEqual(ids(allCandidates((await runApi(tables, { atTime: at })).body)), ids(previous));
+    const refresh = await runRefresh(tables, { atTime: at });
+    assert.equal(refresh.response.status, 200); assert.equal(refresh.rpcCalls.length, 1);
+    const next = allCandidates((await runApi(tables, { atTime: at + 1 })).body);
+    assert.equal(next.length, 13);
+    assert.equal(next.filter(c => ids(previous).includes(c.id)).length, 0);
+    assert.equal((await runApi(tables, { atTime: at + day - 1 })).body.items[0].refresh_remaining, 0);
+    previous = next;
+  }
+});
+
+test('expired saved page keeps a hidden slot empty until an explicit refresh', async () => {
+  const tables = fixture(60); tables.dating_1on1_recommendation_pages = [];
+  await runRefresh(tables, { atTime: now });
+  const page = allCandidates((await runApi(tables, { atTime: now + 1 })).body);
+  hideCandidate(tables, page[0], now + 2);
+  const before = structuredClone(tables);
+  for (const offset of [day - 1, day, 2 * day]) {
+    const result = await runApi(tables, { atTime: now + offset });
+    assert.deepEqual(ids(allCandidates(result.body)), ids(page.slice(1)));
+    assert.equal(result.body.items[0].recommendations.length, 9);
+    assert.deepEqual(tables, before);
+  }
+  const refresh = await runRefresh(tables, { atTime: now + 2 * day + 1 });
+  assert.equal(refresh.response.status, 200);
+  const next = allCandidates((await runApi(tables, { atTime: now + 2 * day + 2 })).body);
+  assert.equal(next.length, 13); assert.ok(next.every(c => c.id !== page[0].id));
+});
+
+for (const change of ['source', 'settings', 'pointer', 'invalid-date', 'future', 'newer-recovery', 'old-newer-recovery']) {
+  test(`rollover does not restore a saved page with invalid ${change}`, async () => {
+    const tables = fixture(70); tables.dating_1on1_recommendation_pages = [];
+    await runRefresh(tables, { atTime: now });
+    const saved = tables.dating_1on1_recommendation_pages[0], own = tables.dating_1on1_cards[0];
+    const at = now + (change === 'old-newer-recovery' ? 40 : 1) * day + 1;
+    if (change === 'source') saved.source_card_id = 'old-deleted-profile';
+    if (change === 'settings') saved.source_profile_key = 'outdated-source-settings';
+    if (change === 'pointer') own.recommendation_refresh_used_at = new Date(now - 1000).toISOString();
+    if (change === 'invalid-date') saved.refreshed_at = own.recommendation_refresh_used_at = 'invalid';
+    if (change === 'future') saved.refreshed_at = own.recommendation_refresh_used_at = new Date(at + 1000).toISOString();
+    if (change.endsWith('newer-recovery')) tables.dating_1on1_recommendation_recoveries = [{
+      user_id: own.user_id, card_id: own.id, refreshed_at: new Date(now + 1000).toISOString(),
+    }];
+    const before = structuredClone(tables);
+    const withInvalidPage = await runApi(tables, { atTime: at });
+    const withoutPage = structuredClone(tables); withoutPage.dating_1on1_recommendation_pages = [];
+    const expected = await runApi(withoutPage, { atTime: at });
+    assert.equal(withInvalidPage.response.status, 200);
+    assert.deepEqual(ids(allCandidates(withInvalidPage.body)), ids(allCandidates(expected.body)));
+    assert.deepEqual(tables, before);
+  });
+}
+
 test('snapshot-backed API rotates after 64 retained events without consuming a repeat-only allowance', async () => {
   const tables = fixture(26); tables.dating_1on1_recommendation_pages = [];
   tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1).map(c => ({
@@ -497,7 +572,7 @@ test('snapshot-backed API rotates after 64 retained events without consuming a r
   }
 });
 
-for (const change of ['ban', 'hidden', 'blocked', 'rejected', 'matched', 'favorite', 'withdrawn']) test(`saved page revalidates ${change} and refills without any write`, async () => {
+for (const elapsed of [2, day + 2]) for (const change of ['ban', 'hidden', 'blocked', 'rejected', 'matched', 'favorite', 'withdrawn']) test(`saved page revalidates ${change} after ${elapsed}ms and refills without any write`, async () => {
   const tables = fixture(70); tables.dating_1on1_recommendation_pages = [];
   await runRefresh(tables, { atTime: now });
   const page = allCandidates((await runApi(tables, { atTime: now + 1 })).body), selected = page[0];
@@ -509,7 +584,7 @@ for (const change of ['ban', 'hidden', 'blocked', 'rejected', 'matched', 'favori
   if (change === 'rejected' || change === 'matched') tables.dating_1on1_match_proposals.push(pair({
     candidate_card_id: selected.id, candidate_user_id: selected.user_id, state: change === 'matched' ? 'mutual_accepted' : 'candidate_rejected',
   }));
-  const before = structuredClone(tables), result = await runApi(tables, { atTime: now + 2 });
+  const before = structuredClone(tables), result = await runApi(tables, { atTime: now + elapsed });
   assert.equal(result.response.status, 200);
   const after = allCandidates(result.body);
   assert.equal(after.length, 13); assert.equal(new Set(ids(after)).size, 13);
@@ -582,8 +657,8 @@ test('remote newcomers cannot remove closer saved candidates or widen the saved 
   assert.ok(result.recommendations.every(c => c.region !== '300' && c.region !== 'unknown'));
 });
 
-for (const change of ['eligible', 'ban', 'hidden', 'blocked', 'rejected', 'matched', 'favorite', 'withdrawn']) {
-  test(`new nearby saved-page arrival respects ${change} without touching quota or requests`, async () => {
+for (const elapsed of [2000, day + 2000]) for (const change of ['eligible', 'ban', 'hidden', 'blocked', 'rejected', 'matched', 'favorite', 'withdrawn']) {
+  test(`new nearby saved-page arrival respects ${change} after ${elapsed}ms without touching quota or requests`, async () => {
     const tables = fixture(35); tables.dating_1on1_recommendation_pages = [];
     tables.dating_1on1_cards.slice(1).forEach(c => { c.region = '부산'; });
     await runRefresh(tables, { atTime: now });
@@ -598,7 +673,7 @@ for (const change of ['eligible', 'ban', 'hidden', 'blocked', 'rejected', 'match
       candidate_card_id: newCard.id, candidate_user_id: newCard.user_id, state: change === 'matched' ? 'source_selected' : 'candidate_rejected',
     }));
     const snapshot = structuredClone(tables);
-    const result = await runApi(tables, { atTime: now + 2000 });
+    const result = await runApi(tables, { atTime: now + elapsed });
     assert.equal(result.response.status, 200);
     const shown = allCandidates(result.body);
     assert.equal(shown.some(c => c.id === newCard.id), change === 'eligible');
@@ -607,7 +682,7 @@ for (const change of ['eligible', 'ban', 'hidden', 'blocked', 'rejected', 'match
       assert.equal(shown.find(c => c.id === newCard.id).recommendation_region_widened, false);
       assert.ok(shown.find(c => c.id === newCard.id).photo_signed_urls.length > 0);
     }
-    assert.equal(result.body.items[0].refresh_remaining, 0);
+    assert.equal(result.body.items[0].refresh_remaining, elapsed < day ? 0 : 1);
     assert.equal(new Set(ids(shown)).size, 13);
     assert.ok(shown.every(c => !Object.hasOwn(c, 'phone')));
     assert.deepEqual(tables, snapshot);
@@ -1171,8 +1246,14 @@ for (const alreadySeen of [false, true]) test(`regional adjacent ages through ac
     const after = read.body.items[0], page = [...after.recommendations, ...after.admin_recommendations];
     assert.equal(page.length, 13);
     assert.equal(new Set(ids(page)).size, 13);
-    assert.equal(after.recommendations.filter(c => c.region === '대전 서구').length, 5,
-      'real region lookup mixes regional alternatives without replacing all preferred-age candidates');
+    const adjacentRegionalCount = after.recommendations.filter(c => c.region === '대전 서구').length;
+    // With a persistent page, an off-page local preferred-age group may fill
+    // the next page. Do not require adjacent-age regional slots by assuming
+    // that the old daily local page has silently replaced the saved page.
+    assert.ok(adjacentRegionalCount <= 5);
+    assert.ok(after.recommendations.filter(c => ['서울 강남구', '대전 서구'].includes(c.region)).length >= 5);
+    assert.ok(page.filter(c => ids([...before.recommendations, ...before.admin_recommendations]).includes(c.id)).length < page.length / 2,
+      'the regional age-balance fallback must still change the majority of the visible page');
     assert.ok(page.filter(c => rules.isCandidateInSourceAgeRange({ ...source, age: 30 }, c)).length >= 8);
     assert.ok(page.every(c => !['c13', 'c14', 'c15', 'c16', 'c17', 'c18'].includes(c.id)));
     assert.ok(page.every(c => c.photo_signed_urls.length > 0 && !Object.hasOwn(c, 'phone')));
@@ -1189,7 +1270,8 @@ for (const alreadySeen of [false, true]) test(`regional adjacent ages through ac
     }
     assert.deepEqual(ids(allCandidates((await runApi(tables, { atTime: at + 3 })).body)), ids(page));
   }
-  assert.equal(observedRegional.size, 15, 'consecutive API refreshes cannot circle the same regional subset');
+  assert.equal(observedRegional.size, alreadySeen ? 10 : 15,
+    'three daily refreshes include distinct regional groups; seen pools may also revisit off-page preferred-age locals');
   assert.deepEqual(tables.dating_1on1_match_proposals, matchesBefore);
 });
 
@@ -1739,10 +1821,10 @@ const activeFixture = size => {
   tables.profiles.forEach(p => { p.last_meaningful_activity_at = new Date(now - 1000).toISOString(); });
   return tables;
 };
-function hideCandidate(tables, candidate) {
+function hideCandidate(tables, candidate, atTime = now) {
   tables.dating_1on1_candidate_hides ??= [];
   tables.dating_1on1_candidate_hides.push({ id: 'hide-' + candidate.id, user_id: 'user-source',
-    candidate_user_id: candidate.user_id, candidate_card_id: candidate.id, candidate_name: candidate.name, created_at: new Date(now).toISOString() });
+    candidate_user_id: candidate.user_id, candidate_card_id: candidate.id, candidate_name: candidate.name, created_at: new Date(atTime).toISOString() });
 }
 for (const count of [0, 1, 6, 9, 10]) test('scarcity API counts only safety-filtered, unhidden, unsaved candidates: ' + count, async () => {
   const tables=fixture(count+4);

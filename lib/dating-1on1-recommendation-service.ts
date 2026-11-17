@@ -456,6 +456,19 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
 
     const recoverySeed = getRecommendationRecoverySeed(recoveryRes.error ? null : recoveryRes.data?.refreshed_at, nowMs);
     if (recoverySeed) refreshSeeds.push(recoverySeed);
+    const savedPage = savedPageResult.page;
+    const savedPageAt = Date.parse(savedPage?.refreshed_at ?? "");
+    const recoveryAt = Date.parse(recoveryRes.error ? "" : recoveryRes.data?.refreshed_at ?? "");
+    // Quota expires after 24 hours; the last committed candidate page does not.
+    // Its source pointer/settings and safety filters, not quota availability,
+    // determine whether it can be restored on a later visit.
+    const hasSavedPage = savedPage && savedPage.source_card_id === sourceCard.id &&
+      Number.isFinite(savedPageAt) && savedPageAt <= nowMs &&
+      savedPageAt === Date.parse(sourceCard.recommendation_refresh_used_at ?? "") &&
+      savedPage.source_profile_key === recommendationSourceKey(sourceCard) &&
+      // A newer operator correction supersedes this receipt even after its
+      // bounded historical replay window expires.
+      !(Number.isFinite(recoveryAt) && recoveryAt <= nowMs && recoveryAt > savedPageAt);
     if (simulateRefresh && refreshPlan && sourceCard.id === refreshPlan.sourceCardId && !savedPageResult?.available) refreshSeeds.push(refreshPlan.at);
     const hasActiveRefresh = refreshSeeds.some((seed) => getActiveRecommendationRefresh(seed, nowMs));
     // Initial/legacy pages are reconstructed on GET. Removing today's hidden
@@ -463,7 +476,8 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     // slots in this generation, then filter them from the final response.
     // A subsequent explicit refresh (or normal new daily generation) uses the
     // preferences already in effect at its generation time and can fill again.
-    const pageAt = hasActiveRefresh ? Math.max(...refreshSeeds.filter(seed => getActiveRecommendationRefresh(seed, nowMs)).map(Date.parse)) : defaultPageAt;
+    const pageAt = hasSavedPage ? savedPageAt : hasActiveRefresh
+      ? Math.max(...refreshSeeds.filter(seed => getActiveRecommendationRefresh(seed, nowMs)).map(Date.parse)) : defaultPageAt;
     pageGenerationTimes.set(sourceCard.id, pageAt);
     const hiddenAtGeneration = candidateHideUserIdsAt(hiddenCandidates.rows, pageAt);
     const replayCandidates = unsavedCandidates.filter(card => !hiddenAtGeneration.has(card.user_id));
@@ -494,11 +508,6 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         new Set(replayCandidates.filter(card => !notHidden(card)).map(card => card.id)));
     }
     const recentHandledIds = new Set(unsavedCandidates.filter((card) => isRecentlyHandledCandidate(card, nowMs)).map((card) => card.id));
-    const savedPage = savedPageResult.page;
-    const hasSavedPage = savedPage && savedPage.source_card_id === sourceCard.id && activeRefresh &&
-      Date.parse(savedPage.refreshed_at) === Date.parse(activeRefresh) &&
-      savedPage.source_profile_key === recommendationSourceKey(sourceCard) &&
-      (!recoverySeed || Date.parse(recoverySeed) <= Date.parse(savedPage.refreshed_at));
     // Once an exact page and real observations exist, replaying 32 historical
     // pages only to throw them away adds CPU cost and no information.
     const replay = hasSavedPage && observations.length > 0
