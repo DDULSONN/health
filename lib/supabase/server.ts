@@ -28,11 +28,14 @@ export async function createClient() {
   );
 }
 
-export function createAdminClient() {
+export function createAdminClient(requestOptions?: { signal: AbortSignal }) {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
     {
+      ...(requestOptions ? { global: { fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, {
+        ...init, signal: AbortSignal.any([requestOptions.signal, AbortSignal.timeout(8000), ...(init?.signal ? [init.signal] : [])]),
+      }) } } : {}),
       auth: {
         autoRefreshToken: false,
         persistSession: false,

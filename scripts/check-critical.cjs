@@ -27,6 +27,8 @@ const unitFiles = [
   'check-candidate-hides.cjs',
   'check-refresh-monitor.cjs',
   'check-refresh-monitor-sql.cjs',
+  'check-partial-refresh.cjs',
+  'check-partial-refresh-sql.cjs',
   'check-automatic-profile-review.cjs',
   'test-dating-auto-review.cjs',
   'check-signup-verification.cjs',

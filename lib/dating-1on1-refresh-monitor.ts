@@ -15,7 +15,8 @@ export type RefreshAuditAttempt = {
 };
 type AuditJob = { id: string; user_id: string; attempt_id: string; lease_token: string; day_key: string };
 export type RefreshAuditFinding = "healthy" | "quota_limit" | "pool_small" | "repeat_review" | "check_failed"
-  | "superseded" | "repair_ready" | "repair_review" | "repaired" | "fit_review";
+  | "superseded" | "repair_ready" | "repair_review" | "repaired" | "fit_review"
+  | "partial_ready" | "partial_repaired" | "no_safe_partial" | "repair_cooldown";
 
 export function classifyRefreshAudit(a: RefreshAuditAttempt, plan?: RecommendationRefreshPlan): RefreshAuditFinding {
   if (a.outcome === "limited") return "quota_limit";
@@ -100,11 +101,59 @@ export async function auditRefreshAttempt(admin: Admin, job: AuditJob, a: Refres
   return finding;
 }
 
+export async function auditPartialRefresh(admin: Admin, job: AuditJob, a: RefreshAuditAttempt, mode: string) {
+  // Most pages do not repeat. Inspect only <=13 IDs and their real impressions
+  // before loading the eligible pool; never turn incomplete reads into a repair.
+  const saved = await admin.from("dating_1on1_recommendation_pages")
+    .select("source_card_id,refreshed_at,main_candidate_ids,extra_candidate_ids").eq("user_id", a.user_id).maybeSingle();
+  if (saved.error) throw Error("PARTIAL_PAGE_UNAVAILABLE");
+  if (!saved.data || saved.data.source_card_id !== a.source_card_id) {
+    await finish(admin, job, "superseded"); return "superseded";
+  }
+  const ids = [...saved.data.main_candidate_ids, ...saved.data.extra_candidate_ids] as string[];
+  const cards = await admin.from("dating_1on1_cards").select("id,user_id,created_at")
+    .in("id", [a.source_card_id, ...ids]);
+  if (cards.error) throw Error("PARTIAL_CARDS_UNAVAILABLE");
+  const source = cards.data?.find(c => c.id === a.source_card_id);
+  if (!source || source.user_id !== a.user_id) { await finish(admin, job, "superseded"); return "superseded"; }
+  const userIds = cards.data!.filter(c => ids.includes(c.id)).map(c => c.user_id);
+  const seen = userIds.length ? await admin.from("dating_1on1_candidate_impressions").select("candidate_user_id")
+    .eq("viewer_user_id", a.user_id).in("candidate_user_id", userIds)
+    .gte("first_seen_at", new Date(Math.max(Date.now() - 30 * 86400000, Date.parse(source.created_at))).toISOString())
+    .lt("first_seen_at", saved.data.refreshed_at).limit(1000) : { data: [], error: null };
+  if (seen.error || seen.data?.length === 1000) throw Error("PARTIAL_IMPRESSIONS_UNAVAILABLE");
+  if (ids.length < 5 || new Set(seen.data?.map(r => r.candidate_user_id)).size < Math.ceil(ids.length / 2)) {
+    await finish(admin, job, "no_safe_partial"); return "no_safe_partial";
+  }
+  // A separate server-only plan option: no public route accepts this flag.
+  const response = await loadOneOnOneRecommendations(admin, { id: a.user_id }, {
+    sourceCardId: a.source_card_id, at: new Date().toISOString(), partialRepair: true,
+  });
+  if (!response.ok) {
+    if (response.status >= 500) throw Error("PARTIAL_PLAN_UNAVAILABLE");
+    await finish(admin, job, "superseded"); return "superseded";
+  }
+  const plan = (await response.json()).plan as RecommendationRefreshPlan | undefined;
+  if (!plan?.partial || !plan.partial.changes.length || !plan.monitor?.safe_local_change) {
+    await finish(admin, job, "no_safe_partial"); return "no_safe_partial";
+  }
+  if (mode !== "repair") { await finish(admin, job, "partial_ready"); return "partial_ready"; }
+  const result = await admin.rpc("repair_dating_1on1_partial_audit", {
+    p_job: job.id, p_token: job.lease_token, p_plan: plan,
+  });
+  // SQL owns the atomic page + free event + notice + mail outbox. An ambiguous
+  // response never triggers a second write or an ad-hoc message here.
+  if (result.error) throw Error("PARTIAL_REPAIR_UNCERTAIN");
+  if (result.data === "repaired" || result.data === "already_repaired") return "partial_repaired";
+  const finding = result.data === "cooldown" ? "repair_cooldown" : "superseded";
+  await finish(admin, job, finding); return finding;
+}
+
 export async function deliverRefreshRepairEmails(admin: Admin, deadline: number) {
   if (!isOneOnOneReminderHour(Date.now()) || !process.env.RESEND_API_KEY?.trim() || !process.env.NOTIFY_FROM_EMAIL?.trim()) return 0;
   const settings = await admin.from("dating_1on1_refresh_monitor_settings").select("mode,email_enabled").eq("singleton", true).single();
   if (settings.error || settings.data?.mode !== "repair" || !settings.data.email_enabled) return 0;
-  const pending = await admin.from("dating_1on1_refresh_audits").select("id,user_id,attempt_id,repaired_at")
+  const pending = await admin.from("dating_1on1_refresh_audits").select("id,user_id,attempt_id,repaired_at,finding")
     .eq("email_state", "pending").gte("repaired_at", new Date(Date.now() - 86400000).toISOString())
     .order("repaired_at").limit(10);
   if (pending.error) throw Error("AUDIT_EMAIL_READ_FAILED");
@@ -115,8 +164,11 @@ export async function deliverRefreshRepairEmails(admin: Admin, deadline: number)
       .eq("id", row.id).eq("email_state", "pending").select("id");
     if (reserved.error || !reserved.data?.length) continue;
     try {
-      const ok = await sendDatingEmailNotification(admin, row.user_id, "[짐툴] 1:1 후보 새로고침 복구 안내",
-        "안녕하세요, 짐툴입니다.\n\n회원님의 1:1 후보 새로고침 처리 오류를 확인해 후보 목록을 복구했습니다.\n"
+      const partial = row.finding === "partial_repaired";
+      const ok = await sendDatingEmailNotification(admin, row.user_id,
+        partial ? "[짐툴] 1:1 후보를 일부 새로 담았어요" : "[짐툴] 1:1 후보 새로고침 복구 안내",
+        (partial ? "안녕하세요, 짐툴입니다.\n\n반복해서 보였던 후보 일부를 나이와 지역을 고려한 다른 후보로 바꿨어요.\n"
+          : "안녕하세요, 짐툴입니다.\n\n회원님의 1:1 후보 새로고침 처리 오류를 확인해 후보 목록을 복구했습니다.\n")
         + "이번 복구에는 새로고침 횟수를 사용하지 않았습니다. 보내신 요청, 찜, 진행 중인 매칭과 연락처 교환 내역은 그대로 유지됩니다.\n\n"
         + "현재 후보는 아래 화면에서 확인하실 수 있습니다.\nhttps://helchang.com/community/dating/cards?tab=one_on_one\n\n"
         + "이용에 불편을 드려 죄송합니다. 계속 점검하겠습니다.\n짐툴 드림",
@@ -131,8 +183,21 @@ export async function deliverRefreshRepairEmails(admin: Admin, deadline: number)
           const current = await admin.from("dating_1on1_cards").select("id").eq("id", attempt.data.source_card_id)
             .eq("user_id", row.user_id).eq("recommendation_refresh_used_at", row.repaired_at)
             .in("status", ["submitted", "reviewing", "approved"]).maybeSingle();
-          return !current.error && Boolean(current.data);
-        }, `refresh-repair-${row.id}`);
+          if (current.error || !current.data) return false;
+          if (partial) {
+            const [receipt, page] = await Promise.all([
+              admin.from("dating_1on1_refresh_audits").select("repair_main_ids,repair_extra_ids,repair_count,finding")
+                .eq("id", row.id).eq("state", "done").eq("email_state", "sending").maybeSingle(),
+              admin.from("dating_1on1_recommendation_pages").select("main_candidate_ids,extra_candidate_ids")
+                .eq("user_id", row.user_id).eq("refreshed_at", row.repaired_at).maybeSingle(),
+            ]);
+            if (receipt.error || page.error || !receipt.data || !page.data || receipt.data.finding !== "partial_repaired"
+              || !(receipt.data.repair_count >= 1 && receipt.data.repair_count <= 3)
+              || JSON.stringify(receipt.data.repair_main_ids) !== JSON.stringify(page.data.main_candidate_ids)
+              || JSON.stringify(receipt.data.repair_extra_ids) !== JSON.stringify(page.data.extra_candidate_ids)) return false;
+          }
+          return true;
+        }, `refresh-repair-${row.id}`, AbortSignal.timeout(Math.max(1, Math.min(10000, deadline - Date.now() - 2000))));
       // The existing boolean sender deliberately does not distinguish an opt-out
       // from an uncertain provider outcome. Do not claim delivery or retry either.
       await admin.from("dating_1on1_refresh_audits").update({ email_state: ok ? "sent" : "unknown" })
@@ -146,7 +211,7 @@ export async function deliverRefreshRepairEmails(admin: Admin, deadline: number)
 }
 
 export async function runRefreshMonitor(admin: Admin, deadline = Date.now() + 45000) {
-  const settings = await admin.from("dating_1on1_refresh_monitor_settings").select("mode").eq("singleton", true).single();
+  const settings = await admin.from("dating_1on1_refresh_monitor_settings").select("*").eq("singleton", true).single();
   if (settings.error) {
     if (["42P01", "PGRST205"].includes(settings.error.code)) return { configured: false, checked: 0, sent: 0 };
     throw Error("AUDIT_SETTINGS_FAILED");
@@ -158,12 +223,16 @@ export async function runRefreshMonitor(admin: Admin, deadline = Date.now() + 45
     return { configured: true, checked: 0, sent: 0 };
   }
   let checked = 0;
-  for (let i = 0; i < 20 && Date.now() < deadline - 20000; i++) {
+  for (let i = 0; i < (settings.data.partial_enabled ? 8 : 20) && Date.now() < deadline - 20000; i++) {
     const claimed = await admin.rpc("claim_dating_1on1_refresh_audit");
     if (claimed.error) throw Error("AUDIT_CLAIM_FAILED");
     if (!claimed.data) break;
     const { job, attempt } = claimed.data as { job: AuditJob; attempt: RefreshAuditAttempt };
-    try { await auditRefreshAttempt(admin, job, attempt, settings.data.mode); checked++; }
+    try {
+      if (settings.data.partial_enabled) await auditPartialRefresh(admin, job, attempt, settings.data.mode);
+      else await auditRefreshAttempt(admin, job, attempt, settings.data.mode);
+      checked++;
+    }
     catch { console.warn("[refresh-monitor] check incomplete", { auditId: job.id }); }
   }
   const sent = await deliverRefreshRepairEmails(admin, deadline);

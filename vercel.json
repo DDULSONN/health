@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/cron/dating-1on1-refresh-monitor",
-      "schedule": "48 * * * *"
+      "schedule": "3,18,33,48 * * * *"
     },
     {
       "path": "/api/cron/dating-profile-review",

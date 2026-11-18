@@ -648,6 +648,7 @@ export async function sendDatingEmailNotification(
   text: string,
   beforeSend?: () => Promise<boolean>,
   idempotencyKey?: string,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const userRes = await adminClient.auth.admin.getUserById(userId).catch(() => null);
   const to = userRes?.data?.user?.email?.trim();
@@ -670,7 +671,7 @@ export async function sendDatingEmailNotification(
     label: "오픈카드·1:1 소개팅 알림 메일을 더 이상 받고 싶지 않다면 아래 링크에서 수신거부할 수 있습니다.",
   });
 
-  return (await sendDatingEmailToAddressDetailed(to, subject, textWithFooter, { beforeSend, idempotencyKey })).ok;
+  return (await sendDatingEmailToAddressDetailed(to, subject, textWithFooter, { beforeSend, idempotencyKey, signal })).ok;
 }
 
 export type DatingEmailSendResult = {
@@ -683,6 +684,7 @@ export type DatingEmailSendResult = {
 type DatingEmailSendOptions = {
   idempotencyKey?: string;
   beforeSend?: () => Promise<boolean>;
+  signal?: AbortSignal;
 };
 
 export async function sendDatingEmailToAddress(
@@ -776,6 +778,7 @@ export async function sendDatingEmailToAddressDetailed(
         method: "POST",
         headers,
         body: JSON.stringify(payload),
+        ...(options.signal ? { signal: options.signal } : {}),
       });
     } catch {
       if (attempt < maxAttempts) {

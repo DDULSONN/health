@@ -20,9 +20,9 @@ const root=path.resolve(__dirname,'..');
   let browser,checked=0;
   try{
     browser=await chromium.launch({headless:true});
-    for(const width of [320,390,1024])for(const scenario of ['empty','ready','missing','error','conflict']){
+    for(const width of [320,390,1024])for(const scenario of ['empty','ready','missing','error','conflict','partial']){
       const context=await browser.newContext({viewport:{width,height:850}}),page=await context.newPage(),errors=[],writes=[];
-      let settings={mode:'observe',email_enabled:false},accept=true,dialogs=0;
+      let settings={mode:'observe',email_enabled:false,...(scenario==='partial'?{partial_enabled:true}:{})},accept=true,dialogs=0;
       page.on('pageerror',e=>errors.push(e.message));page.on('dialog',async d=>{dialogs++;if(accept)await d.accept();else await d.dismiss();});
       await context.route('**/*',async route=>{
         const req=route.request(),url=new URL(req.url());assert.equal(url.origin,origin,'external calls forbidden');
@@ -31,14 +31,15 @@ const root=path.resolve(__dirname,'..');
         if(req.method()==='PATCH'){
           const body=req.postDataJSON();writes.push(body);assert.equal(body.expected_mode,settings.mode);assert.equal(body.expected_email_enabled,settings.email_enabled);
           if(scenario==='conflict')return route.fulfill({status:409,json:{error:'다른 화면에서 설정이 바뀌었습니다. 다시 불러와 주세요.'}});
-          settings={mode:body.mode,email_enabled:body.email_enabled};return route.fulfill({json:{ok:true,settings}});
+          if(scenario==='partial')assert.equal(body.expected_partial_enabled,settings.partial_enabled);
+          settings={mode:body.mode,email_enabled:body.email_enabled,...(scenario==='partial'?{partial_enabled:body.partial_enabled}:{})};return route.fulfill({json:{ok:true,settings}});
         }
         if(scenario==='error')return route.fulfill({status:503,json:{error:'점검 결과를 읽지 못했습니다.'}});
         if(scenario==='missing')return route.fulfill({json:{configured:false}});
-        const index=Number(url.searchParams.get('page')||0),findings=['healthy','pool_small','repeat_review','repair_ready','repaired','fit_review'];
+        const index=Number(url.searchParams.get('page')||0),findings=scenario==='partial'?['partial_repaired','no_safe_partial','repair_cooldown','partial_ready']:['healthy','pool_small','repeat_review','repair_ready','repaired','fit_review'];
         return route.fulfill({json:{configured:true,settings,total:scenario==='empty'?0:21,pending:3,
           items:scenario==='empty'?[]:index===1?[{id:'last',name:'마지막 테스트',day:'2026-10-22',state:'done',finding:'healthy',pool:25,overlap:2,shown:10,widened:0,ageMismatch:0,emailState:'none'}]:findings.map((finding,i)=>({
-            id:String(i),name:i===0?'검증회원 <script>':`테스트 ${i}`,day:'2026-10-22',state:'done',finding,pool:35,overlap:8,shown:10,widened:3,ageMismatch:1,emailState:i===4?'sent':'none',checkedAt:'2026-10-23T01:00:00Z',
+            id:String(i),name:i===0?'검증회원 <script>':`테스트 ${i}`,day:'2026-10-22',state:'done',finding,pool:35,overlap:8,shown:10,widened:3,ageMismatch:1,emailState:i===4?'sent':'none',checkedAt:'2026-10-23T01:00:00Z',repairCount:finding==='partial_repaired'?2:0,
           }))}});
       });
       await page.goto(origin);const panel=page.getByRole('region',{name:'1:1 새로고침 일일 점검'});
@@ -48,6 +49,15 @@ const root=path.resolve(__dirname,'..');
       else if(scenario==='conflict'){
         await panel.getByRole('combobox').selectOption('repair');await panel.getByRole('alert').waitFor();
         assert.equal(await panel.getByRole('combobox').inputValue(),'observe');assert.equal(writes.length,1);
+      }else if(scenario==='partial'){
+        await panel.getByText('부분 교체 완료',{exact:true}).waitFor();
+        await panel.getByText('실제 교체 2명 · 횟수 차감 없음',{exact:true}).waitFor();
+        assert.equal(await panel.getByRole('checkbox',{name:'반복 후보 부분 교체'}).isChecked(),true);
+        await panel.getByRole('combobox').selectOption('repair');await page.waitForFunction(()=>document.querySelector('select')?.value==='repair');
+        await panel.getByRole('checkbox',{name:'복구 안내 메일'}).click();await page.waitForFunction(()=>document.querySelector('input[type=checkbox]')?.checked===true);
+        assert.equal(writes.length,2);assert.ok(writes.every(w=>w.partial_enabled===true));
+        await panel.getByRole('combobox').selectOption('off');await page.waitForFunction(()=>document.querySelector('select')?.value==='off');
+        assert.equal(await panel.getByRole('checkbox',{name:'복구 안내 메일'}).isChecked(),false);
       }else{
         await panel.getByText('검증회원 <script>',{exact:true}).waitFor();assert.equal(await panel.locator('script').count(),0);
         assert.equal(await panel.getByRole('checkbox').isDisabled(),true);

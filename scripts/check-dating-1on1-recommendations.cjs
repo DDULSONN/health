@@ -38,6 +38,49 @@ const card = (id, overrides = {}) => ({
 const source = card("source", { sex: "male", age: 30 });
 const ids = (cards) => cards.map((candidate) => candidate.id);
 
+for (const mode of ['normal','hidden','region-changed','expansion-seen','blocked','missing-impressions'])
+test(`automatic partial plan through real recommendation service: ${mode}`, async () => {
+  const tables = fixture(35), own = tables.dating_1on1_cards[0], at = Date.now();
+  const previous = tables.dating_1on1_cards.slice(1,14), seed = new Date(at-3600000).toISOString();
+  own.recommendation_refresh_used_at=seed;
+  const saved={user_id:own.user_id,source_card_id:own.id,refreshed_at:seed,
+    source_profile_key:load('@/lib/dating-1on1-recommendation-page-store').recommendationSourceKey(own),
+    main_candidate_ids:ids(previous.slice(0,10)),extra_candidate_ids:ids(previous.slice(10))};
+  tables.dating_1on1_recommendation_pages=[saved];
+  tables.dating_1on1_recommendation_page_history=[saved];
+  tables.dating_1on1_recommendation_refresh_events=[{card_id:own.id,refreshed_at:seed,quota_refunded_at:seed}];
+  tables.dating_1on1_candidate_impressions=previous.map(c=>({viewer_user_id:own.user_id,candidate_user_id:c.user_id,first_seen_at:new Date(at-2*day).toISOString()}));
+  const alternatives=tables.dating_1on1_cards.slice(14);
+  if(mode==='hidden')hideCandidate(tables,previous[0]);
+  if(mode==='region-changed')own.region='부산';
+  if(mode==='expansion-seen')tables.dating_1on1_expansion_batches=[{user_id:own.user_id,day_key:new Date(at).toISOString().slice(0,10),candidate_ids:ids(alternatives)}];
+  if(mode==='blocked')tables.dating_user_blocks=alternatives.map(c=>({blocker_user_id:own.user_id,blocked_user_id:c.user_id}));
+  if(mode==='missing-impressions')tables.dating_1on1_candidate_impressions=[];
+  const snapshot=structuredClone(tables),db=mockDatabase(tables);
+  const real=createLoader({},at)('@/lib/dating-1on1-recommendation-service');
+  const response=await real.loadOneOnOneRecommendations(db,{id:own.user_id},{sourceCardId:own.id,at:new Date(at).toISOString(),partialRepair:true});
+  assert.deepEqual(tables,snapshot,'planning never writes any live state');
+  assert.ok(db.calls.every(q=>!q.insert&&!q.update&&!q.delete));
+  if(mode==='hidden'||mode==='region-changed'){assert.equal(response.status,409);return;}
+  assert.equal(response.status,200);const {plan}=await response.json();
+  assert.deepEqual(plan.extra_candidate_ids,saved.extra_candidate_ids);
+  if(mode!=='normal'){assert.equal(plan.partial.changes.length,0);assert.equal(plan.changed_candidate_count,0);return;}
+  assert.equal(plan.partial.changes.length,3);assert.equal(plan.changed_candidate_count,3);
+  assert.equal(plan.rotated_candidate_count,3);assert.equal(plan.monitor.safe_local_change,true);
+  const initial=(await runApi(tables,{atTime:at})).body.items[0];
+  // Model the SQL transaction; real SQL invariants are tested separately.
+  own.recommendation_refresh_used_at=new Date(at).toISOString();
+  Object.assign(saved,{refreshed_at:own.recommendation_refresh_used_at,main_candidate_ids:plan.main_candidate_ids});
+  tables.dating_1on1_recommendation_refresh_events.push({card_id:own.id,refreshed_at:saved.refreshed_at,quota_refunded_at:saved.refreshed_at,rotation_only:true});
+  for(let round=0;round<5;round++){
+    const current=(await runApi(tables,{atTime:at+round+1})).body.items[0];
+    assert.deepEqual(ids(current.recommendations),plan.main_candidate_ids);assert.deepEqual(ids(current.admin_recommendations),plan.extra_candidate_ids);
+    assert.equal(current.refresh_remaining,initial.refresh_remaining);assert.equal(current.next_refresh_at,initial.next_refresh_at);
+    const standard=await createLoader({},at+round+1)('@/lib/dating-1on1-recommendation-service').loadOneOnOneRecommendations(mockDatabase(tables),{id:own.user_id},{sourceCardId:own.id,at:new Date(at+round+1).toISOString()});
+    assert.equal(standard.status,200);assert.equal((await standard.json()).plan.partial,undefined,'member refresh never inherits maintenance mode');
+  }
+});
+
 test('personal newcomer notice uses earlier actual impressions, not overlap between committed pages', () => {
   const { getOneOnOneNewCandidateNotice: notice } = load('@/lib/dating-1on1-new-candidate-notice');
   const visible = Array.from({ length: 10 }, (_, i) => card('seen-' + i));

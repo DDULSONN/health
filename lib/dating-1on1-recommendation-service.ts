@@ -63,6 +63,8 @@ import { getRegionDistanceMeta } from "@/lib/region-distance";
 import { candidateHideUserIdsAt, readCandidateHides } from "@/lib/dating-candidate-hides";
 import { getOneOnOneNewCandidateNotice } from "@/lib/dating-1on1-new-candidate-notice";
 import { getOneOnOneCandidateAvailability } from "@/lib/dating-1on1-candidate-availability";
+import { partialRecommendationPage, type PartialRefreshChange } from "@/lib/dating-1on1-partial-refresh";
+import { createHash } from "node:crypto";
 
 const RECOMMENDATION_LIMIT = 10;
 const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
@@ -152,6 +154,10 @@ export type RecommendationRefreshPlan = {
   source_profile_key: string;
   main_candidate_ids: string[];
   extra_candidate_ids: string[];
+  partial?: {
+    expected_main: string[]; expected_extra: string[]; repeats: number; changes: PartialRefreshChange[];
+    profiles: Array<{ id: string; user_id: string; sex: string; birth_year: number; region: string; status: string; phone_key: string }>;
+  };
   monitor?: {
     before_candidate_ids: string[];
     before_user_ids: string[];
@@ -166,7 +172,7 @@ export type RecommendationRefreshPlan = {
 // Only server code may request a plan. Public GET has no seed/preview overrides.
 // Both display and consumption use exactly the same safety filters and ranking.
 export async function loadOneOnOneRecommendations(admin: ReturnType<typeof createAdminClient>, user: { id: string },
-  refreshPlan?: { sourceCardId: string; at: string }, expansion?: { candidateIds?: readonly string[] }) {
+  refreshPlan?: { sourceCardId: string; at: string; partialRepair?: boolean }, expansion?: { candidateIds?: readonly string[] }) {
   if (refreshPlan && expansion) throw new Error("Expansion cannot consume a refresh.");
   const nowMs = refreshPlan ? Date.parse(refreshPlan.at) : Date.now();
   let ownRows: RecommendationCardRow[];
@@ -240,6 +246,16 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
   }
   if (!impressionResult && (refreshPlan || expansion)) {
     return NextResponse.json({ error: "확인한 후보 이력을 불러오지 못했어요. 횟수는 사용하지 않았으니 잠시 후 다시 시도해 주세요." }, { status: 503 });
+  }
+  if (refreshPlan?.partialRepair && (!impressionResult?.available || !savedPageResult.page))
+    return NextResponse.json({ error: "Partial repair needs a saved page and actual impressions." }, { status: 409 });
+  const partialExpansionIds = new Set<string>();
+  if (refreshPlan?.partialRepair) {
+    // Maintenance is conservative even if the paid expansion feature is OFF.
+    const seen = await admin.from(EXPANSION_TABLE).select("candidate_ids").eq("user_id", user.id)
+      .gte("day_key", getKstDateString(new Date(nowMs - 30 * 86400000)));
+    if (seen.error) return NextResponse.json({ error: "Expansion history unavailable." }, { status: 503 });
+    for (const row of seen.data ?? []) for (const id of row.candidate_ids ?? []) partialExpansionIds.add(id);
   }
   const candidateIdsByUser = new Map<string, string[]>();
   for (const card of candidateUniverse) {
@@ -378,6 +394,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
 
   const unavailableCardIds = new Set<string>();
   const pageGenerationTimes = new Map<string, number>();
+  let partialResult: ReturnType<typeof partialRecommendationPage> | undefined;
   const buildItems = (simulateRefresh = false) => mySourceCards.map((sourceCard) => {
     const handledPairIds = new Set(candidateUniverse.filter((card) => handledUserIds.has(card.user_id)).map((card) => card.id));
     const sourcePhone = sourceCard.phone ? normalizePhoneForOneOnOneBlock(sourceCard.phone) : "";
@@ -529,7 +546,11 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       adminRecommendations = restored.extraRecommendations;
     }
     if (simulateRefresh && refreshPlan && sourceCard.id === refreshPlan.sourceCardId && savedPageResult?.available) {
-      const next = nextRecommendationPage(sourceCard, selectionCandidates, { recommendations: recommendations.filter(notHidden), extraRecommendations: adminRecommendations.filter(notHidden) },
+      const previous = { recommendations: recommendations.filter(notHidden), extraRecommendations: adminRecommendations.filter(notHidden) };
+      const partial = refreshPlan.partialRepair ? partialRecommendationPage(sourceCard, selectionCandidates, previous,
+        { ...pageContext, expansionIds: partialExpansionIds }, pageAt, nowMs) : undefined;
+      if (partial) partialResult = partial;
+      const next = partial?.page ?? nextRecommendationPage(sourceCard, selectionCandidates, previous,
         refreshPlan.at, nowMs, pageContext, replay.shownIds);
       recommendations = next.recommendations;
       adminRecommendations = next.extraRecommendations;
@@ -685,6 +706,26 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
               >= beforeCards.filter(card => isCandidateInSourceAgeRange(source, card)).length,
         },
       };
+      if (refreshPlan.partialRepair) {
+        const saved = savedPageResult.page!;
+        const same = (a: string[], b: string[]) => a.length === b.length && a.every((id, i) => id === b[i]);
+        // Do not fill hidden slots, persist unreviewed GET promotions, or shrink a
+        // page when a profile changes mid-read. Let the next explicit refresh act.
+        if (!same(saved.main_candidate_ids, hydrate(before.recommendations).map(c => c.id))
+          || !same(saved.extra_candidate_ids, hydrate(before.admin_recommendations).map(c => c.id))
+          || Date.parse(saved.refreshed_at) !== Date.parse(before.refresh_used_at ?? "")
+          || !same(saved.extra_candidate_ids, plan.extra_candidate_ids)
+          || plan.main_candidate_ids.length !== saved.main_candidate_ids.length
+          || partialResult?.changes.length !== plan.changed_candidate_count
+          || plan.changed_candidate_count !== plan.rotated_candidate_count)
+          return NextResponse.json({ error: "Current page changed; no partial repair." }, { status: 409 });
+        const profileIds = new Set([source.id, ...saved.main_candidate_ids, ...saved.extra_candidate_ids, ...plan.main_candidate_ids]);
+        plan.partial = { expected_main: saved.main_candidate_ids, expected_extra: saved.extra_candidate_ids,
+          repeats: partialResult?.repeats ?? 0, changes: partialResult?.changes ?? [],
+          profiles: [source, ...candidateUniverse].filter(c => profileIds.has(c.id))
+            .map(({ id, user_id, sex, birth_year, region, status, phone }) => ({ id, user_id, sex, birth_year, region, status,
+              phone_key: createHash("md5").update((phone ?? "").replace(/\D/g, "").slice(-10)).digest("hex") })) };
+      }
       return NextResponse.json({ plan });
     }
     return NextResponse.json({ items: items.map((item) => {
