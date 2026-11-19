@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fetchClientJson } from "@/lib/client-json-request";
 import { showReturnRewardOnPath } from "@/lib/return-profile-reward";
 import { FIRST_PROFILE_CAMPAIGN, isProfileReward, type ProfileReward } from "@/lib/first-profile-reward";
+import { notifyApplyCreditBalanceChanged } from "@/lib/apply-credit-balance-events";
 
 type Result = { userId: string; reward: ProfileReward | null };
 
@@ -56,6 +57,7 @@ export default function ReturnProfileRewardBanner() {
       const get = (method: "GET" | "POST") => fetchClientJson<Result>("/api/return-profile-reward", {
         method, cache: "no-store", credentials: "same-origin", signal: controller.signal,
       });
+      let claimed = claim;
       let response = await get(claim ? "POST" : "GET");
       const accept = () => response.response.ok && response.body?.userId === id &&
         (response.body.reward === null || isProfileReward(response.body.reward));
@@ -64,6 +66,7 @@ export default function ReturnProfileRewardBanner() {
       if (!claim && response.body?.reward?.state === "ready") {
         setResult(response.body);
         setBusy(true);
+        claimed = true;
         response = await get("POST");
         if (!current()) return;
         if (!accept()) throw new Error("unavailable");
@@ -74,6 +77,7 @@ export default function ReturnProfileRewardBanner() {
       const key = next.reward ? `${next.reward.campaignKey}:${id}:${next.reward.state}` : "";
       try { setDismissed(sessionStorage.getItem(`return-reward:${key}`) === "1" ? key : null); } catch { /* session storage is optional */ }
       setResult(next);
+      if (claimed && next.reward?.state === "rewarded") notifyApplyCreditBalanceChanged(id);
     } catch {
       if (current()) setFailed(true);
     } finally {
@@ -96,8 +100,8 @@ export default function ReturnProfileRewardBanner() {
     <aside aria-label="1:1 프로필 작성 혜택" className="mx-auto mt-3 w-[calc(100%-2rem)] max-w-5xl rounded-xl border border-rose-200 bg-white px-3 py-2 text-gray-900">
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-6">{rewarded ? "오픈카드 지원권 1장을 받았어요" : "1:1 프로필 등록하면 오픈카드 지원권 1장"}</p>
-          <p className="text-xs leading-5 text-gray-500">{rewarded ? "기존 지원권에 더해졌어요." : "휴대폰 인증 후 등록 완료 시 한 번 드려요."}</p>
+          <p className="text-sm font-semibold leading-6">{rewarded ? "오픈카드 지원권 1장 지급 완료" : "1:1 프로필 등록하면 오픈카드 지원권 1장"}</p>
+          <p className="text-xs leading-5 text-gray-500">{rewarded ? "지급 이력이에요. 사용 후 남은 수량은 지원권 내역에서 확인해 주세요." : "휴대폰 인증 후 등록 완료 시 한 번 드려요."}</p>
         </div>
         <button type="button" aria-label="작성 혜택 안내 닫기" className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xl text-gray-400 hover:bg-gray-50" onClick={() => {
           setDismissed(key);
@@ -105,7 +109,7 @@ export default function ReturnProfileRewardBanner() {
         }}>×</button>
       </div>
       <div className="flex flex-wrap items-center gap-x-4">
-        {rewarded ? <Link href="/community/dating/cards?tab=open_cards" className="inline-flex min-h-11 items-center text-sm font-semibold text-rose-600">오픈카드 보기 →</Link>
+        {rewarded ? <Link href="/dating/apply-credits" className="inline-flex min-h-11 items-center text-sm font-semibold text-rose-600">남은 지원권 확인 →</Link>
           : ready ? <button type="button" disabled={busy} onClick={() => userId && void refresh(userId, true)} className="min-h-11 text-sm font-semibold text-rose-600 disabled:opacity-60">{busy ? "지원권 지급 확인 중…" : "지급 다시 확인"}</button>
           : <Link href="/onboarding/dating?target=one_on_one" className="inline-flex min-h-11 items-center text-sm font-semibold text-rose-600">프로필 작성하기 →</Link>}
         {!rewarded && <details className="text-xs text-gray-500">
@@ -121,8 +125,8 @@ export default function ReturnProfileRewardBanner() {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-xs font-semibold text-rose-600">다시 만나는 짐툴 · 복귀 혜택</p>
-          <p className="mt-1 text-sm font-semibold leading-6">{rewarded ? "지원권 5장을 받았어요" : "1:1 프로필 완성하면 지원권 5장"}</p>
-          <p className="mt-0.5 text-xs leading-5 text-gray-500">{rewarded ? "기존 지원권에 더해졌어요. 오픈카드 지원에 사용할 수 있어요." : "휴대폰 인증 후 새 1:1 프로필 등록 시 한 번 드려요."}</p>
+          <p className="mt-1 text-sm font-semibold leading-6">{rewarded ? "복귀 지원권 5장 지급 완료" : "1:1 프로필 완성하면 지원권 5장"}</p>
+          <p className="mt-0.5 text-xs leading-5 text-gray-500">{rewarded ? "지급 이력이에요. 사용 후 남은 수량은 지원권 내역에서 확인해 주세요." : "휴대폰 인증 후 새 1:1 프로필 등록 시 한 번 드려요."}</p>
         </div>
         <button type="button" aria-label="복귀 혜택 안내 닫기" className="-mr-2 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xl text-gray-400 hover:bg-gray-50" onClick={() => {
           setDismissed(key);
@@ -130,7 +134,7 @@ export default function ReturnProfileRewardBanner() {
         }}>×</button>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-        {rewarded ? <Link href="/community/dating/cards?tab=open_cards" className="inline-flex min-h-11 items-center text-sm font-semibold text-rose-600">오픈카드 보기 →</Link>
+        {rewarded ? <Link href="/dating/apply-credits" className="inline-flex min-h-11 items-center text-sm font-semibold text-rose-600">남은 지원권 확인 →</Link>
           : ready ? <button type="button" disabled={busy} onClick={() => userId && void refresh(userId, true)} className="min-h-11 text-sm font-semibold text-rose-600 disabled:opacity-60">{busy ? "지원권 지급 확인 중…" : "지급 다시 확인"}</button>
           : <Link href="/onboarding/dating?target=one_on_one" className="inline-flex min-h-11 items-center text-sm font-semibold text-rose-600">프로필 작성하기 →</Link>}
         {!rewarded && <details className="text-xs text-gray-500">

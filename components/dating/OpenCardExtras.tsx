@@ -6,16 +6,18 @@ import { fetchClientJson } from "@/lib/client-json-request";
 import { readApplyCreditBalance } from "@/lib/contextual-paid-offers";
 import { usePaidOfferTracking } from "@/lib/use-paid-offer-tracking";
 import CompactPaidOffer from "@/components/dating/CompactPaidOffer";
+import { APPLY_CREDIT_BALANCE_CHANGED, isApplyCreditBalanceChangeForUser } from "@/lib/apply-credit-balance-events";
 
 export default function OpenCardExtras({ userId }: { userId: string | null }) {
   const [balance, setBalance] = useState<{ userId: string; value: number } | null>(null);
   const nearby = usePaidOfferTracking("city_view", "가까운 이상형", 5000, "open_card_tools");
   useEffect(() => {
     if (!userId) return;
-    let live = true, generation = 0, lastStarted = 0;
+    let live = true, generation = 0, lastStarted = 0, invalidated = false;
     let controller: AbortController | undefined;
     const refresh = (force = false) => {
       if (document.visibilityState !== "visible" || (!force && Date.now() - lastStarted < 30000)) return;
+      invalidated = false;
       lastStarted = Date.now(); const version = ++generation;
       controller?.abort(); controller = new AbortController();
       setBalance(null);
@@ -26,15 +28,26 @@ export default function OpenCardExtras({ userId }: { userId: string | null }) {
           if (count !== null) setBalance({ userId, value: count });
         }).catch(() => { /* Unknown is not zero: retain ordinary navigation only. */ });
     };
-    const onFocus = () => refresh();
+    const onFocus = () => refresh(invalidated);
+    const onBalanceChanged = (event: Event) => {
+      if (!isApplyCreditBalanceChangeForUser(event, userId)) return;
+      // Discard pre-grant responses, including while this tab is hidden. Only a
+      // fresh server read can restore a known balance or the empty-credit offer.
+      invalidated = true;
+      generation++;
+      controller?.abort();
+      setBalance(null);
+      refresh(true);
+    };
     // A payment page can return via the browser's frozen page cache. Recheck its
     // balance even when the previous read was recent; never keep a stale upsell.
-    const onPageShow = (event: PageTransitionEvent) => refresh(event.persisted);
+    const onPageShow = (event: PageTransitionEvent) => refresh(event.persisted || invalidated);
     refresh();
     window.addEventListener("focus", onFocus);
     window.addEventListener("pageshow", onPageShow);
+    window.addEventListener(APPLY_CREDIT_BALANCE_CHANGED, onBalanceChanged);
     document.addEventListener("visibilitychange", onFocus);
-    return () => { live = false; controller?.abort(); window.removeEventListener("focus", onFocus); window.removeEventListener("pageshow", onPageShow); document.removeEventListener("visibilitychange", onFocus); };
+    return () => { live = false; controller?.abort(); window.removeEventListener("focus", onFocus); window.removeEventListener("pageshow", onPageShow); window.removeEventListener(APPLY_CREDIT_BALANCE_CHANGED, onBalanceChanged); document.removeEventListener("visibilitychange", onFocus); };
   }, [userId]);
   const remaining = userId && balance?.userId === userId ? balance.value : null;
   return (

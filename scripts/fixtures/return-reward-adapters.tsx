@@ -12,7 +12,7 @@ export function fixturePath(path: string) {
   pathCallbacks.forEach(callback => callback(path));
 }
 export function createClient() {
-  return { auth: { onAuthStateChange(callback: Callback) {
+  return { auth: { getSession: async () => ({ data: { session: userId ? { user: { id: userId }, access_token: "fixture-token" } : null } }), onAuthStateChange(callback: Callback) {
     callbacks.add(callback);
     queueMicrotask(() => callbacks.has(callback) && callback("INITIAL_SESSION", userId ? { user: { id: userId } } : null));
     return { data: { subscription: { unsubscribe() { callbacks.delete(callback); } } } };
@@ -23,4 +23,5 @@ export function usePathname() {
   useEffect(() => { pathCallbacks.add(setPath); return () => { pathCallbacks.delete(setPath); }; }, []);
   return path;
 }
+export function useRouter() { return { push: fixturePath, replace: fixturePath }; }
 export default function Link(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) { return <a {...props} />; }

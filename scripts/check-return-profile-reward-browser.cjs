@@ -48,13 +48,13 @@ const pause = ms => new Promise(resolve=>setTimeout(resolve,ms));
     await page.getByText('프로필은 등록됐어요. 지원권 지급만 다시 확인해 주세요.').waitFor();assert.equal(posts,1);
     allow=true;
     await page.getByRole('button',{name:'지급 다시 확인'}).click();
-    await page.getByText('지원권 5장을 받았어요',{exact:true}).waitFor();assert.equal(posts,2);
+    await page.getByText('복귀 지원권 5장 지급 완료',{exact:true}).waitFor();assert.equal(posts,2);
     assert.equal(await page.getByRole('link',{name:'프로필 작성하기 →'}).count(),0);await page.context().close();
     // A dismissed offer must not hide a subsequent reward confirmation.
     let state='eligible';
     page=await pageFor(route=>fulfill(route,{userId:'return-member',reward:reward(state)}));
     await banner(page).waitFor();await page.getByRole('button',{name:'복귀 혜택 안내 닫기'}).click();state='rewarded';
-    await page.evaluate(()=>window.rewardFixture.path('/mypage'));await page.getByText('지원권 5장을 받았어요',{exact:true}).waitFor();
+    await page.evaluate(()=>window.rewardFixture.path('/mypage'));await page.getByText('복귀 지원권 5장 지급 완료',{exact:true}).waitFor();
     await page.evaluate(()=>window.rewardFixture.auth(null));assert.equal(await banner(page).count(),0);await page.context().close();
     // Stale request resolves after sign-out/account switch: no old-user banner/claim.
     let resolveFirst, started=false;

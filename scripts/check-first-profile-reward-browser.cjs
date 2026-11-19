@@ -44,8 +44,8 @@ function load(file,overrides={}){const m={exports:{}};const code=ts.transpileMod
   // This boundary test starts from a newly completed valid local database profile.
   await f.card(1);failClaim=true;await page.goto(preview.origin+'/mypage');
   await page.getByText('프로필은 등록됐어요. 지원권 지급만 다시 확인해 주세요.').waitFor();assert.equal(await f.credits(1),0);assert.equal(posts,1);
-  failClaim=false;await page.getByRole('button',{name:'지급 다시 확인'}).click();await page.getByText('오픈카드 지원권 1장을 받았어요',{exact:true}).waitFor();
-  assert.equal(await f.credits(1),1);assert.equal(posts,2);await page.reload();await page.getByText('오픈카드 지원권 1장을 받았어요',{exact:true}).waitFor();assert.equal(await f.credits(1),1);assert.equal(posts,2);
+  failClaim=false;await page.getByRole('button',{name:'지급 다시 확인'}).click();await page.getByText('오픈카드 지원권 1장 지급 완료',{exact:true}).waitFor();
+  assert.equal(await f.credits(1),1);assert.equal(posts,2);await page.reload();await page.getByText('오픈카드 지원권 1장 지급 완료',{exact:true}).waitFor();assert.equal(await f.credits(1),1);assert.equal(posts,2);
   await page.evaluate(()=>window.rewardFixture.auth(null));await page.getByRole('complementary',{name:'1:1 프로필 작성 혜택'}).waitFor({state:'hidden'});await page.close();
   assert.deepEqual(errors,[]);console.log('PASS: first reward mobile/desktop, scoped offer, no overflow, dismissal, real API/local SQL claim/retry, no duplicate credit, logout, zero runtime errors');
   console.log('Screenshot: '+path.join(preview.output,'first-profile-reward-mobile.png'));

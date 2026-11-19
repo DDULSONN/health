@@ -6,6 +6,7 @@ import DatingAdultNotice from "@/components/DatingAdultNotice";
 import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
+import { APPLY_CREDIT_BALANCE_CHANGED, isApplyCreditBalanceChangeForUser } from "@/lib/apply-credit-balance-events";
 
 type ApplyCreditsStatusResponse = { loggedIn?: boolean; baseRemaining?: number; creditsRemaining?: number };
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
@@ -27,27 +28,46 @@ export default function ApplyCreditsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
   const checkoutLock = useRef(false);
+  const statusVersion = useRef(0);
+  const statusRequest = useRef<AbortController | null>(null);
+  const statusUserId = useRef<string | null>(null);
+  const cancelStatus = useCallback(() => { statusVersion.current++; statusRequest.current?.abort(); }, []);
 
   const loadStatus = useCallback(async () => {
+    statusRequest.current?.abort();
+    const controller = new AbortController();
+    statusRequest.current = controller;
+    const version = ++statusVersion.current;
+    const current = () => !controller.signal.aborted && version === statusVersion.current;
     setStatusLoading(true); setStatusError("");
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!current()) return;
+      statusUserId.current = session?.user.id ?? null;
       const accessToken = session?.access_token ?? null;
       setLoggedIn(Boolean(accessToken));
       const res = await fetch("/api/dating/apply-credits/status", {
-        cache: "no-store", headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        cache: "no-store", signal: controller.signal, headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
       });
       if (!res.ok) throw new Error("STATUS_FAILED");
       const body = (await res.json()) as ApplyCreditsStatusResponse;
+      if (!current()) return;
       if (!body || safeCount(body.baseRemaining) === null || safeCount(body.creditsRemaining) === null) throw new Error("INVALID_STATUS");
       setLoggedIn(body.loggedIn === true || Boolean(accessToken));
       setBaseRemaining(safeCount(body.baseRemaining));
       setCreditsRemaining(safeCount(body.creditsRemaining));
     } catch {
-      setStatusError("남은 지원권을 불러오지 못했어요. 다시 확인해 주세요.");
-    } finally { setStatusLoading(false); }
+      if (current()) setStatusError("남은 지원권을 불러오지 못했어요. 다시 확인해 주세요.");
+    } finally { if (current()) setStatusLoading(false); }
   }, [supabase]);
-  useEffect(() => { void loadStatus(); }, [loadStatus]);
+  useEffect(() => {
+    const onBalanceChanged = (event: Event) => {
+      if (statusUserId.current && isApplyCreditBalanceChangeForUser(event, statusUserId.current)) void loadStatus();
+    };
+    window.addEventListener(APPLY_CREDIT_BALANCE_CHANGED, onBalanceChanged);
+    void loadStatus();
+    return () => { cancelStatus(); window.removeEventListener(APPLY_CREDIT_BALANCE_CHANGED, onBalanceChanged); };
+  }, [loadStatus, cancelStatus]);
 
   const handleCheckout = useCallback(async () => {
     if (checkoutLock.current || submitting) return;
