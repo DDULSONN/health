@@ -3,12 +3,12 @@
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), http = require('node:http');
 const webpack = require('webpack');
 const root = path.resolve(__dirname, '..');
-async function startPreview(port = 0) {
+async function startPreview(port = 0, entry = 'profile-writing-browser.tsx') {
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'gymtools-writing-preview-'));
   const adapter = path.join(__dirname, 'fixtures/profile-ux-adapters.tsx');
   await new Promise((resolve, reject) => {
     const compiler = webpack({ mode: 'development', devtool: false,
-      entry: path.join(__dirname, 'fixtures/profile-writing-browser.tsx'),
+      entry: path.join(__dirname, 'fixtures', entry),
       output: { path: output, filename: 'fixture.js', chunkFilename: '[name].chunk.js', publicPath: '/' },
       resolve: { extensions: ['.tsx', '.ts', '.js'], fallback: { crypto: false }, alias: {
         'next/link': adapter, 'next/image': adapter, 'next/navigation': adapter,

@@ -24,7 +24,9 @@ export async function readOnboardingUser(
       const error = response.error;
       if (error) {
         if (error.name === "AuthSessionMissingError" || error.code === "session_not_found"
-          || error.code === "user_not_found" || error.status === 401) return null;
+          || error.code === "user_not_found" || error.status === 401
+          || error.code === "refresh_token_not_found" || error.code === "refresh_token_already_used"
+          || error.code === "bad_jwt" || error.code === "user_banned") return null;
         throw error;
       }
       return response.data.user?.deleted_at ? null : response.data.user;

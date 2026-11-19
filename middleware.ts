@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
 import { filterMalformedSessionCookies } from "@/lib/supabase/session-cookies";
+import { readOnboardingUser } from "@/lib/onboarding-user";
+import type { User } from "@supabase/supabase-js";
 import {
   getAdminPanelCookieName,
   isAdminPanelLockEnabled,
@@ -55,6 +57,8 @@ export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const withSessionCookies = (nextResponse: NextResponse) => {
+    // Auth redirects must not outlive the session that produced them.
+    nextResponse.headers.set("Cache-Control", "private, no-store, max-age=0");
     response.cookies.getAll().forEach((cookie) => {
       nextResponse.cookies.set(cookie);
     });
@@ -84,9 +88,16 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user: User | null = null;
+  let authUnavailable = false;
+  try {
+    user = await readOnboardingUser(supabase.auth, { signal: request.signal, timeoutMs: 4000, retryDelayMs: 150 });
+  } catch {
+    // A timeout, 429 or upstream failure is not proof of logout. Never authorize
+    // from an unverified cookie, and never clear it or redirect to login here.
+    authUnavailable = true;
+    console.warn("[middleware] auth verification unavailable", { path: pathname });
+  }
 
   const isAdmin = !!user?.email && getAdminEmails().includes(user.email.toLowerCase());
   const confirmed = isEmailConfirmed(user);
@@ -109,6 +120,14 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/posts") ||
     pathname.startsWith("/api/comments") ||
     pathname.startsWith("/api/notifications");
+
+  if (authUnavailable && (isProtected || isAdminProtectedPath || isBanProtectedApi)) {
+    const headers = { "Cache-Control": "private, no-store, max-age=0", "Retry-After": "3", "X-Robots-Tag": "noindex" };
+    if (isApiRoute) {
+      return NextResponse.json({ error: "로그인 상태 확인이 지연되고 있어요. 잠시 후 다시 확인해 주세요.", code: "AUTH_TEMPORARILY_UNAVAILABLE" }, { status: 503, headers });
+    }
+    return new NextResponse(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>로그인 상태 확인 | 짐툴</title></head><body style="margin:0;background:#fafafa;font-family:system-ui,sans-serif;color:#262626"><main style="max-width:400px;margin:18vh auto;padding:24px;line-height:1.7"><h1 style="font-size:20px">잠시 연결이 지연되고 있어요</h1><p>로그인 상태를 확인하지 못했어요.<br>프로필이나 매칭 정보는 변경되지 않았어요.</p><a href="" style="display:inline-block;padding:12px 20px;border-radius:12px;background:#e11d48;color:white;text-decoration:none">다시 확인</a><p><a href="/mypage" style="color:#525252">마이페이지로</a></p></main></body></html>`, { status: 503, headers: { ...headers, "Content-Type": "text/html; charset=utf-8" } });
+  }
 
   if (user && !isAdmin && (isBanProtectedPage || isBanProtectedApi)) {
     const { data: accountState, error: accountStateError } = await supabase
@@ -173,6 +192,7 @@ export async function middleware(request: NextRequest) {
   if (
     isAdminProtectedPath &&
     isAdmin &&
+    user &&
     isAdminPanelLockEnabled() &&
     !isAdminUnlockPage &&
     !isAdminUnlockApi &&

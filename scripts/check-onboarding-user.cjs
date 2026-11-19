@@ -22,7 +22,8 @@ for (const error of [{ status: 503 }, { status: 429 }, { status: 403 }, { name: 
     assert.equal(reads, 2);
   });
 }
-for (const error of [null, { name: 'AuthSessionMissingError' }, { code: 'session_not_found' }, { code: 'user_not_found' }, { status: 401 }]) {
+for (const error of [null, { name: 'AuthSessionMissingError' }, { code: 'session_not_found' }, { code: 'user_not_found' }, { status: 401 },
+  ...['refresh_token_not_found','refresh_token_already_used','bad_jwt','user_banned'].map(code => ({ code, status: 400 }))]) {
   test('definitive guest is not retried: ' + JSON.stringify(error), async () => {
     let reads = 0;
     assert.equal(await readOnboardingUser({ getUser: async () => { reads++; return { data: { user: null }, error }; } }, options()), null);

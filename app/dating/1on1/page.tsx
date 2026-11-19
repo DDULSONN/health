@@ -9,6 +9,7 @@ import { getDatingBirthYearErrorMessage, parseDatingBirthYear } from "@/lib/dati
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { readOnboardingUser } from "@/lib/onboarding-user";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 
 type WriteStatusResponse = {
@@ -177,7 +178,10 @@ async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit, timeo
   throw lastError instanceof Error ? lastError : new Error("요청에 실패했습니다.");
 }
 
-function OneOnOnePublicLanding({ checking = false }: { checking?: boolean }) {
+function OneOnOnePublicLanding({ checking = false, returnTo = "/dating/1on1" }: { checking?: boolean; returnTo?: string }) {
+  if (checking) {
+    return <main className="mx-auto max-w-3xl px-4 py-10"><p role="status" className="text-sm text-neutral-600">로그인 상태와 프로필을 확인하고 있어요.</p></main>;
+  }
   return (
     <main className="min-h-screen bg-[#fff8f8] px-4 py-8">
       <div className="mx-auto max-w-3xl">
@@ -190,7 +194,7 @@ function OneOnOnePublicLanding({ checking = false }: { checking?: boolean }) {
           </p>
           <div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row">
             <Link
-              href="/login?redirect=/dating/1on1"
+              href={`/login?redirect=${encodeURIComponent(returnTo)}`}
               className="rounded-xl bg-rose-500 px-5 py-3 text-sm font-bold text-white hover:bg-rose-600"
             >
               로그인하고 신청하기
@@ -202,7 +206,6 @@ function OneOnOnePublicLanding({ checking = false }: { checking?: boolean }) {
               회원가입
             </Link>
           </div>
-          {checking && <p className="mt-4 text-xs text-neutral-400">로그인 상태를 확인하고 있습니다.</p>}
         </section>
 
         <section className="mt-6 grid gap-3 sm:grid-cols-3" aria-label="1대1 매칭 진행 방식">
@@ -257,6 +260,7 @@ function DatingOneOnOnePageContent() {
   const isLocalPreview = process.env.NODE_ENV === "development" && searchParams.get("preview") === "1";
 
   const [loading, setLoading] = useState(true);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [isGuest, setIsGuest] = useState(false);
   const [status, setStatus] = useState<WriteStatusResponse | null>(null);
   const [editingArchivedProfile, setEditingArchivedProfile] = useState(false);
@@ -398,28 +402,34 @@ function DatingOneOnOnePageContent() {
     }
 
     let mounted = true;
+    const controller = new AbortController();
+    let readTimer: ReturnType<typeof setTimeout> | undefined;
 
     (async () => {
+      setLoading(true);
+      setIsGuest(false);
+      setStatus(null);
+      setError("");
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        const user = await readOnboardingUser(supabase.auth, { signal: controller.signal });
         if (!user) {
           if (mounted) setIsGuest(true);
           return;
         }
 
-        const statusRes = await fetch("/api/dating/1on1/write-status", { cache: "no-store" });
+        readTimer = setTimeout(() => controller.abort(), 15000);
+        const readOptions = { cache: "no-store" as const, signal: controller.signal };
+        const statusRes = await fetch("/api/dating/1on1/write-status", readOptions);
         const statusBody = (await statusRes.json().catch(() => ({}))) as WriteStatusResponse & { error?: string };
         if (!statusRes.ok) {
           throw new Error(statusBody.error ?? "권한 상태를 불러오지 못했습니다.");
         }
+        if (!statusBody.loggedIn) throw new Error("로그인 상태를 확인하지 못했어요. 잠시 후 다시 확인해 주세요.");
 
         if (!mounted) return;
-        setStatus(statusBody);
 
         if (statusBody.isAdmin) {
-          const cardsRes = await fetch("/api/dating/1on1/cards", { cache: "no-store" });
+          const cardsRes = await fetch("/api/dating/1on1/cards", readOptions);
           const cardsBody = (await cardsRes.json().catch(() => ({}))) as { items?: CardItem[]; error?: string };
           if (!cardsRes.ok) {
             throw new Error(cardsBody.error ?? "신청 목록을 불러오지 못했습니다.");
@@ -429,7 +439,7 @@ function DatingOneOnOnePageContent() {
         }
 
         if (isEditMode) {
-          const myRes = await fetch("/api/dating/1on1/my", { cache: "no-store" });
+          const myRes = await fetch("/api/dating/1on1/my", readOptions);
           const myBody = (await myRes.json().catch(() => ({}))) as { items?: CardItem[]; error?: string };
           if (!myRes.ok) {
             throw new Error(myBody.error ?? "수정할 신청서를 불러오지 못했습니다.");
@@ -469,18 +479,24 @@ function DatingOneOnOnePageContent() {
           setConsentPrivacy(true);
           setConsentNoDirectContact(true);
         }
+        // Do not expose an empty, writable edit form if loading the saved card failed.
+        if (mounted) setStatus(statusBody);
       } catch (e) {
         if (!mounted) return;
-        setError(e instanceof Error ? e.message : String(e));
+        setError(e instanceof Error && !["TypeError", "AbortError", "TimeoutError"].includes(e.name)
+          && e.message !== "identity_timeout" ? e.message : "연결이 지연되고 있어요. 잠시 후 다시 확인해 주세요.");
       } finally {
+        clearTimeout(readTimer);
         if (mounted) setLoading(false);
       }
     })();
 
     return () => {
       mounted = false;
+      clearTimeout(readTimer);
+      controller.abort();
     };
-  }, [editId, isEditMode, isLocalPreview, router, supabase]);
+  }, [editId, isEditMode, isLocalPreview, router, supabase, loadAttempt]);
 
   const handleSlotChange = (slot: 1 | 2, files: FileList | null) => {
     const picked = files?.[0] ?? null;
@@ -645,14 +661,17 @@ function DatingOneOnOnePageContent() {
     }
   };
 
-  if (isGuest) return <OneOnOnePublicLanding />;
+  const returnTo = isEditMode ? `/dating/1on1?editId=${encodeURIComponent(editId)}` : "/dating/1on1";
+  if (isGuest) return <OneOnOnePublicLanding returnTo={returnTo} />;
 
   if (loading) return <OneOnOnePublicLanding checking />;
 
   if (!status) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <p className="text-sm text-red-600">권한 상태를 확인하지 못했습니다.</p>
+        <p role="alert" className="text-sm text-red-600">{error || "로그인 상태를 확인하지 못했어요. 잠시 후 다시 확인해 주세요."}</p>
+        <button type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)} className="mt-4 min-h-11 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-medium">다시 확인</button>
+        <Link href="/mypage?section=matching" className="ml-4 text-sm text-neutral-600 underline">마이페이지로</Link>
       </main>
     );
   }
