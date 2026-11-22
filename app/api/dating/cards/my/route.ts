@@ -1,5 +1,6 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
+import { getPendingQueuePosition } from "@/lib/open-card-queue-position";
 import { NextResponse } from "next/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
@@ -77,11 +78,11 @@ export async function GET(req: Request) {
 
   const items = data ?? [];
   let firstQueueBoostUsed = false;
-  const boostRes = await adminClient
-    .from("dating_open_card_first_queue_boosts")
-    .select("user_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const waitingCard = !items.some(card => card.status === "public") ? items.find(card => card.status === "pending") : undefined;
+  const [boostRes, queuePosition] = await Promise.all([
+    adminClient.from("dating_open_card_first_queue_boosts").select("user_id").eq("user_id", user.id).maybeSingle(),
+    waitingCard ? getPendingQueuePosition(adminClient, waitingCard.sex, waitingCard.created_at, waitingCard.id).catch(() => null) : null,
+  ]);
 
   if (boostRes.error && !isMissingBoostTableError(boostRes.error)) {
     console.error("[GET /api/dating/cards/my] boost status failed", boostRes.error);
@@ -97,6 +98,7 @@ export async function GET(req: Request) {
           .map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", String(path ?? "")))
           .filter(Boolean)
       : [],
+    queue_position: item.id === waitingCard?.id ? queuePosition : null,
     can_first_queue_boost: canShowFirstQueueBoost && item.status === "pending",
     first_queue_boost_used: firstQueueBoostUsed,
   }));

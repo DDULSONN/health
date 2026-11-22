@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { fetchClientJson } from "@/lib/client-json-request";
 import { readApplyCreditBalance } from "@/lib/contextual-paid-offers";
 import { usePaidOfferTracking } from "@/lib/use-paid-offer-tracking";
-import CompactPaidOffer from "@/components/dating/CompactPaidOffer";
+
 import { APPLY_CREDIT_BALANCE_CHANGED, isApplyCreditBalanceChangeForUser } from "@/lib/apply-credit-balance-events";
 
 export default function OpenCardExtras({ userId }: { userId: string | null }) {
@@ -60,9 +60,7 @@ export default function OpenCardExtras({ userId }: { userId: string | null }) {
           <Link href="/dating/nearby-view" onClick={nearby.selected} className="inline-flex min-h-11 items-center text-xs font-semibold text-neutral-700 hover:text-neutral-950">가까운 이상형 ›</Link>
         </div>
       </nav>
-      {remaining === 0 ? <CompactPaidOffer title="오늘 지원을 모두 썼어요" description="추가 지원권 5장 · 5,000원" itemId="apply_credits" amount={5000} placement="open_card_credits_empty">
-        <Link href="/dating/apply-credits" className="inline-flex min-h-11 shrink-0 items-center text-xs font-semibold text-rose-600 hover:text-rose-700">5장 충전 ›</Link>
-      </CompactPaidOffer> : null}
+      {remaining === 0 ? <p className="px-3 text-xs leading-5 text-neutral-600">기본 지원 횟수는 매일 밤 12시(한국 시간)에 다시 채워져요.</p> : null}
     </div>
   );
 }

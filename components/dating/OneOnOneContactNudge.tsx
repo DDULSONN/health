@@ -104,12 +104,19 @@ export function ReceivedContactNudge({ item, matchId, canMarkRead = false, canRe
   </>;
 }
 
+const replyDateFormat = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit",
+});
+
 export function SentContactNudgeReply({ item }: { item: OneOnOneContactNudgeItem }) {
   if (!item.reply) return null;
+  const timestamp = Date.parse(item.reply.created_at);
   return <div className="mt-2 rounded-lg border-l-2 border-neutral-300 bg-neutral-50 px-3 py-2">
-    <p className="text-[11px] font-semibold text-neutral-600">상대의 답장</p>
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-neutral-600">
+      <span className="font-semibold">상대의 답장</span>
+      {Number.isFinite(timestamp) ? <time dateTime={item.reply.created_at}>{replyDateFormat.format(timestamp)} (한국 시간)</time> : null}
+    </div>
     <p className="mt-1 text-sm font-semibold leading-6 text-neutral-900">“{item.reply.message_text}”</p>
-    <p className="mt-1 text-[11px] leading-5 text-neutral-500">상대가 직접 고른 답장이에요. 결제나 매칭 상태는 바뀌지 않아요.</p>
   </div>;
 }
 

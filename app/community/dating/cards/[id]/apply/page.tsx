@@ -548,7 +548,8 @@ export default function DatingCardApplyPage() {
             )}
             {errorCode === "DAILY_APPLY_LIMIT" && (
               <div className="mt-2 space-y-2">
-                <CompactPaidOffer title="지원권을 모두 사용했어요" description="지원권 5장 · 5,000원. 충전 후 이 상대에게 지원을 이어갈 수 있어요." itemId="apply_credits" amount={5000} placement="open_card_apply_empty">
+                <p className="text-sm leading-6 text-neutral-700">매일 밤 12시(한국 시간)에 무료 지원 횟수가 채워져요. 그때도 이 카드가 공개 중이면 지원할 수 있어요.</p>
+                <CompactPaidOffer title="지금 지원하려면" description="지원할 때마다 1장씩 써요. 충전 후 돌아와서 ‘지원하기’를 눌러 주세요." itemId="apply_credits" amount={5000} placement="open_card_apply_empty">
                   <button
                     type="button"
                     onClick={() => void handleRequestApplyCredits()}
@@ -558,7 +559,7 @@ export default function DatingCardApplyPage() {
                     {creditRequesting ? "결제창 준비 중..." : "지원권 5장 충전 · 5,000원"}
                   </button>
                 </CompactPaidOffer>
-                <p className="text-[11px] leading-5 text-neutral-500">작성 내용은 이 탭에 1시간 동안 임시 보관돼요. 충전 후 최종 지원은 직접 확인해 주세요.</p>
+                <p className="text-xs leading-5 text-neutral-600">결제창으로 이동하면 작성한 내용은 이 탭에 1시간 동안 보관돼요.</p>
                   <a
                     href={OPEN_KAKAO_URL}
                     target="_blank"

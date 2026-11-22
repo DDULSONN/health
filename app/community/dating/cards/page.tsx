@@ -10,10 +10,10 @@ import dynamic from "next/dynamic";
 import type { OneOnOneHomeState } from "@/components/dating/OneOnOneHomePanel";
 import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
 import InstantOpenCardHint from "@/components/dating/InstantOpenCardHint";
+import { openCardWaitDescription } from "@/lib/open-card-wait-description";
 import OpenCardExtras from "@/components/dating/OpenCardExtras";
 import { canOfferInstantOpenCard } from "@/lib/paid-application-prefill";
 import { usePaidRegistrationStatus } from "@/lib/use-paid-registration-status";
-import { PAID_REGISTRATION_MANAGE_HREF } from "@/lib/paid-registration-status";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useDatingDraftResume } from "@/lib/use-dating-draft-resume";
@@ -160,6 +160,7 @@ type MyOpenCard = {
   display_nickname?: string | null;
   created_at?: string | null;
   can_first_queue_boost?: boolean;
+  queue_position?: number | null;
   first_queue_boost_used?: boolean;
 };
 
@@ -1912,6 +1913,7 @@ function OpenCardsContent() {
     }
 
     setHomeProfilePresenceReady(false);
+    setOpenCardPresenceReady(false);
     const [openReady, oneOnOneReady] = await Promise.all([
       readDatingJson<{ items?: MyOpenCard[] }>("/api/dating/cards/my").then((body) => {
         const ready = Array.isArray(body?.items);
@@ -2929,6 +2931,8 @@ function OpenCardsContent() {
   const showOneOnOneSection = homeFeatureTab === "one_on_one";
   const showLoveFortuneSection = isAdminPreviewUser && homeFeatureTab === "love_fortune";
   const hasActiveMyOpenCard = myOpenCards.some((card) => card.status === "pending" || card.status === "public");
+  const publicOpenCard = myOpenCards.find((card) => card.status === "public");
+  const pendingOpenCard = publicOpenCard ? undefined : myOpenCards.find((card) => card.status === "pending");
   const firstQueueBoostCard = myOpenCards.find((card) => card.can_first_queue_boost) ?? null;
   const reactivatableOpenCard = !hasActiveMyOpenCard
     ? myOpenCards.find((card) => card.status === "hidden" || card.status === "expired") ?? null
@@ -2973,15 +2977,8 @@ function OpenCardsContent() {
         : hasAnyOpenCardProfile
           ? "기존 프로필로 시작하기"
           : "오픈카드 등록하기";
-  const instantOpenCardOnboardingHref = "/onboarding/dating?next=instant_open_card";
-  const checkPaidRegistration = paidRegistration.loading || paidRegistration.error || paidRegistration.presentation?.active;
-  const instantOpenCardLabel = checkPaidRegistration ? "등록 상태 확인" : "대기 없이 등록";
-  const showInstantOpenCardHint = openCardPresenceReady && canOfferInstantOpenCard(myOpenCards.some(card => card.status === "pending"), paidRegistration);
-  const instantOpenCardHref = checkPaidRegistration ? PAID_REGISTRATION_MANAGE_HREF : viewerLoggedIn
-    ? openCardPresenceReady && hasAnyOpenCardProfile
-      ? "/dating/paid?apply=1&source=open_card"
-      : instantOpenCardOnboardingHref
-    : buildLoginRedirect(instantOpenCardOnboardingHref);
+  const showInstantOpenCardHint = viewerSessionReady && viewerLoggedIn && viewerPhoneVerified && !viewerSessionError &&
+    openCardPresenceReady && canOfferInstantOpenCard(Boolean(pendingOpenCard), paidRegistration);
   const visibleHomeFeatureTabs = useMemo(
     () => HOME_FEATURE_TABS.filter((tab) => tab.key !== "love_fortune" || isAdminPreviewUser),
     [isAdminPreviewUser]
@@ -3037,20 +3034,6 @@ function OpenCardsContent() {
           <button type="button" onClick={() => void reloadMyOpenCards()} className="min-h-10 shrink-0 px-2 font-semibold">다시 확인</button>
         </div>
       ) : null}
-      {showOpenCardSection && openCardPresenceReady && hasAnyOpenCardProfile && !showOpenCardManagement ? (
-        <section className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-100 bg-white px-4 py-3 shadow-[0_6px_18px_rgba(190,24,93,0.04)]">
-          <div className="min-w-0">
-            <p className="text-sm font-black text-neutral-950">{paidRegistration.presentation?.active ? "내 공개 카드" : "기다리지 않고 바로 공개"}</p>
-            <p className="mt-0.5 truncate text-xs font-medium text-neutral-500">{paidRegistration.presentation?.active ? "공개 상태와 받은 지원을 확인해요." : "작성한 프로필을 그대로 불러와 등록해요."}</p>
-          </div>
-          <Link
-            href={instantOpenCardHref}
-            className="inline-flex min-h-[40px] shrink-0 items-center justify-center rounded-lg bg-rose-600 px-3.5 text-xs font-black text-white transition hover:bg-rose-700"
-          >
-            {instantOpenCardLabel}
-          </Link>
-        </section>
-      ) : null}
       {showOpenCardSection ? <OpenCardExtras userId={viewerSessionReady && viewerLoggedIn && viewerPhoneVerified && !viewerSessionError ? draftUserId : null} /> : null}
       {showOpenCardSection && homeAdLink ? (
         <a
@@ -3073,12 +3056,12 @@ function OpenCardsContent() {
               <div className="flex items-center gap-2">
                 <p className="text-base font-black text-neutral-950">{paidRegistration.presentation?.active ? "일반 오픈카드" : "내 오픈카드"}</p>
                 <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-700">
-                  {hasActiveMyOpenCard ? "등록됨" : "비공개"}
+                  {publicOpenCard ? "공개 중" : pendingOpenCard ? "대기 중" : "비공개"}
                 </span>
               </div>
               <p className="mt-2 text-sm font-medium leading-6 text-neutral-500">
-                {hasActiveMyOpenCard
-                  ? "현재 카드 상태와 받은 지원은 마이페이지에서 확인할 수 있어요."
+                {publicOpenCard ? "내 카드에 들어온 지원을 확인해 보세요."
+                  : pendingOpenCard ? openCardWaitDescription(pendingOpenCard.queue_position)
                   : "기존 카드를 다시 공개하면 새로 작성하지 않아도 바로 등록됩니다."}
               </p>
             </div>
@@ -3089,10 +3072,10 @@ function OpenCardsContent() {
                 </span>
               ) : hasActiveMyOpenCard ? (
                 <Link
-                  href="/mypage?section=matching"
+                  href={publicOpenCard ? "/mypage?section=matching&match=received#open-card-received" : "/mypage?section=matching#my-open-card-status"}
                   className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-neutral-950 px-4 text-sm font-semibold text-white transition hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                 >
-                  상태 확인
+                  {publicOpenCard ? "받은 지원 보기" : "카드 관리"}
                 </Link>
               ) : reactivatableOpenCard ? (
                 <button
@@ -3103,14 +3086,6 @@ function OpenCardsContent() {
                 >
                   {reactivatingHomeOpenCardId === reactivatableOpenCard.id ? "등록 중..." : "기존 카드 다시 공개"}
                 </button>
-              ) : null}
-              {openCardPresenceReady && hasAnyOpenCardProfile && !showInstantOpenCardHint ? (
-                <Link
-                  href={instantOpenCardHref}
-                  className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-neutral-200 px-3 text-xs font-semibold text-neutral-600 transition hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
-                >
-                  {instantOpenCardLabel}
-                </Link>
               ) : null}
             </div>
           </div>
@@ -3237,14 +3212,6 @@ function OpenCardsContent() {
               >
                 오픈카드 작성하기
               </Link>
-              {openCardPresenceReady && hasAnyOpenCardProfile ? (
-                <Link
-                  href={instantOpenCardHref}
-                  className="inline-flex min-h-[40px] items-center rounded-2xl border border-rose-200 bg-white px-4 text-sm font-bold text-rose-700 hover:bg-rose-50"
-                >
-                  {instantOpenCardLabel}
-                </Link>
-              ) : null}
             </div>
           </div>
         ) : null}
@@ -3373,20 +3340,10 @@ function OpenCardsContent() {
                   <>
                     <Link
                       href="/dating/card/new"
-                      className={`inline-flex min-h-[54px] items-center justify-center rounded-[18px] border border-neutral-200 bg-white px-4 text-base font-bold text-neutral-600 ${
-                        openCardPresenceReady && hasAnyOpenCardProfile ? "" : "col-span-2"
-                      }`}
+                      className="col-span-2 inline-flex min-h-[54px] items-center justify-center rounded-[18px] border border-neutral-200 bg-white px-4 text-base font-bold text-neutral-600"
                     >
                       오픈카드 작성
                     </Link>
-                    {openCardPresenceReady && hasAnyOpenCardProfile ? (
-                      <Link
-                        href={instantOpenCardHref}
-                        className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] bg-rose-600 px-4 text-base font-bold text-white"
-                      >
-                        {instantOpenCardLabel}
-                      </Link>
-                    ) : null}
                   </>
                 ) : (
                   <>

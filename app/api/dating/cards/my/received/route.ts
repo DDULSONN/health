@@ -1,4 +1,5 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
+import { getPendingQueuePosition } from "@/lib/open-card-queue-position";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
@@ -62,52 +63,7 @@ async function createApplyPhotoSignedUrl(
   return proxy;
 }
 
-async function getPendingQueuePosition(
-  adminClient: ReturnType<typeof createAdminClient>,
-  sex: "male" | "female",
-  createdAt: string,
-  cardId: string
-): Promise<number | null> {
-  const orderedRes = await adminClient
-    .from("dating_cards")
-    .select("id")
-    .eq("sex", sex)
-    .eq("status", "pending")
-    .order("queue_priority_at", { ascending: true })
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(1000);
 
-  if (!orderedRes.error) {
-    const index = (orderedRes.data ?? []).findIndex((row) => row.id === cardId);
-    return index >= 0 ? index + 1 : null;
-  }
-
-  if (orderedRes.error.code !== "42703") {
-    return null;
-  }
-
-  const [beforeRes, sameTsRes] = await Promise.all([
-    adminClient
-      .from("dating_cards")
-      .select("id", { head: true, count: "exact" })
-      .eq("sex", sex)
-      .eq("status", "pending")
-      .lt("created_at", createdAt),
-    adminClient
-      .from("dating_cards")
-      .select("id", { head: true, count: "exact" })
-      .eq("sex", sex)
-      .eq("status", "pending")
-      .eq("created_at", createdAt)
-      .lte("id", cardId),
-  ]);
-
-  if (beforeRes.error || sameTsRes.error) {
-    return null;
-  }
-  return (beforeRes.count ?? 0) + (sameTsRes.count ?? 0);
-}
 
 async function fetchOwnedCards(adminClient: ReturnType<typeof createAdminClient>, userId: string) {
   let { data, error } = await adminClient

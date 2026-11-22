@@ -28,6 +28,11 @@ async function main(){
     assert.equal(await page.getByRole('button',{name:'짧게 답하기',exact:true}).count(),0);
     await page.getByRole('link',{name:'보낸 사람 화면'}).click();await page.getByText('상대의 답장',{exact:true}).waitFor();
     await page.getByText('“좋아요, 연락 나눠봐요.”',{exact:true}).waitFor();
+    const replyTime=page.locator('time').filter({hasText:'한국 시간'});
+    const savedAt=await replyTime.getAttribute('datetime');
+    assert.ok(Number.isFinite(Date.parse(savedAt)));
+    const expected=await page.evaluate(value=>new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(value)),savedAt);
+    assert.equal(await replyTime.textContent(),expected+' (한국 시간)');
     await page.screenshot({path:path.join(s.out,'sender-reply.png'),fullPage:true});
     // Server saved but response was lost: retry shows the original reply, not a different one.
     await s.reset();s.flags.failAfterSave=true;await open();await page.getByRole('button',{name:'이번 주에 연락 가능해요.',exact:true}).click();
@@ -65,6 +70,7 @@ async function main(){
     assert.equal(s.r.calls.filter(c=>c.email).length,1);
     await s.reset();await s.r.db.exec('drop table dating_1on1_contact_nudge_replies');await page.goto(s.origin);
     await page.getByRole('button',{name:'연락처 교환하기',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'짧게 답하기',exact:true}).count(),0);
+    assert.equal(await page.locator('time').filter({hasText:'한국 시간'}).count(),0,'no fabricated reply time');
     assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
     console.log('PASS: real UI → API → local SQL → sender, reload/idempotency/lost response/canceled/missing SQL, payment independence, 320/390/768px; '+s.out);
   }finally{await browser?.close();await s.close();}

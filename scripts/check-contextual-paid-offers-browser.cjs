@@ -54,12 +54,13 @@ async function main(){
   browser=await chromium.launch({headless:true});
   for(const width of [320,390,1280]){
    const t=await setup(width,{creditBody:{loggedIn:true,baseRemaining:0,creditsRemaining:0}});
-   await t.page.goto(origin+'/?pending');const offer=t.page.getByRole('region',{name:'오늘 지원을 모두 썼어요'});await offer.waitFor();
-   assert.equal(await t.page.getByRole('link',{name:'대기 없이 등록 · 10,000원 ›'}).getAttribute('href'),'/dating/paid?apply=1&source=open_card');
+   await t.page.goto(origin+'/?pending');const offer=t.page.getByText('기본 지원 횟수는 매일 밤 12시(한국 시간)에 다시 채워져요.',{exact:true});await offer.waitFor();
+   assert.equal(await t.page.getByRole('link',{name:'유료 등록 보기 · 10,000원'}).getAttribute('href'),'/dating/paid?apply=1&source=open_card');
    assert.ok(await t.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal overflow');
    assert.ok((await offer.boundingBox()).height<=135,'compact on mobile');
    await t.page.screenshot({path:path.join(output,'extras-'+width+'.png'),fullPage:true});
-   await t.page.waitForTimeout(900);assert.ok(t.state.events.some(e=>e.placement==='open_card_credits_empty'&&e.eventName==='view_item'));
+   await t.page.waitForTimeout(900);assert.equal(t.state.events.some(e=>e.placement==='open_card_credits_empty'),false);
+   assert.equal(await t.page.getByRole('link',{name:/5장 충전/}).count(),0);
    const before=t.state.requests.filter(r=>r.path.endsWith('/apply-credits/status')).length;
    await t.page.evaluate(()=>{dispatchEvent(new Event('focus'));dispatchEvent(new Event('pageshow'));});await t.page.waitForTimeout(150);
    assert.equal(t.state.requests.filter(r=>r.path.endsWith('/apply-credits/status')).length,before,'no duplicate focus reads');
@@ -77,7 +78,7 @@ async function main(){
    const t=await setup(390,{creditHandler:async route=>{if(++calls===1){await wait;await route.fulfill({json:{loggedIn:true,baseRemaining:0,creditsRemaining:0}}).catch(()=>{});}else await route.fulfill({json:{loggedIn:true,baseRemaining:2,creditsRemaining:0}});}});
    await t.page.goto(origin);await t.page.waitForFunction(()=>typeof window.setFixtureUser==='function');while(!calls)await t.page.waitForTimeout(25);
    await t.page.evaluate(()=>window.setFixtureUser('fixture-b'));await t.page.getByText('오늘 2회 지원 가능').waitFor();release();await t.page.waitForTimeout(100);
-   assert.equal(await t.page.getByRole('region',{name:'오늘 지원을 모두 썼어요'}).count(),0);await t.done();
+   assert.equal(await t.page.getByText('기본 지원 횟수는 매일 밤 12시(한국 시간)에 다시 채워져요.',{exact:true}).count(),0);await t.done();
   }
   {const t=await setup();await t.page.goto(origin+'/?tracking');await t.page.waitForTimeout(1000);assert.equal(t.state.events.filter(e=>e.placement==='fixture_offscreen').length,0);
    const offer=t.page.getByRole('region',{name:'추가 노출 검사'});await offer.scrollIntoViewIfNeeded();await t.page.waitForTimeout(900);

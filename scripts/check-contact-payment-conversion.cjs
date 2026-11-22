@@ -60,7 +60,7 @@ function offer(props = {}) { return renderToStaticMarkup(React.createElement(Off
 test('matching offer displays the real name and server-shared price, with payment explanation in details', () => {
   const html = offer();
   assert.ok(html.includes('테스트상대님도 매칭을 수락했어요'));
-  assert.ok(html.includes('연락처를 교환하고 편하게 이야기 나눠보세요.'));
+  assert.ok(html.includes('교환 비용은 두 분 중 한 분만 결제하면 돼요.'));
   assert.match(html, /<button[^>]*>연락처 교환하기<\/button>/);
   assert.match(html, /<\/button><div[^>]*><p[^>]*>18,000원<\/p>/);
   assert.ok(html.includes('이번 상대와의 연락처 교환 · 1회 결제'));

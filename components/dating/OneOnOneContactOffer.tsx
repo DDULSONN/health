@@ -67,10 +67,9 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         {name?.trim() ? `${name.trim()}님도 매칭을 수락했어요` : "서로 매칭을 수락했어요"}
       </p>
       <p className="mt-1 text-xs leading-5 text-neutral-600">
-        {included ? "기존 플러스 혜택으로 추가 결제 없이 연락처를 교환할 수 있어요." : "연락처를 교환하고 편하게 이야기 나눠보세요."}
+        {included ? "기존 플러스 혜택으로 추가 결제 없이 연락처를 교환할 수 있어요." : "교환 비용은 두 분 중 한 분만 결제하면 돼요."}
       </p>
-      {/* Actual replies, including a decline, stay visible before the decision. */}
-      {nudge?.available && nudge.sent_by_me?.reply ? <SentContactNudgeReply item={nudge.sent_by_me} /> : null}
+      {/* Payment and contact sharing never depend on a greeting or a reply. */}
       {discount ? <p className="mt-2 text-xs font-semibold text-[#f0003d]">
         {discount.active ? <>첫 교환 25% 할인 <span className="ml-1 font-normal text-neutral-400 line-through">20,000원</span>
           <span className="ml-1 font-normal text-neutral-500">· {new Date(discount.expiresAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}까지</span></> : "진행 중인 할인 주문 · 기존 금액 유지"}
@@ -90,6 +89,7 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
           {included || !instagramAvailable || discount ? <p className="mt-1 text-[11px] text-red-600">현재 조건에서는 인스타 공개를 사용할 수 없어요. 번호 공개에 동의할 때만 선택을 해제해 주세요.</p> : null}
         </div> : null}
       </div> : null}
+      {nudge?.available && nudge.sent_by_me?.reply ? <SentContactNudgeReply item={nudge.sent_by_me} /> : null}
       {contactError ? <p role="alert" className="mt-2 text-xs text-red-600">{contactError}</p> : null}
       <button ref={buttonRef} type="button" disabled={processing} aria-describedby={!included ? priceDescriptionId : undefined} onClick={() => {
         if (shareInstagram && (included || !instagramAvailable || discount)) { setContactError("공개수단을 다시 확인해 주세요. 인스타 대신 번호로 자동 변경하지 않아요."); return; }

@@ -25,7 +25,7 @@ async function main(){
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
  let browser,passed=0;
  const eventName='gymtools:apply-credit-balance-changed';
- const empty=p=>p.getByRole('region',{name:'오늘 지원을 모두 썼어요'});
+ const empty=p=>p.getByText('기본 지원 횟수는 매일 밤 12시(한국 시간)에 다시 채워져요.',{exact:true});
  const granted=p=>p.getByText('복귀 지원권 5장 지급 완료',{exact:true});
  async function setup(options={}){
   const context=await browser.newContext({viewport:{width:options.width||390,height:844}}),page=await context.newPage();page.setDefaultTimeout(10000);

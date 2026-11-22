@@ -85,11 +85,24 @@ test('profile failure is retryable and late results cannot restore a signed-out 
   assert.equal(state.MyOpenCards.length,0); assert.equal(state.OpenCardPresenceReady,false);
   ctx.viewerLoggedIn=true; ctx.readDatingJson=async()=>null; await run(); assert.equal(state.OpenCardPresenceError,true);
 });
-test('instant entry accepts existing hidden/expired profiles without changing ordinary queue', () => {
+test('previous waiting status cannot advertise paid listing during a new lookup or after it fails', async () => {
+  const next = deferred();
+  const {ctx,state} = context({readDatingJson:url=>url.includes('cards/my') ? next.promise : Promise.resolve(null)});
+  state.OpenCardPresenceReady=true;
+  const work=callback('reloadMyOpenCards',ctx)();
+  assert.equal(state.OpenCardPresenceReady,false);
+  next.resolve(null);await work;
+  assert.equal(state.OpenCardPresenceReady,false);assert.equal(state.OpenCardPresenceError,true);
+  assert.equal(state.MyOpenCards.length,0);
+});
+test('only a verified waiting card is offered instant listing; intentional paid entry preserves the ordinary queue', () => {
   assert.match(home,/const showOpenCardManagement =[\s\S]*?openCardPresenceReady/);
-  assert.match(home,/const instantOpenCardHref =[\s\S]*?openCardPresenceReady && hasAnyOpenCardProfile/);
+  assert.match(home,/pendingOpenCard = publicOpenCard \? undefined : myOpenCards\.find/);
   assert.match(home,/currentCount=\{activeCurrentCount \+ activePaidItems.length\}/);
-  assert.match(home,/openCardPresenceReady && hasAnyOpenCardProfile && !showInstantOpenCardHint \? \([\s\S]*?대기 없이 등록/);
+  assert.doesNotMatch(home,/instantOpenCardHref|instantOpenCardLabel/);
+  assert.match(home,/openCardPresenceReady && canOfferInstantOpenCard\(Boolean\(pendingOpenCard\), paidRegistration\)/);
+  assert.match(home,/match=received#open-card-received/);
+  assert.match(read('app/mypage/page.tsx'),/canOfferInstantOpenCard\(primaryMyOpenCard\?\.status === "pending", paidRegistration\)/);
   assert.match(home,/showInstantOpenCardHint \? <InstantOpenCardHint \/>/);
   const source=read('app/api/dating/paid/create/route.ts');
   assert.match(source,/\.in\("status", \["pending", "public", "hidden", "expired"\]\)/);

@@ -8,9 +8,10 @@ import { hideReportedMatches, hideReportedRecommendations } from "@/lib/dating-r
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
 import InstantOpenCardHint from "@/components/dating/InstantOpenCardHint";
+import { openCardWaitDescription } from "@/lib/open-card-wait-description";
 import { canOfferInstantOpenCard } from "@/lib/paid-application-prefill";
 import { usePaidRegistrationStatus } from "@/lib/use-paid-registration-status";
-import { paidRegistrationPresentation, PAID_REGISTRATION_MANAGE_HREF } from "@/lib/paid-registration-status";
+import { paidRegistrationPresentation } from "@/lib/paid-registration-status";
 import { getMypageMatchingAnchorFilter } from "@/lib/mypage-matching-anchor";
 import { DatingReportDialog, type DatingReportResult } from "@/components/DatingReportButton";
 import Image from "next/image";
@@ -3704,6 +3705,7 @@ export default function MyPage() {
       const settings = params.get("settings");
       const anchorFilter = getMypageMatchingAnchorFilter(window.location.hash);
       const hasExplicitSection = Boolean(section && MY_PAGE_SECTION_TABS.has(section as MyPageSectionTab));
+      if (section === "matching" && window.location.hash === "#my-open-card-status") setOpenCardManagementOpen(true);
 
       setPageSectionTab(
         section && MY_PAGE_SECTION_TABS.has(section as MyPageSectionTab)
@@ -8583,7 +8585,7 @@ export default function MyPage() {
                   {!matchingDataLoaded
                     ? "카드 상태를 확인하고 있어요."
                     : primaryMyOpenCard?.status === "pending"
-                      ? `현재 공개를 기다리고 있어요.${typeof primaryMyOpenCard.queue_position === "number" && primaryMyOpenCard.queue_position > 0 ? ` 대기 ${primaryMyOpenCard.queue_position}번째예요.` : ""}`
+                      ? openCardWaitDescription(primaryMyOpenCard.queue_position)
                       : primaryMyOpenCard?.status === "public"
                         ? "현재 오픈카드에 들어온 지원을 확인할 수 있어요."
                         : myDatingCards.length > 0
@@ -8605,12 +8607,16 @@ export default function MyPage() {
                     >
                       카드 관리
                     </button>
-                    {!canOfferInstantOpenCard(myDatingCards.some(card => card.status === "pending"), paidRegistration) ? <Link
-                      href={paidRegistration.loading || paidRegistration.error || paidRegistration.presentation?.active ? PAID_REGISTRATION_MANAGE_HREF : "/dating/paid?apply=1&source=open_card"}
+                    {primaryMyOpenCard?.status === "public" ? <button
+                      type="button"
+                      onClick={() => {
+                        setMatchingFilter("received");
+                        scrollToMyPageTarget("matching", "open-card-received");
+                      }}
                       className="inline-flex min-h-[40px] flex-1 items-center justify-center rounded-lg bg-rose-600 px-3.5 text-xs font-bold text-white hover:bg-rose-700 sm:flex-none"
                     >
-                      {paidRegistration.loading || paidRegistration.error || paidRegistration.presentation?.active ? "등록 상태 확인" : "대기 없이 등록"}
-                    </Link> : null}
+                      받은 지원 보기
+                    </button> : null}
                   </>
                 ) : matchingDataLoaded ? (
                   <Link
@@ -8626,7 +8632,7 @@ export default function MyPage() {
                 )}
               </div>
             </div>
-            {matchingDataLoaded && canOfferInstantOpenCard(myDatingCards.some(card => card.status === "pending"), paidRegistration) ? <InstantOpenCardHint /> : null}
+            {matchingDataLoaded && !matchingDataError && canOfferInstantOpenCard(primaryMyOpenCard?.status === "pending", paidRegistration) ? <InstantOpenCardHint /> : null}
           </section>
           <div id="matching-filter-panel" className="scroll-mt-24">
             <div className="flex items-end justify-between gap-3">
