@@ -64,7 +64,7 @@ if (require.main === module) {
     // Payment setup/dispatch is pinned independently below; conversion tests
     // also assert prices, disabled states, included benefits and lazy guide reads.
     const expected = name === 'OneOnOneContactOffer'
-      ? '763cb90a3de56248792d56130cae5b9aac5bbc39f0c05d68476a94c65be19132'
+      ? '12171b81d91fed7abe842e97eb22a4d55f776a43a67d23d4b4e1064c623926bc'
       // Same article/children/buttons, with a visibility-only observation hook.
       // Same photo links and action children; all profile text uses the shared disclosure.
       : name === 'OneOnOneCandidateCard' ? '189e9053967893cf779d480e92fae212aa3a360e972816a71e48651ff217123a'

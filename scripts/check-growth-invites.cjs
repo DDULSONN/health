@@ -22,7 +22,8 @@ const baselines = {
  // Bounded raw/lite/blur upload and error text; save-after-all-upload contract
  // and unchanged-photo preservation exercised by check-dating-trust-ux-browser.cjs.
  'app/community/dating/cards/new/page.tsx': '578f51961a523fcc40bb18e4a48e01be7a0f733c3b253611a1a5695c19e40530',
- 'app/api/dating/cards/my/route.ts': 'b832effc2aeb9fb3918b040bf8cf70e7e31c698c02e6ee14628543d3d9642412',
+ // GET now includes the owner's queue rank. Registration, edit and delete were unchanged.
+ 'app/api/dating/cards/my/route.ts': 'e0c29895a4510cacd381b6da0395cb4d2b70fc086d2152270130a2109d56565a',
  'app/api/dating/1on1/cards/route.ts': '498240e6c2b59b9fcf2737c6cc756cbfc2f6cc003066e7fa0bf9bdd9dc24a846',
  'app/api/payments/toss/create/route.ts': 'a6d250de0ca3dbc374a988815f80622d0c9331382e5507746fd5ec2c52ced60a',
  'app/api/payments/toss/confirm/route.ts': '149d69aa46a589562084bd0c0f01e1c612c00211ea2cfed5e0c5bdcaf6cb0172',
