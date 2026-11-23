@@ -28,7 +28,8 @@ grant select on public.dating_1on1_single_candidate_swaps to service_role;
 create or replace function public.commit_dating_1on1_single_candidate_swap(
   p_user_id uuid, p_source_card_id uuid, p_generation_key text,
   p_generation_at timestamptz, p_expected_refresh_at timestamptz,
-  p_from_candidate_card_id uuid, p_to_candidate_card_id uuid, p_planned_at timestamptz
+  p_from_candidate_card_id uuid, p_to_candidate_card_id uuid, p_planned_at timestamptz,
+  p_source_profile_key text, p_to_profile_key text
 ) returns jsonb language plpgsql security definer set search_path = pg_catalog
 set lock_timeout = '3s' set statement_timeout = '10s' as $$
 declare
@@ -41,6 +42,8 @@ declare
 begin
   if p_user_id is null or p_source_card_id is null or p_generation_key is null
     or p_generation_key !~ '^[0-9a-f]{64}$' or p_generation_at is null or not isfinite(p_generation_at)
+    or p_source_profile_key is null or p_source_profile_key !~ '^[0-9a-f]{32}$'
+    or p_to_profile_key is null or p_to_profile_key !~ '^[0-9a-f]{32}$'
     or p_planned_at is null or not isfinite(p_planned_at) or p_generation_at > p_planned_at + interval '5 seconds'
     or p_from_candidate_card_id is null or p_to_candidate_card_id is null
     or p_from_candidate_card_id = p_to_candidate_card_id
@@ -59,7 +62,8 @@ begin
   v_birth_cutoff := extract(year from v_now at time zone 'Asia/Seoul')::int - 19;
   if p_planned_at < v_now - interval '1 minute' or p_planned_at > v_now + interval '5 seconds'
     or v_source.recommendation_refresh_used_at is distinct from p_expected_refresh_at
-    or v_source.updated_at > p_planned_at then
+    or v_source.updated_at > p_planned_at
+    or md5(v_source.sex || ':' || v_source.birth_year::text || ':' || coalesce(v_source.region, '')) is distinct from p_source_profile_key then
     return jsonb_build_object('ok', false, 'code', 'stale_generation');
   end if;
   if v_source.status not in ('submitted', 'reviewing', 'approved') or v_source.sex not in ('male', 'female')
@@ -99,6 +103,7 @@ begin
   if v_from.id is null or v_to.id is null or v_to.user_id in (p_user_id, v_from.user_id)
     or v_from.sex = v_source.sex or v_to.sex not in ('male', 'female') or v_to.sex = v_source.sex
     or v_to.status not in ('submitted', 'reviewing', 'approved') or v_to.updated_at > p_planned_at
+    or md5(v_to.sex || ':' || v_to.birth_year::text || ':' || coalesce(v_to.region, '')) is distinct from p_to_profile_key
     or v_to.birth_year not between 1960 and v_birth_cutoff
     or not exists (
       select 1 from auth.users u join public.profiles p on p.user_id = u.id
@@ -174,9 +179,65 @@ exception when lock_not_available or deadlock_detected then
 end;
 $$;
 
-revoke all on function public.commit_dating_1on1_single_candidate_swap(uuid,uuid,text,timestamptz,timestamptz,uuid,uuid,timestamptz)
+revoke all on function public.commit_dating_1on1_single_candidate_swap(uuid,uuid,text,timestamptz,timestamptz,uuid,uuid,timestamptz,text,text)
   from public, anon, authenticated, service_role;
-grant execute on function public.commit_dating_1on1_single_candidate_swap(uuid,uuid,text,timestamptz,timestamptz,uuid,uuid,timestamptz)
+grant execute on function public.commit_dating_1on1_single_candidate_swap(uuid,uuid,text,timestamptz,timestamptz,uuid,uuid,timestamptz,text,text)
+  to service_role;
+
+-- An early local preview used this overload without profile fingerprints.
+-- Do not leave it callable if this file is re-applied to a preview DB.
+do $$
+begin
+  if to_regprocedure('public.commit_dating_1on1_single_candidate_swap(uuid,uuid,text,timestamptz,timestamptz,uuid,uuid,timestamptz)') is not null then
+    execute 'revoke all on function public.commit_dating_1on1_single_candidate_swap(uuid,uuid,text,timestamptz,timestamptz,uuid,uuid,timestamptz) from public, anon, authenticated, service_role';
+  end if;
+end;
+$$;
+
+-- A full refresh planned just before a single swap must not consume quota for
+-- somebody that the swap has already delivered. Guard the read version under
+-- the identical source/viewer lock order, then reuse the unchanged full
+-- refresh transaction. A mismatch must never reach the legacy quota functions.
+create or replace function public.commit_dating_1on1_recommendation_page_guarded(
+  p_card_id uuid, p_user_id uuid, p_limit integer,
+  p_expected_refresh_at timestamptz, p_refresh_at timestamptz,
+  p_main_candidate_ids uuid[], p_extra_candidate_ids uuid[], p_repeat_only boolean, p_source_profile_key text,
+  p_expected_single_swap_count integer, p_expected_single_swap_latest_at timestamptz
+) returns table (allowed boolean, reason text, used_count integer, remaining_count integer,
+  refreshed_at timestamptz, next_refresh_at timestamptz)
+language plpgsql security definer set search_path = pg_catalog
+set lock_timeout = '3s' set statement_timeout = '10s' as $$
+declare
+  v_swap_count integer;
+  v_swap_latest_at timestamptz;
+begin
+  perform 1 from public.dating_1on1_cards c
+    where c.id = p_card_id and c.user_id = p_user_id and c.status in ('submitted', 'reviewing', 'approved') for update;
+  if not found then
+    return query select false, 'stale'::text, null::integer, null::integer, null::timestamptz, null::timestamptz;
+    return;
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_user_id::text, 17004));
+  select count(*)::int, max(s.created_at) into v_swap_count, v_swap_latest_at
+    from public.dating_1on1_single_candidate_swaps s where s.user_id = p_user_id;
+  if v_swap_count is distinct from p_expected_single_swap_count or v_swap_latest_at is distinct from p_expected_single_swap_latest_at then
+    -- No quota snapshot was read under locks. The client must reload instead
+    -- of treating this sentinel as an authoritative new quota balance.
+    return query select false, 'stale'::text, null::integer, null::integer, null::timestamptz, null::timestamptz;
+    return;
+  end if;
+  return query select * from public.commit_dating_1on1_recommendation_page(
+    p_card_id, p_user_id, p_limit, p_expected_refresh_at, p_refresh_at,
+    p_main_candidate_ids, p_extra_candidate_ids, p_repeat_only, p_source_profile_key
+  );
+exception when lock_not_available or deadlock_detected then
+  return query select false, 'stale'::text, null::integer, null::integer, null::timestamptz, null::timestamptz;
+end;
+$$;
+
+revoke all on function public.commit_dating_1on1_recommendation_page_guarded(uuid,uuid,integer,timestamptz,timestamptz,uuid[],uuid[],boolean,text,integer,timestamptz)
+  from public, anon, authenticated, service_role;
+grant execute on function public.commit_dating_1on1_recommendation_page_guarded(uuid,uuid,integer,timestamptz,timestamptz,uuid[],uuid[],boolean,text,integer,timestamptz)
   to service_role;
 commit;
 notify pgrst, 'reload schema';

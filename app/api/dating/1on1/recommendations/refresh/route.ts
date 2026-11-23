@@ -9,8 +9,8 @@ import { recordRefreshAttempt } from "@/lib/dating-1on1-refresh-monitor-record";
 type RefreshResult = {
   allowed: boolean;
   reason: "consumed" | "rotated" | "stale" | "limit" | "cooldown";
-  used_count: number;
-  remaining_count: number;
+  used_count: number | null;
+  remaining_count: number | null;
   refreshed_at: string | null;
   next_refresh_at: string | null;
 };
@@ -71,7 +71,9 @@ export async function POST(req: Request) {
 
     // Repeat-only browsing persists the seed atomically without touching normal
     // quota or compensation. Never consume then refund in separate requests.
-    const result = await admin.rpc(plan.persist_page ? "commit_dating_1on1_recommendation_page" : repeatRotation
+    const guarded = plan.persist_page && plan.single_swap_revision ? plan.single_swap_revision : null;
+    const result = await admin.rpc(plan.persist_page ? guarded
+      ? "commit_dating_1on1_recommendation_page_guarded" : "commit_dating_1on1_recommendation_page" : repeatRotation
       ? "rotate_dating_1on1_recommendations_without_charge"
       : "consume_dating_1on1_recommendation_refresh_checked", {
       p_card_id: sourceCardId, p_user_id: user.id, p_limit: plan.refresh_limit,
@@ -79,6 +81,7 @@ export async function POST(req: Request) {
       ...(plan.persist_page ? { p_main_candidate_ids: plan.main_candidate_ids,
         p_extra_candidate_ids: plan.extra_candidate_ids, p_repeat_only: repeatRotation,
         p_source_profile_key: plan.source_profile_key } : {}),
+      ...(guarded ? { p_expected_single_swap_count: guarded.count, p_expected_single_swap_latest_at: guarded.latestAt } : {}),
     });
     if (result.error) throw result.error;
     const row = (Array.isArray(result.data) ? result.data[0] : result.data) as RefreshResult | null;
@@ -90,12 +93,15 @@ export async function POST(req: Request) {
           ? "다른 화면에서 후보가 갱신됐습니다. 명단을 다시 불러온 뒤 확인해 주세요."
           : `후보 새로고침은 최근 24시간 동안 ${plan.refresh_limit}회까지 가능합니다.`,
         code: row.reason === "cooldown" ? "REFRESH_ROTATION_COOLDOWN" : row.reason === "stale" ? "REFRESH_PLAN_CHANGED" : "REFRESH_LIMIT",
-        refresh_limit: plan.refresh_limit, refresh_used_count: row.used_count,
-        refresh_remaining: row.remaining_count, next_refresh_at: row.next_refresh_at,
-        refresh_bonus_remaining: compensationFromRefreshResult(plan.refresh_limit, row.used_count, row.remaining_count),
+        refresh_limit: plan.refresh_limit, refresh_used_count: row.used_count ?? plan.refresh_used_count,
+        refresh_remaining: row.remaining_count ?? plan.refresh_remaining,
+        next_refresh_at: row.used_count == null ? plan.next_refresh_at : row.next_refresh_at,
+        refresh_bonus_remaining: row.used_count == null || row.remaining_count == null ? plan.refresh_bonus_remaining
+          : compensationFromRefreshResult(plan.refresh_limit, row.used_count, row.remaining_count),
       }, { status: 409 });
     }
-    if (row.reason !== (repeatRotation ? "rotated" : "consumed") || Date.parse(row.refreshed_at ?? "") !== Date.parse(plan.refresh_at)) {
+    if (row.used_count == null || row.remaining_count == null ||
+      row.reason !== (repeatRotation ? "rotated" : "consumed") || Date.parse(row.refreshed_at ?? "") !== Date.parse(plan.refresh_at)) {
       throw new Error("Refresh seed was not persisted as planned");
     }
     recordRefreshAttempt(admin, user.id, requestId, plan, repeatRotation ? "rotated" : "changed");

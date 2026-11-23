@@ -66,7 +66,8 @@ import { getOneOnOneCandidateAvailability } from "@/lib/dating-1on1-candidate-av
 import { partialRecommendationPage, type PartialRefreshChange } from "@/lib/dating-1on1-partial-refresh";
 import {
   applySingleCandidateSwaps, rankUnseenSingleCandidates, readSingleCandidateSwaps, repeatSingleCandidateIds,
-  singleCandidateGenerationKey, type SingleCandidateRefreshRequest,
+  resolvePreviouslyDeliveredUsers, singleCandidateGenerationKey, singleCandidateWidened, SINGLE_REFRESH_VALIDATION_BATCH,
+  type SingleCandidateRefreshRequest,
 } from "@/lib/dating-1on1-single-refresh";
 import { createHash } from "node:crypto";
 
@@ -155,6 +156,7 @@ export type RecommendationRefreshPlan = {
   next_refresh_at: string | null;
   plus_active: boolean;
   persist_page: boolean;
+  single_swap_revision?: { count: number; latestAt: string | null };
   source_profile_key: string;
   main_candidate_ids: string[];
   extra_candidate_ids: string[];
@@ -226,7 +228,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
   const refreshEventsByCardId = new Map<string, string[]>();
   const refundedEventsByCardId = new Map<string, string[]>();
 
-  const [initialRefreshEventsRes, recoveryRes, impressionResult, bonusRemaining, savedPageResult, recentPages, singleSwaps] = await Promise.all([
+  const [initialRefreshEventsRes, recoveryRes, impressionResult, bonusRemaining, savedPageResult, recentPages, singleSwapRead] = await Promise.all([
     admin.from("dating_1on1_recommendation_refresh_events")
       .select("card_id,refreshed_at,quota_refunded_at")
       .in("card_id", sourceCardIds)
@@ -242,9 +244,14 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     readRefreshCompensation(admin, user.id).catch(() => null),
     readRecommendationPage(admin, user.id).catch(() => null),
     readRecommendationHistory(admin, user.id, nowMs).catch(() => null),
-    !refreshPlan?.partialRepair && profiles.get(user.id)?.phone ? readSingleCandidateSwaps(admin, user.id, sourceCardIds[0]) : null,
+    !refreshPlan?.partialRepair && (refreshPlan || profiles.get(user.id)?.phone) ? readSingleCandidateSwaps(admin, user.id) : null,
   ]);
+  const singleSwaps = singleSwapRead?.kind === "ready" ? singleSwapRead.rows : null;
   if (singleRefresh && (!singleSwaps || !impressionResult?.available || !Number.isFinite(nowMs))) return unavailableSingle();
+  if (refreshPlan && !refreshPlan.partialRepair && (singleSwapRead?.kind === "error" ||
+    (singleSwapRead?.kind === "ready" && !savedPageResult?.available))) {
+    return NextResponse.json({ error: "최근 후보 교체 기록을 확인하지 못했어요. 새로고침 횟수는 그대로예요." }, { status: 503 });
+  }
   if (recentPages === null) {
     return NextResponse.json({ error: "최근 후보 이력을 확인하지 못했어요. 횟수는 사용하지 않았으니 잠시 후 다시 시도해 주세요." }, { status: 503 });
   }
@@ -562,7 +569,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       singleRefreshGenerations.set(sourceCard.id, generation);
       // Normal/expansion reads use the same single-slot overlay. A normal
       // full refresh compares against it but gets its own new page generation.
-      recommendations = applySingleCandidateSwaps(recommendations.filter(notHidden), [...adminRecommendations, ...favoriteCandidates],
+      recommendations = applySingleCandidateSwaps(sourceCard, recommendations.filter(notHidden), [...adminRecommendations, ...favoriteCandidates],
         selectionCandidates, singleSwaps, generation);
       if (singleRefresh) singleRefreshPools.set(sourceCard.id, selectionCandidates.filter(card => !handledUserIds.has(card.user_id)));
     }
@@ -670,39 +677,56 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       if (expansions.error && !["42P01", "PGRST205"].includes(expansions.error.code)) return unavailableSingle();
       for (const row of expansions.data ?? []) for (const id of row.candidate_ids ?? []) alreadyDelivered.add(id);
       const pool = singleRefreshPools.get(sourceCardId) ?? [];
+      const deliveredUsers = await resolvePreviouslyDeliveredUsers(admin, alreadyDelivered, candidateUniverse);
       const excludedUsers = new Set([
         ...[...item.recommendations, ...item.admin_recommendations, ...item.favorite_candidates].map(card => card.user_id),
         ...singleSwaps.map(row => row.to_candidate_user_id),
-        ...candidateUniverse.filter(card => alreadyDelivered.has(card.id)).map(card => card.user_id),
+        ...deliveredUsers,
       ]);
-      const choices = rankUnseenSingleCandidates(source, pool, impressionResult?.rows ?? [], alreadyDelivered, excludedUsers);
+      const eligible = pool.filter(card => normalizePhoneForOneOnOneBlock(card.phone ?? ""));
+      const choices = rankUnseenSingleCandidates(source, eligible, impressionResult?.rows ?? [], alreadyDelivered, excludedUsers);
       const noUnseen = () => NextResponse.json({ code: "NO_UNSEEN_CANDIDATE",
-        error: "조건에 맞는 새 후보가 아직 없어요. 지금 후보는 그대로 뒀어요." }, { status: 409 });
-      if (!choices.length) return noUnseen();
-      const current = await getCurrentOneOnOneCardIds(admin, choices, profiles);
-      const valid = choices.filter(card => current.has(card.id));
-      if (!valid.length) return noUnseen();
-      const choiceDetails = await fetchRecommendationDetails(admin, valid.map(card => card.id));
-      const replacement = valid.find(card => choiceDetails.get(card.id)?.user_id === card.user_id && choiceDetails.get(card.id)?.sex === card.sex);
-      if (!replacement) return noUnseen();
+        error: "지금 보여드릴 새 후보를 찾지 못했어요. 현재 후보는 그대로예요." }, { status: 409 });
       const persisted = savedPageResult.page;
       const generationAt = persisted?.source_card_id === sourceCardId && Date.parse(persisted.refreshed_at) === pageAt &&
         persisted.source_profile_key === recommendationSourceKey(source) ? persisted.refreshed_at : new Date(pageAt).toISOString();
-      const result = await admin.rpc("commit_dating_1on1_single_candidate_swap", {
-        p_user_id: user.id,
-        p_source_card_id: sourceCardId,
-        p_generation_key: generationKey,
-        p_generation_at: generationAt,
-        p_expected_refresh_at: source.recommendation_refresh_used_at ?? null,
-        p_from_candidate_card_id: fromCandidateCardId,
-        p_to_candidate_card_id: replacement.id,
-        p_planned_at: plannedAt,
-      });
-      if (result.error || typeof result.data?.ok !== "boolean") return unavailableSingle();
-      if (result.data.ok) return NextResponse.json({ ok: true, changed: true });
-      if (result.data.code === "swap_limit") return NextResponse.json({ code: "SINGLE_REFRESH_LIMIT",
-        error: "오늘은 한 명씩 바꾸기를 모두 사용했어요. 전체 새로고침 횟수는 그대로예요." }, { status: 409 });
-      return staleSingle();
+      const canContinue = () => !singleRefresh.signal?.aborted && Date.now() - nowMs < 10_000;
+      let resolvedConflicts = 0;
+      for (let i = 0; i < choices.length; i += SINGLE_REFRESH_VALIDATION_BATCH) {
+        if (!canContinue()) return unavailableSingle();
+        const batch = choices.slice(i, i + SINGLE_REFRESH_VALIDATION_BATCH);
+        const current = await getCurrentOneOnOneCardIds(admin, batch, profiles);
+        const valid = batch.filter(card => current.has(card.id));
+        if (!valid.length) continue;
+        const choiceDetails = await fetchRecommendationDetails(admin, valid.map(card => card.id));
+        for (const replacement of valid) {
+          const detail = choiceDetails.get(replacement.id);
+          if (!detail || detail.user_id !== replacement.user_id || !detail.photo_signed_urls.length ||
+            recommendationSourceKey(detail) !== recommendationSourceKey(replacement)) continue;
+          if (!canContinue()) return unavailableSingle();
+          const result = await admin.rpc("commit_dating_1on1_single_candidate_swap", {
+            p_user_id: user.id,
+            p_source_card_id: sourceCardId,
+            p_generation_key: generationKey,
+            p_generation_at: generationAt,
+            p_expected_refresh_at: source.recommendation_refresh_used_at ?? null,
+            p_from_candidate_card_id: fromCandidateCardId,
+            p_to_candidate_card_id: replacement.id,
+            p_planned_at: plannedAt,
+            p_source_profile_key: recommendationSourceKey(source),
+            p_to_profile_key: recommendationSourceKey(replacement),
+          });
+          if (result.error || typeof result.data?.ok !== "boolean") return unavailableSingle();
+          if (result.data.ok) return NextResponse.json({ ok: true, changed: true });
+          if (result.data.code === "swap_limit") return NextResponse.json({ code: "SINGLE_REFRESH_LIMIT",
+            error: "최근 24시간 동안 한 명씩 바꾸기를 모두 사용했어요. 전체 새로고침 횟수는 그대로예요." }, { status: 409 });
+          // An explicit replacement-only rejection guarantees no row was
+          // written. Never try another candidate on a lost RPC response.
+          if (!["already_seen", "candidate_unavailable", "candidate_excluded"].includes(result.data.code) ||
+            ++resolvedConflicts >= 3) return staleSingle();
+        }
+      }
+      return canContinue() ? noUnseen() : unavailableSingle();
     }
     if (expansion) {
       const item = items[0];
@@ -764,6 +788,9 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         next_refresh_at: before.next_refresh_at,
         plus_active: Boolean(before.plus),
         persist_page: savedPageResult?.available === true,
+        ...(singleSwapRead?.kind === "ready" ? { single_swap_revision: {
+          count: singleSwapRead.rows.length, latestAt: singleSwapRead.latestAt,
+        } } : {}),
         source_profile_key: recommendationSourceKey(mySourceCards.find(card => card.id === before.source_card_id)!),
         main_candidate_ids: hydrate(after.recommendations).map(card => card.id),
         extra_candidate_ids: hydrate(after.admin_recommendations).map(card => card.id),
@@ -804,15 +831,19 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     }
     return NextResponse.json({ items: items.map((item) => {
       const source = mySourceCards.find(card => card.id === item.source_card_id);
+      const generationKey = singleRefreshGenerations.get(item.source_card_id);
+      const swappedIn = new Set(singleSwaps?.filter(row => row.generation_key === generationKey).map(row => row.to_candidate_card_id));
       // Add presentation metadata only after the final status/identity check.
       // No extra queries or client-side region database, and no exact locations.
-      const withRegionNotice = (cards: RecommendationCard[]) => hydrate(cards).map(card => ({
-        ...card, recommendation_region_widened: source ? isWiderRecommendationRegion(source, card) : false,
-      }));
+      const withRegionNotice = (cards: RecommendationCard[]) => hydrate(cards)
+        .filter(card => !swappedIn.has(card.id) || card.photo_signed_urls.length > 0)
+        .map(card => ({
+        ...card, recommendation_region_widened: source
+          ? isWiderRecommendationRegion(source, card) || (swappedIn.has(card.id) && singleCandidateWidened(source, card)) : false,
+        }));
       const recommendations = withRegionNotice(item.recommendations);
       const adminRecommendations = withRegionNotice(item.admin_recommendations);
       const visibleCandidates = [...recommendations, ...adminRecommendations];
-      const generationKey = singleRefreshGenerations.get(item.source_card_id);
       const singleCandidateIds = generationKey && singleSwaps && impressionResult?.available && hiddenCandidates.available && !favoriteRowsRes.error && !recoveryRes.error
         ? repeatSingleCandidateIds(recommendations, impressionResult.rows, singleSwaps, generationKey,
           pageGenerationTimes.get(item.source_card_id) ?? NaN, nowMs) : [];
@@ -834,6 +865,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     }) });
   } catch (error) {
     console.error("[GET /api/dating/1on1/recommendations/my] details failed", error);
+    if (singleRefresh) return unavailableSingle();
     return NextResponse.json({ error: "Failed to load recommendation details." }, { status: 500 });
   }
 }

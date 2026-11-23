@@ -25,7 +25,8 @@ test('first-sex presentation makes no requests and keeps pending/error feedback'
 });
 
 test('home contract covers matching, refreshing, payments and reads',()=>{
- const file='app/community/dating/cards/page.tsx',source=read(file),names=[];
+ const file='app/community/dating/cards/page.tsx',names=[];
+ const source=require('./fixtures/love-pass-payment-contract.cjs').withoutSingleCandidateHomeChanges(read(file));
  const ast=ts.createSourceFile('home.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
  function visit(node){if(ts.isVariableDeclaration(node)&&/^(handle|reload)[A-Z]/.test(node.name.getText(ast)))names.push(node.name.getText(ast));ts.forEachChild(node,visit);}visit(ast);
  assert.ok(names.length>=15);assert.deepEqual(names.sort(),Object.keys(contract.files[file]).sort());

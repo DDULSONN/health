@@ -2304,6 +2304,158 @@ test('real single-slot exhausted replacement keeps all candidates and never reac
   assert.deepEqual(f.tables, snapshot);
 });
 
+for (const nearestAvailable of [true, false]) test(`single-slot radius expands only after closer usable candidates are exhausted (${nearestAvailable})`, async () => {
+  const f = singleFixture(15);
+  const [nearest, fallback] = f.cards.slice(13);
+  nearest.region = '경기 수원시';
+  fallback.region = '대전';
+  fallback.created_at = '2026-01-02T00:00:00Z'; // Newer doesn't override distance.
+  const { getRegionDistanceMeta } = load('@/lib/region-distance');
+  const nearKm = getRegionDistanceMeta(f.own.region, nearest.region).distanceKm;
+  const nextKm = getRegionDistanceMeta(f.own.region, fallback.region).distanceKm;
+  assert.ok(nearKm > 0 && nearKm < 90 && nextKm > 90 && nextKm <= 180, `validate fixture coordinates: ${nearKm} / ${nextKm}`);
+  if (!nearestAvailable) nearest.photo_paths = [];
+  const [group] = (await singleReaders(f).get()).body.items;
+  const snapshot = structuredClone(f.tables);
+  const expected = (nearestAvailable ? nearest : fallback).id;
+  const result = await singleReaders(f, { atTime: now + 100, rpc: args => {
+    assert.equal(args.p_to_candidate_card_id, expected);
+    return { data: { ok: true, code: 'swapped' }, error: null };
+  }}).replace(payloadForSingle(group, group.recommendations[0].id));
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.equal(result.rpcCalls.length, 1);
+  assert.equal(result.rpcCalls[0].args.p_to_candidate_card_id, expected);
+  assert.ok(noWrites(result.calls));
+  assert.deepEqual(f.tables, snapshot, 'the only operation that could change state is the simulated atomic swap');
+});
+
+function detailQueryIds(q) {
+  return q.table === 'dating_1on1_cards' && q.fields.includes('photo_paths')
+    ? q.filters.find(([op, field]) => op === 'in' && field === 'id')?.[2] ?? [] : [];
+}
+
+test('single-slot selection continues after a whole batch with missing rows, phone or photos', async () => {
+  const f = singleFixture(36);
+  const alternatives = f.cards.slice(13);
+  const alternativeIds = new Set(ids(alternatives));
+  // Even if missing phones are filtered before hydration, at least the entire
+  // first validation batch of 12 has missing details or unusable photos.
+  const invalid = alternatives.slice(0, 16);
+  const wanted = alternatives[16];
+  const droppedDetail = new Set(ids(invalid.slice(0, 4)));
+  for (const c of invalid.slice(4, 8)) {
+    c.phone = null;
+    f.tables.profiles.find(p => p.user_id === c.user_id).phone_e164 = null;
+  }
+  for (const c of invalid.slice(8)) c.photo_paths = [];
+  const [group] = (await singleReaders(f).get()).body.items;
+  const snapshot = structuredClone(f.tables);
+  const result = await singleReaders(f, { atTime: now + 100, intercept: q => {
+    const requested = detailQueryIds(q);
+    if (!requested.some(id => droppedDetail.has(id))) return null;
+    return { data: f.tables.dating_1on1_cards.filter(row => requested.includes(row.id) && !droppedDetail.has(row.id)), error: null };
+  }, rpc: args => {
+    assert.equal(args.p_to_candidate_card_id, wanted.id);
+    return { data: { ok: true, code: 'swapped' }, error: null };
+  }}).replace(payloadForSingle(group, group.recommendations[0].id));
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.equal(result.rpcCalls.length, 1);
+  assert.equal(result.rpcCalls[0].args.p_to_candidate_card_id, wanted.id);
+  const batches = result.calls.map(detailQueryIds).map(batch => batch.filter(id => alternativeIds.has(id))).filter(batch => batch.length);
+  assert.ok(batches.findIndex(batch => batch.includes(wanted.id)) >= 1, 'the replacement was reached after a failed hydration batch');
+  assert.ok(noWrites(result.calls));
+  assert.deepEqual(f.tables, snapshot);
+});
+
+test('single-slot validation stops at 48 candidates and leaves quota and page intact without a usable result', async () => {
+  const f = singleFixture(63);
+  const alternatives = f.cards.slice(13);
+  const alternativeIds = new Set(ids(alternatives));
+  for (const c of alternatives.slice(0, 48)) c.photo_paths = [];
+  const [group] = (await singleReaders(f).get()).body.items;
+  const snapshot = structuredClone(f.tables);
+  const result = await singleReaders(f, { atTime: now + 100 }).replace(payloadForSingle(group, group.recommendations[0].id));
+  assert.equal(result.response.status, 409, JSON.stringify(result.body));
+  assert.equal(result.body.code, 'NO_UNSEEN_CANDIDATE');
+  assert.equal(result.rpcCalls.length, 0);
+  const batches = result.calls.map(detailQueryIds).map(batch => batch.filter(id => alternativeIds.has(id))).filter(batch => batch.length);
+  assert.ok(batches.length > 1 && batches.every(batch => batch.length <= 12));
+  assert.deepEqual(batches.flat(), ids(alternatives.slice(0, 48)), 'the valid 49th candidate is not hydrated in this bounded request');
+  assert.ok(noWrites(result.calls));
+  assert.deepEqual(f.tables, snapshot);
+  const [after] = (await singleReaders(f, { atTime: now + 101 }).get()).body.items;
+  assert.deepEqual(ids(after.recommendations), ids(group.recommendations));
+  assert.deepEqual(singleQuota(after), singleQuota(group));
+});
+
+test('single-slot does not broaden beyond known 180km or override age, hide, block and visited exclusions', async () => {
+  const f = singleFixture(19);
+  const [outside, unknown, ageMismatch, hidden, blocked, seen] = f.cards.slice(13);
+  outside.region = '부산';
+  unknown.region = '알 수 없는 지역';
+  ageMismatch.birth_year = 1968;
+  hidden.region = blocked.region = seen.region = '대전';
+  const { getRegionDistanceMeta } = load('@/lib/region-distance');
+  assert.ok(getRegionDistanceMeta(f.own.region, outside.region).distanceKm > 180);
+  assert.equal(getRegionDistanceMeta(f.own.region, unknown.region).distanceKm, null);
+  f.tables.dating_1on1_candidate_hides = [{ id: localId(801), user_id: f.own.user_id, candidate_user_id: hidden.user_id,
+    candidate_card_id: hidden.id, candidate_name: hidden.name, created_at: new Date(now - 1).toISOString() }];
+  f.tables.dating_user_blocks = [{ blocker_user_id: blocked.user_id, blocked_user_id: f.own.user_id }];
+  f.tables.dating_1on1_candidate_impressions.push({ viewer_user_id: f.own.user_id, candidate_user_id: seen.user_id,
+    first_seen_at: new Date(now - 1).toISOString() });
+  const [group] = (await singleReaders(f).get()).body.items;
+  const snapshot = structuredClone(f.tables);
+  const result = await singleReaders(f, { atTime: now + 100 }).replace(payloadForSingle(group, group.recommendations[0].id));
+  assert.equal(result.response.status, 409, JSON.stringify(result.body));
+  assert.equal(result.body.code, 'NO_UNSEEN_CANDIDATE');
+  assert.equal(result.rpcCalls.length, 0);
+  assert.ok(noWrites(result.calls));
+  assert.deepEqual(f.tables, snapshot);
+  const [after] = (await singleReaders(f, { atTime: now + 101 }).get()).body.items;
+  assert.deepEqual(ids(after.recommendations), ids(group.recommendations));
+  assert.deepEqual(singleQuota(after), singleQuota(group));
+});
+
+test('single-slot skips owners of archived delivered cards and receipts from a prior source, not another member’s receipts', async () => {
+  const f = singleFixture(16);
+  const [archivedRevisionOwner, otherSourceReceiptOwner, wanted] = f.cards.slice(13);
+  const olderAt = new Date(now - 2 * day).toISOString();
+  const oldSourceId = localId(996);
+  const oldArchivedId = localId(997);
+  f.tables.dating_1on1_cards.push(
+    { ...f.own, id: oldSourceId, status: 'rejected' },
+    { ...archivedRevisionOwner, id: oldArchivedId, status: 'rejected' },
+  );
+  // The member's browser did not send a view acknowledgment for either owner.
+  f.tables.dating_1on1_recommendation_page_history.push({ ...f.saved, refreshed_at: olderAt,
+    main_candidate_ids: [oldArchivedId], extra_candidate_ids: [] });
+  f.tables[SWAPS].push(
+    { user_id: f.own.user_id, source_card_id: oldSourceId, generation_key: '1'.repeat(64), created_at: olderAt,
+      from_candidate_card_id: localId(995), to_candidate_card_id: otherSourceReceiptOwner.id,
+      to_candidate_user_id: otherSourceReceiptOwner.user_id },
+    { user_id: localId(994), source_card_id: localId(993), generation_key: '2'.repeat(64), created_at: olderAt,
+      from_candidate_card_id: localId(992), to_candidate_card_id: wanted.id, to_candidate_user_id: wanted.user_id },
+  );
+  const [group] = (await singleReaders(f).get()).body.items;
+  const snapshot = structuredClone(f.tables);
+  const result = await singleReaders(f, { atTime: now + 100, rpc: () => ({ data: { ok: true, code: 'swapped' }, error: null })
+  }).replace(payloadForSingle(group, group.recommendations[0].id));
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.equal(result.rpcCalls.length, 1);
+  const { p_to_candidate_card_id, p_source_profile_key, p_to_profile_key } = result.rpcCalls[0].args;
+  assert.equal(p_to_candidate_card_id, wanted.id);
+  assert.ok(typeof p_source_profile_key === 'string' && p_source_profile_key.length > 0);
+  assert.ok(typeof p_to_profile_key === 'string' && p_to_profile_key.length > 0);
+  assert.ok(result.calls.some(q => q.table === 'dating_1on1_cards' && q.fields === 'id,user_id' &&
+    q.filters.some(([op, key, values]) => op === 'in' && key === 'id' && values.includes(oldArchivedId)) &&
+    !q.filters.some(([, key]) => key === 'status')), 'reuse past delivery by account identity even when the issued card is archived');
+  assert.ok(result.calls.some(q => q.table === SWAPS &&
+    q.filters.some(([op, key, value]) => op === 'eq' && key === 'user_id' && value === f.own.user_id) &&
+    !q.filters.some(([, key]) => key === 'source_card_id')), 'receipt history is viewer-scoped across their own profile replacements');
+  assert.ok(noWrites(result.calls));
+  assert.deepEqual(f.tables, snapshot);
+});
+
 test('real single-slot POST refuses missing session, another account, obsolete generation, and extra-only candidate receipt', async () => {
   const f = singleFixture(), [group] = (await singleReaders(f).get()).body.items;
   const dto = payloadForSingle(group, group.recommendations[0].id);

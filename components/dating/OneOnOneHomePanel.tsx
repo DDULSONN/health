@@ -157,6 +157,7 @@ export default function OneOnOneHomePanel({
   refreshNotice,
   onReported,
   onReload,
+  onRetryRecommendations,
   arrivedFromOnboarding,
   viewerLoggedIn,
   profileStartHref,
@@ -193,6 +194,7 @@ export default function OneOnOneHomePanel({
   arrivedFromOnboarding: boolean;
   onReported: (result: DatingReportResult) => void;
   onReload: () => void;
+  onRetryRecommendations?: () => void;
   viewerLoggedIn: boolean;
   profileStartHref: string;
   profileStartCta: string;
@@ -541,7 +543,7 @@ export default function OneOnOneHomePanel({
                 <div role="alert" className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">
                   <p>{recommendationsError}</p>
                   <p className="mt-1 text-xs">진행 중인 매칭과 교환된 연락처는 계속 확인할 수 있어요.</p>
-                  <button type="button" data-recommendation-retry onClick={onReload} className="mt-2 min-h-[44px] text-xs font-medium text-neutral-700 underline underline-offset-2">추천 후보 다시 불러오기 · 횟수 차감 없음</button>
+                  <button type="button" data-recommendation-retry onClick={onRetryRecommendations ?? onReload} className="mt-2 min-h-[44px] text-xs font-medium text-neutral-700 underline underline-offset-2">추천 후보 다시 불러오기 · 횟수 차감 없음</button>
                 </div>
               ) : recommendationGroups.length === 0 ? (
                 <p className="mt-3 rounded-xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">현재 보여줄 추천 후보가 없어요. 조건에 맞는 후보가 생기면 여기서 바로 볼 수 있습니다.</p>

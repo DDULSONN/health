@@ -55,8 +55,8 @@ export function useOneOnOneCandidateReplace({ identity, viewerId, locks, needsRe
           }, 15_000,
         );
         if (!isCurrent()) return;
-        const unchangedMessage = body?.code === "NO_UNSEEN_CANDIDATE" ? "아직 안 본 후보가 없어서 지금 후보를 그대로 뒀어요."
-          : body?.code === "SINGLE_REFRESH_LIMIT" ? "오늘 한 명씩 바꾸기는 모두 사용했어요. 현재 후보는 그대로예요."
+        const unchangedMessage = body?.code === "NO_UNSEEN_CANDIDATE" ? "조건에 맞는 새 후보를 아직 찾지 못했어요. 지금 후보는 그대로예요."
+          : body?.code === "SINGLE_REFRESH_LIMIT" ? "최근 24시간 동안 한 명씩 바꾸기를 모두 사용했어요. 현재 후보는 그대로예요."
           : body?.code === "SINGLE_REFRESH_SLOW_DOWN" ? "잠시 후 다시 눌러 주세요. 현재 후보는 그대로예요." : null;
         if (response.status < 500 && unchangedMessage) {
           setNotice({ userId, sourceCardId, message: unchangedMessage });

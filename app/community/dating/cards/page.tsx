@@ -2104,10 +2104,47 @@ function OpenCardsContent() {
     if (requireUpdated && (!updated || !recommendationsUpdated)) throw new Error("새 후보 명단을 불러오지 못했어요.");
   }, [viewerLoggedIn, draftUserId, oneOnOneHomeRequest, oneOnOneRecommendationsRequest]);
 
+  const reloadOneOnOneRecommendationsOnly = useCallback(async () => {
+    if (!viewerLoggedIn || !draftUserId || oneOnOneReplaceIdentityRef.current !== draftUserId) throw new Error("로그인 상태를 다시 확인해 주세요.");
+    let updated = false;
+    await oneOnOneRecommendationsRequest.run({
+      replace: true,
+      start: () => { setOneOnOneRecommendationsLoading(true); setOneOnOneRecommendationsError(""); },
+      load: async (signal) => {
+        const { response, body } = await fetchClientJson<unknown>(
+          "/api/dating/1on1/recommendations/my", { cache: "no-store", signal }, 15000,
+        );
+        if (response.status === 401 || response.status === 403) throw new Error("one_on_one_auth_required");
+        if (!response.ok || !isOneOnOneRecommendationPayload(body)) throw new Error("후보 조회 응답을 확인하지 못했어요.");
+        return (body as { items: OneOnOneHomeState["recommendations"] }).items;
+      },
+      commit: (items) => {
+        if (oneOnOneReplaceIdentityRef.current !== draftUserId) return;
+        setOneOnOneRecommendations(items);
+        oneOnOneRefreshNeedsReloadRef.current = false;
+        updated = true;
+      },
+      fail: (error) => {
+        if (oneOnOneReplaceIdentityRef.current !== draftUserId) return;
+        setOneOnOneRecommendations([]);
+        setOneOnOneRecommendationsError("추천 후보를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.");
+        if (error instanceof Error && error.message === "one_on_one_auth_required") {
+          oneOnOneHomeRequest.cancel();
+          setOneOnOneHome(null);
+          setOneOnOneHomeViewerId(null);
+          setOneOnOneHomeLoading(false);
+          setOneOnOneHomeError("로그인 상태와 이용 권한을 다시 확인해 주세요.");
+        }
+      },
+      finish: () => setOneOnOneRecommendationsLoading(false),
+    });
+    if (!updated) throw new Error("새 후보 명단을 불러오지 못했어요.");
+  }, [viewerLoggedIn, draftUserId, oneOnOneHomeRequest, oneOnOneRecommendationsRequest]);
+
   const { replace: replaceOneOnOneCandidate, busy: singleRefreshBusy, notice: singleRefreshNotice } = useOneOnOneCandidateReplace({
     identity: oneOnOneReplaceIdentityRef, viewerId: draftUserId, locks: oneOnOneRefreshLocksRef,
-    needsReload: oneOnOneRefreshNeedsReloadRef, reload: () => reloadOneOnOneHome(true, true),
-    onReadFailure: setOneOnOneHomeError,
+    needsReload: oneOnOneRefreshNeedsReloadRef, reload: reloadOneOnOneRecommendationsOnly,
+    onReadFailure: setOneOnOneRecommendationsError,
   });
 
   useEffect(() => {
@@ -3617,6 +3654,7 @@ function OpenCardsContent() {
             void reloadOneOnOneHome();
           }}
           onReload={() => { void reloadOneOnOneHome(); }}
+          onRetryRecommendations={() => { void reloadOneOnOneRecommendationsOnly().catch(() => {}); }}
           onCandidateHidden={handleHideOneOnOneCandidate}
           onCandidateRestored={() => reloadOneOnOneHome(true, true)}
           onFavoriteChanged={handleOneOnOneFavoriteChanged}

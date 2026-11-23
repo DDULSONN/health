@@ -3,13 +3,19 @@
 Only normal recommendations with a retained view receipt from before the
 displayed generation offer a replacement. Additional candidates, saved
 favorites and active matches do not. Eligibility is checked by member, not
-profile revision. An unseen candidate must fit the existing age preference
-and local distance range. The system cannot reconstruct impressions from
+profile revision, including archived cards already delivered in saved pages.
+The existing age preference stays in force. Candidates are ranked from the
+shortest estimated distance, widening past 90 km only if no closer profile
+can still be shown, up to 180 km. Widened matches display a region notice.
+Missing photos or outdated profiles do not end the search at the first batch.
+The system cannot reconstruct impressions from
 before recording was enabled or after the retention window has elapsed.
 
 The new operation stores one overlay and never writes the full recommendation
 page, refresh usage, bonus usage, matching, payment or contact information.
-There is a separate rolling 24-hour limit, concurrent writes fail closed, and
+There is a separate rolling 24-hour limit. Full-page refresh and one-slot
+replacement share a database check so an intervening swap cannot be charged
+as a new page. Concurrent writes fail closed, and
 an absent candidate is a read-only result. The client reloads the canonical
 recommendation list after success or an uncertain response without replaying
 the mutation.

@@ -152,14 +152,53 @@ function withoutSingleCandidateHomeChanges(source) {
     ['  const oneOnOneReplaceIdentityRef = useRef<string | null>(null);\n', ''],
     ['        oneOnOneReplaceIdentityRef.current = state.status === "authenticated" ? state.userId : null;\n', ''],
     ['        oneOnOneReplaceIdentityRef.current = null;\n', ''],
+    [`  const reloadOneOnOneRecommendationsOnly = useCallback(async () => {
+    if (!viewerLoggedIn || !draftUserId || oneOnOneReplaceIdentityRef.current !== draftUserId) throw new Error("로그인 상태를 다시 확인해 주세요.");
+    let updated = false;
+    await oneOnOneRecommendationsRequest.run({
+      replace: true,
+      start: () => { setOneOnOneRecommendationsLoading(true); setOneOnOneRecommendationsError(""); },
+      load: async (signal) => {
+        const { response, body } = await fetchClientJson<unknown>(
+          "/api/dating/1on1/recommendations/my", { cache: "no-store", signal }, 15000,
+        );
+        if (response.status === 401 || response.status === 403) throw new Error("one_on_one_auth_required");
+        if (!response.ok || !isOneOnOneRecommendationPayload(body)) throw new Error("후보 조회 응답을 확인하지 못했어요.");
+        return (body as { items: OneOnOneHomeState["recommendations"] }).items;
+      },
+      commit: (items) => {
+        if (oneOnOneReplaceIdentityRef.current !== draftUserId) return;
+        setOneOnOneRecommendations(items);
+        oneOnOneRefreshNeedsReloadRef.current = false;
+        updated = true;
+      },
+      fail: (error) => {
+        if (oneOnOneReplaceIdentityRef.current !== draftUserId) return;
+        setOneOnOneRecommendations([]);
+        setOneOnOneRecommendationsError("추천 후보를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.");
+        if (error instanceof Error && error.message === "one_on_one_auth_required") {
+          oneOnOneHomeRequest.cancel();
+          setOneOnOneHome(null);
+          setOneOnOneHomeViewerId(null);
+          setOneOnOneHomeLoading(false);
+          setOneOnOneHomeError("로그인 상태와 이용 권한을 다시 확인해 주세요.");
+        }
+      },
+      finish: () => setOneOnOneRecommendationsLoading(false),
+    });
+    if (!updated) throw new Error("새 후보 명단을 불러오지 못했어요.");
+  }, [viewerLoggedIn, draftUserId, oneOnOneHomeRequest, oneOnOneRecommendationsRequest]);
+
+`, ''],
     [`  const { replace: replaceOneOnOneCandidate, busy: singleRefreshBusy, notice: singleRefreshNotice } = useOneOnOneCandidateReplace({
     identity: oneOnOneReplaceIdentityRef, viewerId: draftUserId, locks: oneOnOneRefreshLocksRef,
-    needsReload: oneOnOneRefreshNeedsReloadRef, reload: () => reloadOneOnOneHome(true, true),
-    onReadFailure: setOneOnOneHomeError,
+    needsReload: oneOnOneRefreshNeedsReloadRef, reload: reloadOneOnOneRecommendationsOnly,
+    onReadFailure: setOneOnOneRecommendationsError,
   });
 
 `, ''],
     ['      if (oneOnOneRefreshLocksRef.current.has(sourceCardId) || processingOneOnOneAutoKeys.includes(actionKey)) return;\n', '      if (processingOneOnOneAutoKeys.includes(actionKey)) return;\n'],
+    ['          onRetryRecommendations={() => { void reloadOneOnOneRecommendationsOnly().catch(() => {}); }}\n', ''],
     [`          onReplaceCandidate={replaceOneOnOneCandidate}
           singleRefreshBusy={singleRefreshBusy}
           singleRefreshNotice={singleRefreshNotice}
@@ -180,6 +219,9 @@ function withoutSingleCandidatePanelChanges(source) {
     ['type OneOnOneRecommendationGroup = SingleCandidateRefreshFields & {\n', 'type OneOnOneRecommendationGroup = {\n'],
     ['  expansion_enabled?: boolean;\n  source_card_status?: string;\n', '  impression_ticket?: string | null;\n  expansion_enabled?: boolean;\n  source_card_id?: string;\n  source_card_status?: string;\n'],
     ['  onReplaceCandidate,\n  singleRefreshBusy,\n  singleRefreshNotice,\n', ''],
+    ['  onRetryRecommendations,\n', ''],
+    ['  onRetryRecommendations?: () => void;\n', ''],
+    ['data-recommendation-retry onClick={onRetryRecommendations ?? onReload}', 'data-recommendation-retry onClick={onReload}'],
     [`  onReplaceCandidate?: (group: SingleCandidateRefreshFields, candidateId: string) => Promise<void>;
   singleRefreshBusy?: { sourceCardId: string; candidateId: string } | null;
   singleRefreshNotice?: { sourceCardId: string; message: string } | null;

@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     });
     if (!limit.allowed) return json({ code: "SINGLE_REFRESH_SLOW_DOWN", error: "잠시 후에 다시 눌러 주세요." }, 429);
     const response = await loadOneOnOneRecommendations(createAdminClient(), user, undefined, undefined, {
-      sourceCardId, fromCandidateCardId, generationKey, plannedAt,
+      sourceCardId, fromCandidateCardId, generationKey, plannedAt, signal: req.signal,
     });
     for (const [key, value] of Object.entries(headers)) response.headers.set(key, value);
     return response;
