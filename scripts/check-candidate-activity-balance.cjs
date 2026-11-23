@@ -123,7 +123,11 @@ test('both screens place the existing restore control before candidates and keep
   const home=fs.readFileSync(path.join(root,'components/dating/OneOnOneHomePanel.tsx'),'utf8');
   const my=fs.readFileSync(path.join(root,'app/mypage/page.tsx'),'utf8');
   for(const text of [home,my])assert.equal((text.match(/<CandidateHidesPanel /g)||[]).length,1);
-  assert.ok(home.indexOf('<CandidateHidesPanel')<home.indexOf('{recommendations.map('));
+  const restore=home.indexOf('<CandidateHidesPanel');
+  const firstCandidate=home.indexOf('{firstRecommendations.map(');
+  const expandedCandidate=home.indexOf('{recommendations.slice(firstRecommendations.length).map(');
+  assert.ok(restore>=0 && firstCandidate>restore && expandedCandidate>restore,
+    'restore must render before both the initially visible and expanded candidate lists');
   assert.match(home,/availability=\{group.recommendation_availability\}/);
   assert.match(my,/availability=\{autoRecommendationGroup\?\.recommendation_availability\}/);
   assert.match(my,/onRestored=\{\(\) => reloadOneOnOneRecommendations\(true, true\)\}/);
