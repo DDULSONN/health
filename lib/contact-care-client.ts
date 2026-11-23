@@ -11,7 +11,7 @@ export class CareTransportError extends Error {
 
 // Contact-care only: never retry a POST, and bound response-body reads as well as
 // fetch. Racing the deadline also releases the UI if a webview ignores abort.
-export async function fetchCareJson<T>(init: RequestInit, timeoutMs: number) {
+export async function fetchCareJson<T>(init: RequestInit, timeoutMs: number, query?: { before: string } | { selected: string }) {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cancel = () => {};
@@ -25,7 +25,8 @@ export async function fetchCareJson<T>(init: RequestInit, timeoutMs: number) {
     if (init.signal?.aborted) return await interrupted;
     return await Promise.race([
       (async () => {
-        const response = await fetch("/api/dating/1on1/contact-care", { ...init, signal: controller.signal });
+        const suffix = query ? "?" + new URLSearchParams(query).toString() : "";
+        const response = await fetch("/api/dating/1on1/contact-care" + suffix, { ...init, signal: controller.signal });
         const body = await response.json().catch(() => null) as T | null;
         return { response, body };
       })(),

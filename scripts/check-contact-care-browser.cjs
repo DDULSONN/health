@@ -24,7 +24,7 @@ async function main(){
     browser=await chromium.launch({channel:'msedge',headless:true});
     const context=await browser.newContext({viewport:{width:390,height:844}});
     let claim=null,reads=0,writes=0,fail=false,installed=true,active=true,policyReads=0,noticeStarted=Date.now(),manualRemaining=0,manualHistory=[],summaryReads=0;
-    const errors=[];
+    const errors=[];let historyMode=false,olderReads=0;
     await context.route('**/api/**',async route=>{
       const req=route.request(),url=new URL(req.url());assert.equal(url.origin,origin);
       assert.ok(['/api/admin/contact-care','/api/dating/1on1/contact-care','/api/dating/1on1/contact-care/evidence','/api/dating/1on1/contact-care/policy'].includes(url.pathname),'never call payment APIs');
@@ -34,6 +34,15 @@ async function main(){
       if(url.pathname.endsWith('/evidence')){await route.fulfill({contentType:'image/webp',body:await require('sharp')({create:{width:120,height:240,channels:3,background:'#e5e5e5'}}).webp().toBuffer()});return;}
       if(req.method()==='GET'&&url.searchParams.get('summary')==='1'){
         summaryReads++;await route.fulfill({json:{remaining:manualRemaining+(claim?.status==='approved'&&!claim.used_at?1:0)}});return;
+      }
+      if(historyMode && req.method()==='GET' && url.pathname==='/api/dating/1on1/contact-care'){
+        const before=url.searchParams.get('before');
+        if(before && ++olderReads===1){await route.fulfill({status:503,json:{error:'이전 매칭을 불러오지 못했어요.'}});return;}
+        const start=before==='second'?60:before?30:0, count=before==='second'?3:30;
+        const matches=Array.from({length:count},(_,i)=>({id:id(700+start+i),name:'상대 '+(1+start+i)}));
+        const next_matches_cursor=before==='second'?null:before?'second':'first';
+        if(!before && url.searchParams.get('selected')===id(762)) matches.push({id:id(762),name:'상대 63'});
+        await route.fulfill({json:before?{matches,next_matches_cursor}:{active,claim,manual_remaining:manualRemaining,manual_history:[],payments:[],matches,next_matches_cursor}});return;
       }
       if(req.method()==='POST'){
         writes++;let body;
@@ -164,6 +173,24 @@ async function main(){
     assert.equal(await member.getByLabel('교환할 상대',{exact:true}).count(),1,'legacy voucher remains usable after manual ones are spent');
     await member.getByText('최근 교환권 사용 내역',{exact:true}).click();assert.equal(await member.getByRole('link',{name:/연락처 확인/}).count(),3);
     await page.reload();await member.getByText('보유 1장',{exact:true}).waitFor();
+    historyMode=true;
+    for(const manual of [true,false]){
+      manualRemaining=manual?1:0;olderReads=0;await page.goto(origin);
+      await member.locator('summary').first().click();
+      const select=member.getByLabel(manual?'추가 지급 교환권으로 교환할 상대':'교환할 상대',{exact:true});
+      await select.selectOption(id(701));const oldWrites=writes;
+      const more=member.getByRole('button',{name:'이전 매칭 더 보기'});
+      await more.click();await member.getByText('이전 매칭을 불러오지 못했어요.',{exact:true}).waitFor();
+      assert.equal(await select.inputValue(),id(701));assert.equal(await select.locator('option').count(),31);
+      await more.evaluate(b=>{b.click();b.click();});
+      await member.getByText(/이전 매칭 30건을 추가/).waitFor();assert.equal(olderReads,2);assert.equal(await select.inputValue(),id(701));
+      await more.click();await member.getByText(/이전 매칭 3건을 추가/).waitFor();assert.equal(await more.count(),0);
+      assert.equal(await select.locator('option').count(),64);await select.selectOption(id(762));
+      await member.getByRole('button',{name:'내역 다시 확인'}).click();await member.getByRole('button',{name:'이전 매칭 더 보기'}).waitFor();
+      assert.equal(await select.inputValue(),id(762));
+      page.once('dialog',d=>d.dismiss());await member.getByRole('button',{name:'이 매칭에 교환권 사용'}).click();
+      assert.equal(writes,oldWrites,'loading/selecting/rechecking old matches or declining consent never redeems or pays');
+    }
     assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,widths:[320,390,768],writes,reads,summaryReads,policyReads,paymentRequests:0,pageErrors:errors,screenshots:output}));
   }finally{await browser?.close();await new Promise(r=>server.close(r));}
 }

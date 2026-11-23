@@ -2,7 +2,8 @@ import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { CONTACT_CARE_UUID } from "@/lib/contact-care";
-import { careJson, careError, careMatchNames, careManualBalance, CARE_CLAIM_FIELDS, readCareJson } from "@/lib/contact-care-server";
+import { careJson, careError, careMatchNames, careManualBalance, CARE_CLAIM_FIELDS, readCareJson, parseCareCursor } from "@/lib/contact-care-server";
+import { careTargetPage } from "@/lib/contact-care-targets";
 import { hashDatingContactBlockValue, normalizeDatingContactPhone } from "@/lib/dating-contact-blocks";
 import { hashOneOnOneBlockedPhone } from "@/lib/dating-1on1-phone-blocks";
 import { CARE_EVIDENCE_BUCKET, prepareCareEvidence, readCareForm } from "@/lib/contact-care-evidence";
@@ -15,7 +16,8 @@ export async function GET(req: Request) {
   if (!user) return careJson({ error: "로그인이 필요해요." }, 401);
   const admin = createAdminClient();
   try {
-    if (new URL(req.url).searchParams.get("summary") === "1") {
+    const params = new URL(req.url).searchParams;
+    if (params.get("summary") === "1") {
       const [claim, manual] = await Promise.all([
         admin.from("contact_care_claims").select("status,used_at").eq("user_id", user.id).maybeSingle(),
         careManualBalance(admin, user.id),
@@ -23,6 +25,19 @@ export async function GET(req: Request) {
       if (claim.error) throw claim.error;
       return careJson({ remaining: manual.remaining + (claim.data?.status === "approved" && !claim.data.used_at ? 1 : 0) });
     }
+    if (params.has("before")) {
+      const cursor = parseCareCursor(params.get("before") ?? "");
+      if (!cursor) return careJson({ error: "목록을 다시 열어 주세요." }, 400);
+      const [claim, manual] = await Promise.all([
+        admin.from("contact_care_claims").select("status,used_at,match_id").eq("user_id",user.id).maybeSingle(),
+        careManualBalance(admin, user.id),
+      ]);
+      if (claim.error) throw claim.error;
+      if (!manual.remaining && !(claim.data?.status === "approved" && !claim.data.used_at)) return careError(Error("CARE_NO_CREDIT"));
+      return careJson(await careTargetPage(admin, user.id, cursor, manual.remaining ? null : claim.data?.match_id ?? null));
+    }
+    const selected = params.get("selected");
+    if (selected !== null && !CONTACT_CARE_UUID.test(selected)) return careJson({ error: "매칭을 다시 선택해 주세요." }, 400);
     const [policy, claim, manual] = await Promise.all([
       admin.from("contact_care_policy").select("enabled,starts_at").eq("id", true).maybeSingle(),
       admin.from("contact_care_claims").select(CARE_CLAIM_FIELDS).eq("user_id", user.id).maybeSingle(),
@@ -33,7 +48,8 @@ export async function GET(req: Request) {
     const active = policy.data?.enabled === true && Date.parse(policy.data.starts_at) <= Date.now();
     const result = { active, starts_at: policy.data?.starts_at ?? null, claim: claim.data,
       manual_remaining: manual.remaining, manual_history: [] as { used_match_id: string; used_at: string }[],
-      payments: [] as { id: string; name?: string; order_id: string; exchanged_at: string }[], matches: [] as unknown[] };
+      payments: [] as { id: string; name?: string; order_id: string; exchanged_at: string }[], matches: [] as {id:string; name:string}[],
+      next_matches_cursor: null as string | null };
     if (manual.installed) {
       const history = await admin.from("contact_care_manual_vouchers").select("used_match_id,used_at")
         .eq("user_id", user.id).not("used_at", "is", null).order("used_at", { ascending: false }).limit(10);
@@ -68,15 +84,13 @@ export async function GET(req: Request) {
       }
     }
     if (manual.remaining > 0 || claim.data?.status === "approved" && !claim.data.used_at) {
-      const originalMatchId = claim.data?.match_id;
-      const matches = await admin.from("dating_1on1_match_proposals")
-        .select("id,source_user_id,source_card_id,candidate_card_id")
-        .or(`source_user_id.eq.${user.id},candidate_user_id.eq.${user.id}`)
-        .eq("state", "mutual_accepted").in("contact_exchange_status", ["none", "awaiting_applicant_payment"])
-        .order("created_at", { ascending: false }).limit(30);
-      if (matches.error) throw matches.error;
-      const names = await careMatchNames(admin, matches.data ?? [], user.id);
-      result.matches = (matches.data ?? []).filter(m => manual.remaining > 0 || m.id !== originalMatchId).map(m => ({ id: m.id, name: names.get(m.id) }));
+      const exclude = manual.remaining ? null : claim.data?.match_id ?? null;
+      Object.assign(result, await careTargetPage(admin, user.id, null, exclude));
+      if (selected && !result.matches.some(m => m.id === selected)) {
+        // Keep a selected older match through a checkout recheck only if it is
+        // still visible under exactly the same membership and block constraints.
+        result.matches.push(...(await careTargetPage(admin, user.id, null, exclude, selected)).matches);
+      }
     }
     return careJson(result);
   } catch (error) { return careError(error); }

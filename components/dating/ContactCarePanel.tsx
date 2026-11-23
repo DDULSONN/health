@@ -27,6 +27,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   const [files, setFiles] = useState<File[]>([]);
   const [preparingFiles, setPreparingFiles] = useState(false);
   const [target, setTarget] = useState("");
+  const [pageNote, setPageNote] = useState("");
   const [now, setNow] = useState(Date.now);
   const applicationHintId = useId();
   const pending = useRef(false);
@@ -68,7 +69,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
 
   const load = async () => {
     if (pending.current) return;
-    pending.current = true; setBusy(true); setError("");
+    pending.current = true; setBusy(true); setError(""); setPageNote("");
     controller.current = new AbortController();
     try {
       let checkoutCleared = false;
@@ -83,7 +84,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
         }
         checkoutCleared = check.body.checkoutCleared;
       }
-      const { response, body } = await fetchCareJson<ContactCareStatus & { error?: string }>({ cache: "no-store", signal: controller.current.signal }, 12000);
+      const { response, body } = await fetchCareJson<ContactCareStatus & { error?: string }>({ cache: "no-store", signal: controller.current.signal }, 12000, target ? { selected: target } : undefined);
       if (!response.ok || !body || !Array.isArray(body.payments) || !Array.isArray(body.matches)) throw Error(body?.error || "교환권 내역을 확인하지 못했어요.");
       if (alive.current) {
         setData(body); setStale(false);
@@ -109,6 +110,28 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
       }
     } catch (e) { if (alive.current) { setStale(true); setInfo(""); setError(`${careClientError(e)} ‘내역 다시 확인’을 눌러 주세요. 작성한 내용은 유지돼요.`); } }
     finally { pending.current = false; if (alive.current) setBusy(false); }
+  };
+  const loadOlder = async () => {
+    const before = data?.next_matches_cursor;
+    if (!before || pending.current || stale) return;
+    pending.current = true; setBusy(true); setPageNote("");
+    controller.current = new AbortController();
+    try {
+      const { response, body } = await fetchCareJson<Pick<ContactCareStatus,"matches" | "next_matches_cursor"> & { error?: string }>(
+        { cache: "no-store", signal: controller.current.signal }, 12000, { before });
+      if (!alive.current) return;
+      if (!response.ok || !Array.isArray(body?.matches) || !(body.next_matches_cursor === null || typeof body.next_matches_cursor === "string") || body.next_matches_cursor === before) {
+        if (response.status === 401 || response.status === 409) setStale(true);
+        throw Error(body?.error || "이전 매칭을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
+      }
+      const known = new Set(data.matches.map(m => m.id));
+      const added = body.matches.filter(m => !known.has(m.id));
+      setData({ ...data, matches: [...data.matches, ...added], next_matches_cursor: body.next_matches_cursor });
+      setPageNote(added.length ? `이전 매칭 ${added.length}건을 추가했어요. 위 목록에서 선택해 주세요.`
+        : body.next_matches_cursor ? "이 구간에는 교환할 상대가 없어요. 더 이전 매칭을 확인할 수 있어요." : "더 이상 교환할 매칭이 없어요.");
+    } catch (e) {
+      if (alive.current) setPageNote(e instanceof CareTransportError ? "이전 매칭을 불러오지 못했어요. 다시 눌러 주세요." : careClientError(e));
+    } finally { pending.current = false; if (alive.current) setBusy(false); }
   };
   useEffect(() => { recheck.current = () => { void load(); }; });
   useEffect(() => {
@@ -169,6 +192,11 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   };
   const claim = !matchId || data?.claim?.match_id === matchId ? data?.claim : null;
   const manualRemaining = data?.manual_remaining ?? 0;
+  const olderControl = <>
+    {data?.next_matches_cursor ? <button type="button" className="min-h-11 rounded-md px-1 text-sm font-medium text-neutral-700 underline underline-offset-4 disabled:opacity-50"
+      disabled={busy || stale} onClick={() => void loadOlder()}>이전 매칭 더 보기</button> : null}
+    {pageNote ? <p role="status" className="text-sm text-neutral-600">{pageNote}</p> : null}
+  </>;
   const remaining = data ? manualRemaining + (data.claim?.status === "approved" && !data.claim.used_at ? 1 : 0) : summaryBalance;
   const payments = data?.payments.filter(p => !matchId || p.id === matchId) ?? [];
   const selected = payments.find(p => p.order_id === payment);
@@ -203,7 +231,8 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
           <label className="block">교환할 상대<select aria-label="추가 지급 교환권으로 교환할 상대" className={inputClass} value={target} onChange={e => setTarget(e.target.value)} disabled={busy || stale}>
             <option value="">쌍방 수락한 상대 선택</option>{data.matches.map(m => <option key={m.id} value={m.id}>{contactCareMatchLabel(m, data.matches)}</option>)}
           </select></label>
-          {!data.matches.length ? <p>지금 교환 가능한 쌍방 수락 매칭이 없어요. 교환권은 그대로 남아요.</p> : null}
+          {olderControl}
+          {!data.matches.length && !data.next_matches_cursor ? <p>지금 교환 가능한 쌍방 수락 매칭이 없어요. 교환권은 그대로 남아요.</p> : null}
           {target && data.matches.some(m => m.id === target) ? <a href={oneOnOneMatchHref(target)} className="inline-flex min-h-11 items-center text-[11px] underline underline-offset-4">선택한 상대 프로필 확인</a> : null}
           <button type="button" className={`${buttonClass} w-full`} disabled={busy || stale || !target || target === checkoutMatch} onClick={() => void send("redeem_manual")}>이 매칭에 교환권 사용</button>
         </> : null}
@@ -217,9 +246,10 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
         {claim.supplement_due_at ? <p>추가 자료 제출: {date(claim.supplement_due_at)}까지 · 최초 신청은 유지돼요.</p> : null}
         {claim.status === "approved" && !claim.used_at && (matchId || manualRemaining === 0) ? <>
           <label className="block">교환할 상대<select aria-label="교환할 상대" className={inputClass} value={target} onChange={e => setTarget(e.target.value)} disabled={busy || stale}>
-            <option value="">쌍방 수락한 상대 선택</option>{data!.matches.map(m => <option key={m.id} value={m.id}>{contactCareMatchLabel(m, data!.matches)}</option>)}
+            <option value="">쌍방 수락한 상대 선택</option>{data!.matches.filter(m => m.id !== claim.match_id).map(m => <option key={m.id} value={m.id}>{contactCareMatchLabel(m, data!.matches)}</option>)}
           </select></label>
-          {!data!.matches.length ? <p>지금 교환 가능한 쌍방 수락 매칭이 없어요. 교환권은 그대로 남아요.</p> : null}
+          {olderControl}
+          {!data!.matches.length && !data!.next_matches_cursor ? <p>지금 교환 가능한 쌍방 수락 매칭이 없어요. 교환권은 그대로 남아요.</p> : null}
           {target && data!.matches.some(m => m.id === target) ? <a href={oneOnOneMatchHref(target)} className="inline-flex min-h-11 items-center text-[11px] underline underline-offset-4">선택한 상대 프로필 확인</a> : null}
           <button type="button" className={`${buttonClass} w-full`} disabled={busy || stale || !target || target === checkoutMatch} onClick={() => void send("redeem")}>이 매칭에 교환권 사용</button>
         </> : null}

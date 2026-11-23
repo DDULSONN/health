@@ -28,8 +28,9 @@ async function fixture() {
     create table dating_1on1_plus_subscriptions(user_id uuid,expires_at timestamptz,contact_exchange_included boolean);
     create table dating_1on1_admin_user_blocks(user_a_id uuid,user_b_id uuid);
     create table dating_user_blocks(blocker_user_id uuid,blocked_user_id uuid);
-    create table dating_contact_blocks(user_id uuid,block_type text,value_hash text);
-    create table dating_1on1_phone_blocks(user_id uuid,phone_hash text);
+    create table dating_contact_blocks(user_id uuid,block_type text,value_hash text,id uuid default gen_random_uuid());
+    create table dating_1on1_phone_blocks(user_id uuid,phone_hash text,id uuid default gen_random_uuid());
+    create table dating_cards(id uuid default gen_random_uuid(),owner_user_id uuid,instagram_id text);
     create table app_purchase_events(user_id uuid);
     create schema storage;
     create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
@@ -482,7 +483,7 @@ test('API guards: login, origin, malformed body, admin permissions; no DB before
 
 // Small PostgREST adapter for this feature: real handlers -> real PostgreSQL SQL.
 function client(f) {
-  const tables=new Set(['contact_care_policy','contact_care_claims','contact_care_uploads','contact_care_manual_vouchers','profiles','toss_test_payment_orders','dating_1on1_match_proposals','dating_1on1_cards']);
+  const tables=new Set(['contact_care_policy','contact_care_claims','contact_care_uploads','contact_care_manual_vouchers','profiles','toss_test_payment_orders','dating_1on1_match_proposals','dating_1on1_cards','dating_user_blocks','dating_1on1_admin_user_blocks','dating_contact_blocks','dating_1on1_phone_blocks','dating_cards']);
   return {
     storage:{from(bucket){assert.equal(bucket,'contact-care-evidence');return {
       upload:async(name,bytes)=>{assert(Buffer.isBuffer(bytes));await f.q('insert into storage.objects values($1,$2)',[bucket,name]);return {error:null};},
@@ -491,13 +492,14 @@ function client(f) {
     };}},
     rpc: async (name,args)=>{try{return {data:await f.rpc(name,Object.values(args)),error:null};}catch(error){return {data:null,error};}},
     from(table){
-      assert(tables.has(table));let fields='*',filters=[],values=[],orders=[],limit=100,single=false,head=false,updates=null;
+      assert(tables.has(table));let fields='*',filters=[],values=[],orders=[],limit=100,offset=0,single=false,head=false,updates=null;
       const column=v=>{assert.match(v,/^[a-z_][a-z0-9_]*$/);return v;};
       const bind=v=>{values.push(v);return '$'+values.length;};
       const b={
         update(v){updates=Object.entries(v).map(([k,val])=>`${column(k)}=${bind(val)}`).join(',');return b;},
-        select(v,options){fields=v.split(',').map(column).join(',');head=options?.head===true;if(head)assert.equal(options.count,'exact');return b;},
+        select(v,options){fields=v.split(',').map(column).map(c=>table==='dating_1on1_match_proposals'&&c==='created_at'?`to_char(created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at`:c).join(',');head=options?.head===true;if(head)assert.equal(options.count,'exact');return b;},
         eq(k,v){filters.push(`${column(k)}=${bind(v)}`);return b;},
+        neq(k,v){filters.push(`${column(k)}<>${bind(v)}`);return b;},
         gt(k,v){filters.push(`${column(k)}>${bind(v)}`);return b;},
         lt(k,v){filters.push(`${column(k)}<${bind(v)}`);return b;},
         gte(k,v){filters.push(`${column(k)}>=${bind(v)}`);return b;},
@@ -511,14 +513,19 @@ function client(f) {
             const m=v.match(/^created_at.gt.([^,]+),and\(created_at.eq.([^,]+),id.gt.([\da-f-]+)\)$/);assert(m);assert.equal(m[1],m[2]);
             filters.push(`(created_at>${bind(m[1])} or (created_at=${bind(m[2])} and id>${bind(m[3])}))`);
           }
+          else if(v.startsWith('created_at.lt.')) {
+            const m=v.match(/^created_at\.lt\.([^,]+),and\(created_at\.eq\.([^,]+),id\.lt\.([\da-f-]+)\)$/);assert(m);assert.equal(m[1],m[2]);
+            filters.push(`(created_at<${bind(m[1])} or (created_at=${bind(m[2])} and id<${bind(m[3])}))`);
+          }
           else {const m=v.match(/^source_user_id.eq.([\da-f-]+),candidate_user_id.eq.([\da-f-]+)$/);assert(m);filters.push(`(source_user_id=${bind(m[1])} or candidate_user_id=${bind(m[2])})`);}
           return b;
         },
         order(k,o){orders.push(`${column(k)} ${o.ascending?'asc':'desc'}`);return b;},
         limit(n){assert(n<=100);limit=n;return b;},
+        range(from,to){assert.equal(to-from+1,500);limit=500;offset=from;return b;},
         maybeSingle(){single=true;return b;},
         abortSignal(){return b;},
-        then(yes,no){return f.q(updates ? `update ${table} set ${updates}${filters.length?' where '+filters.join(' and '):''} returning ${fields}` : `select ${head?'count(*)::int n':fields} from ${table}${filters.length?' where '+filters.join(' and '):''}${orders.length?' order by '+orders.join(','):''} limit ${limit}`,values)
+        then(yes,no){return f.q(updates ? `update ${table} set ${updates}${filters.length?' where '+filters.join(' and '):''} returning ${fields}` : `select ${head?'count(*)::int n':fields} from ${table}${filters.length?' where '+filters.join(' and '):''}${orders.length?' order by '+orders.join(','):''} limit ${limit} offset ${offset}`,values)
           .then(r=>({data:head?null:JSON.parse(JSON.stringify(single?r.rows[0]||null:r.rows)),count:head?r.rows[0].n:null,error:null}),error=>({data:null,error})).then(yes,no);},
       };return b;
     },
@@ -909,4 +916,92 @@ test('manual API -> DB -> balance/history, authenticated owner only and unchange
   assert(!JSON.stringify(body).includes('+8210'));assert(!JSON.stringify(body).includes('운영자 요청'));assert.deepEqual(await f.status(),claim);
   await f.db.exec('drop table contact_care_manual_vouchers cascade');
   assert.deepEqual(await readMember('?summary=1'),{remaining:1},'missing additive migration leaves legacy claim functional');
+}));
+
+function historyApi(f, user=id(1), db=client(f)) {
+  const api=load('app/api/dating/1on1/contact-care/route.ts',{
+    'next/server':{NextResponse:{json:(body,init)=>Response.json(body,init)}},
+    '@/lib/supabase/request':{getRequestAuthContext:async()=>({user:user&&{id:user}})},
+    '@/lib/supabase/server':{createAdminClient:()=>db},
+  });
+  return {
+    get:(params={})=>api.GET(new Request('https://local.invalid/api?'+new URLSearchParams(params))),
+    redeem:(target,action)=>api.POST(new Request('https://local.invalid/api',{method:'POST',headers:{host:'local.invalid',origin:'https://local.invalid','content-type':'application/json'},body:JSON.stringify({action,matchId:target,confirmed:true})})),
+  };
+}
+
+for (const manual of [false,true]) test('older target pages: exact boundary, tied timestamps, changing state, explicit redemption '+(manual?'manual':'claim'),()=>withDb(async f=>{
+  if(manual) await grantManual(f); else await f.ready();
+  const api=historyApi(f);
+  const readPage=async p=>{const r=await api.get(p);assert.equal(r.status,200);return r.json();};
+  const seed=async n=>f.q(`insert into dating_1on1_match_proposals(id,source_user_id,candidate_user_id,source_card_id,candidate_card_id,created_at)
+    values($1,$2,$3,$2,$3,'2026-09-01T12:34:56.000123Z')`,[id(n),id(n%2?3:1),id(n%2?1:3)]);
+  for(let n=101;n<=129;n++) await seed(n);
+  const exact=await readPage();assert.equal(exact.matches.length,30);assert.equal(exact.next_matches_cursor,null);
+  for(let n=130;n<=163;n++) await seed(n);
+  const orders=await f.q('select * from toss_test_payment_orders');
+  const first=await readPage();assert.equal(first.matches.length,30);assert.match(first.next_matches_cursor,/\.000123/);
+  await seed(164); // appears above the cursor, must not shift the next page
+  await f.q("update dating_1on1_match_proposals set state='canceled' where id=$1",[id(130)]);
+  const second=await readPage({before:first.next_matches_cursor});assert.equal(second.matches.length,30);
+  assert.deepEqual(await readPage({before:first.next_matches_cursor}),second,'retry is read-only and returns the same page');
+  const last=await readPage({before:second.next_matches_cursor});assert.equal(last.next_matches_cursor,null);
+  const ids=[...first.matches,...second.matches,...last.matches].map(m=>m.id);
+  assert.equal(ids.length,63);assert.equal(new Set(ids).size,63);assert(!ids.includes(id(130)));assert(!ids.includes(id(164)));assert.equal(ids.at(-1),id(101));
+  assert.deepEqual(Object.keys(last).sort(),['matches','next_matches_cursor']);assert.deepEqual(Object.keys(last.matches[0]).sort(),['id','name']);
+  assert.deepEqual(await f.q('select * from toss_test_payment_orders'),orders);
+  assert.equal((await readPage({selected:id(101)})).matches.at(-1).id,id(101));
+  assert(!(await readPage({selected:id(130)})).matches.some(m=>m.id===id(130)),'a canceled pinned selection cannot return');
+  assert.equal((await api.get({before:'not-a-cursor'})).status,400);
+  assert.equal((await historyApi(f,null).get({before:first.next_matches_cursor})).status,401);
+  assert.equal((await historyApi(f,id(4)).get({before:first.next_matches_cursor})).status,409);
+  assert.equal((await readPage({summary:'1'})).remaining,manual?3:1);
+  const r=await api.redeem(id(101),manual?'redeem_manual':'redeem');assert.equal(r.status,200,JSON.stringify(await r.clone().json()));
+  assert.equal((await readPage({summary:'1'})).remaining,manual?2:0);
+  assert(!(await readPage({selected:id(101)})).matches.some(m=>m.id===id(101)));
+  assert.equal((await f.q('select contact_exchange_status from dating_1on1_match_proposals where id=$1',[id(101)])).rows[0].contact_exchange_status,'approved');
+  assert.deepEqual(await f.q('select * from toss_test_payment_orders'),orders);
+}));
+
+test('target reads omit both directions of member/admin/contact/legacy blocks, including pinned and older targets; lookup errors fail closed',()=>withDb(async f=>{
+  await grantManual(f);const api=historyApi(f);
+  const contact=load('lib/dating-contact-blocks.ts'),legacy=load('lib/dating-1on1-phone-blocks.ts');
+  const before='2099-01-01T00:00:00Z|'+id(999);
+  for (const [a,b,phone] of [[1,3,'+821033333333'],[3,1,'+821011111111']]) {
+    for(const [table,cols,args] of [
+      ['dating_user_blocks','blocker_user_id,blocked_user_id',[id(a),id(b)]],
+      ['dating_1on1_admin_user_blocks','user_a_id,user_b_id',[id(a),id(b)]],
+      ['dating_contact_blocks','user_id,block_type,value_hash',[id(a),'phone',contact.hashDatingContactBlockValue('phone',phone)]],
+      ['dating_1on1_phone_blocks','user_id,phone_hash',[id(a),legacy.hashOneOnOneBlockedPhone(phone)]],
+      ['dating_contact_blocks','user_id,block_type,value_hash',[id(a),'instagram',contact.hashDatingContactBlockValue('instagram','old_match')]],
+    ]) {
+      await f.q('insert into dating_cards(owner_user_id,instagram_id) values($1,$2)',[id(b),'old_match']);
+      await f.q(`insert into ${table}(${cols}) values(${args.map((_,i)=>'$'+(i+1)).join(',')})`,args);
+      for(const query of [{selected:id(20)},{before}]) {const r=await api.get(query);assert.equal(r.status,200);assert.deepEqual((await r.json()).matches,[]);}
+      await f.db.exec('delete from '+table+'; delete from dating_cards');
+    }
+  }
+  await f.q('update profiles set is_banned=true where user_id=$1',[id(3)]);
+  assert.deepEqual((await (await api.get({selected:id(20)})).json()).matches,[]);
+  await f.q('update profiles set is_banned=false,phone_verified=false where user_id=$1',[id(3)]);
+  assert.deepEqual((await (await api.get({before})).json()).matches,[]);
+  await f.db.exec('drop table dating_user_blocks');
+  assert.notEqual((await api.get({before})).status,200);
+  assert.equal((await (await api.get({summary:'1'})).json()).remaining,3);
+}));
+
+test('fully blocked internal batches do not hide an older eligible target or leak a blocked cursor',()=>withDb(async f=>{
+  await grantManual(f);const api=historyApi(f);
+  await f.q('insert into dating_user_blocks values($1,$2)',[id(2),id(1)]);
+  for(let n=1;n<=95;n++){
+    const peer=n>=67||n===1?3:2;
+    await f.q(`insert into dating_1on1_match_proposals(id,source_user_id,candidate_user_id,source_card_id,candidate_card_id,created_at)
+      values($1,$2,$3,$2,$3,'2026-08-02T11:11:11.123456Z')`,[id(900+n),id(1),id(peer)]);
+  }
+  const first=await (await api.get({})).json();assert.equal(first.matches.length,30);
+  assert(first.next_matches_cursor.endsWith(id(967))); // only visible row, never first/last hidden row
+  const last=await (await api.get({before:first.next_matches_cursor})).json();
+  assert.deepEqual(last.matches,[{id:id(901),name:'새 상대'}]);assert.equal(last.next_matches_cursor,null);
+  await f.q("update dating_1on1_match_proposals set state='candidate_rejected' where id=$1",[id(901)]);
+  const fresh=await (await api.get()).json();assert.equal(fresh.matches.length,30);assert.equal(fresh.next_matches_cursor,null);
 }));

@@ -11,6 +11,7 @@ export type ContactCareMatch = { id: string; name: string; order_id?: string; ex
 export type ContactCareStatus = {
   active: boolean; starts_at: string | null; claim: ContactCareClaim | null;
   payments: ContactCareMatch[]; matches: ContactCareMatch[];
+  next_matches_cursor?: string | null;
   manual_remaining?: number;
   manual_history?: { used_match_id: string; used_at: string }[];
 };
