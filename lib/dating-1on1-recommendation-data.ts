@@ -1,10 +1,12 @@
 import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
+  normalizeDatingOneOnOnePhotoPath,
   toDatingOneOnOneCardDetail,
 } from "@/lib/dating-1on1";
 import { normalizeDatingContactPhone } from "@/lib/dating-contact-blocks";
 import { parseDatingBirthYear } from "@/lib/dating-age";
 import type { createAdminClient } from "@/lib/supabase/server";
+import { assertSafeObjectPath } from "@/lib/images";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 const BATCH_SIZE = 500;
@@ -106,6 +108,28 @@ export async function fetchRecommendationDetails(admin: AdminClient, cardIds: st
       // Generate image URLs only for the cards that will actually be returned.
       if (parseDatingBirthYear(row.birth_year) == null) continue;
       details.set(row.id, toDatingOneOnOneCardDetail(row));
+    }
+  }
+  return details;
+}
+
+// Boolean stock checks do not need names, bios, contact fields, or image URLs.
+export async function fetchRecommendationAvailabilityDetails(admin: AdminClient, cardIds: string[]) {
+  const ids = [...new Set(cardIds)];
+  const details = new Map<string, { user_id: string; sex: string; birth_year: number; region: string; hasPhoto: boolean }>();
+  for (let start = 0; start < ids.length; start += USER_BATCH_SIZE) {
+    const { data, error } = await admin.from("dating_1on1_cards")
+      .select("id,user_id,sex,birth_year,region,photo_paths")
+      .in("id", ids.slice(start, start + USER_BATCH_SIZE))
+      .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES]);
+    if (error) throw error;
+    for (const row of data ?? []) {
+      if (parseDatingBirthYear(row.birth_year) == null) continue;
+      const hasPhoto = Array.isArray(row.photo_paths) && row.photo_paths.some((raw: unknown) => {
+        try { return Boolean(assertSafeObjectPath(normalizeDatingOneOnOnePhotoPath(raw))); }
+        catch { return false; }
+      });
+      details.set(row.id, { user_id: row.user_id, sex: row.sex, birth_year: row.birth_year, region: row.region, hasPhoto });
     }
   }
   return details;

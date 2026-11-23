@@ -20,6 +20,15 @@ an absent candidate is a read-only result. The client reloads the canonical
 recommendation list after success or an uncertain response without replaying
 the mutation.
 
+When a member is waiting for a new candidate, the visible 1:1 view periodically
+checks live eligibility. The no-store probe returns only whether there is
+someone to see. A short-lived signed receipt lets it also notice a newly
+eligible profile that the canonical list already added. Neither check swaps
+a card, records an impression, opens a match, or exposes candidate details.
+The first check is after about three minutes. Checks slow down while the pool
+is empty, pause when the view is hidden or offline, and stop once something is
+available or the viewed generation no longer matches.
+
 ## Rollout
 
 1. Apply the additive `supabase/sql/dating_1on1_single_candidate_swaps.sql`

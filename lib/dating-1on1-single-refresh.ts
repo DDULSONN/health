@@ -24,11 +24,13 @@ export type SingleCandidateSwap = {
 type SwapRead = { kind: "ready"; rows: SingleCandidateSwap[]; latestAt: string | null } | { kind: "missing" | "error" };
 export type SingleCandidateRefreshRequest = {
   sourceCardId: string;
-  fromCandidateCardId: string;
   generationKey: string;
   plannedAt: string;
   signal?: AbortSignal;
-};
+} & (
+  { mode: "replace"; fromCandidateCardId: string } |
+  { mode: "availability"; previousCandidateCardIds?: readonly string[] }
+);
 
 export async function readSingleCandidateSwaps(admin: ReturnType<typeof createAdminClient>, userId: string): Promise<SwapRead> {
   try {
@@ -91,8 +93,8 @@ export function applySingleCandidateSwaps<T extends Person>(
   });
 }
 
-export function repeatSingleCandidateIds<T extends Person>(
-  main: T[], impressions: CandidateImpression[], swaps: SingleCandidateSwap[], generationKey: string, pageAt: number, now: number,
+export function repeatSingleCandidateIds(
+  main: Person[], impressions: CandidateImpression[], swaps: SingleCandidateSwap[], generationKey: string, pageAt: number, now: number,
 ) {
   const priorViewers = new Set(impressions.filter(({first_seen_at}) => {
     const at = Date.parse(first_seen_at);

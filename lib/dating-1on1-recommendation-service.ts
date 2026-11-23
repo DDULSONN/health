@@ -45,6 +45,7 @@ import { NextResponse } from "next/server";
 import {
   fetchActiveRecommendationRows,
   fetchRecommendationActivity,
+  fetchRecommendationAvailabilityDetails,
   fetchRecommendationDetails,
   fetchRecommendationProfiles,
   latestRecommendationActivity,
@@ -182,6 +183,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
   singleRefresh?: SingleCandidateRefreshRequest) {
   if ([refreshPlan, expansion, singleRefresh].filter(Boolean).length > 1) throw new Error("Conflicting recommendation actions.");
   const nowMs = refreshPlan ? Date.parse(refreshPlan.at) : singleRefresh ? Date.parse(singleRefresh.plannedAt) : Date.now();
+  const availabilityOnly = singleRefresh?.mode === "availability";
   const staleSingle = () => NextResponse.json({ code: "SINGLE_REFRESH_STALE", error: "추천 목록이 달라졌어요. 다시 불러와 주세요." }, { status: 409 });
   const unavailableSingle = () => NextResponse.json({ code: "SINGLE_REFRESH_UNAVAILABLE", error: "새 후보를 잠시 확인하지 못했어요." }, { status: 503 });
   let ownRows: RecommendationCardRow[];
@@ -241,7 +243,8 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       .eq("card_id", sourceCardIds[0])
       .maybeSingle(),
     readCandidateImpressions(admin, user.id, nowMs).catch(() => null),
-    readRefreshCompensation(admin, user.id).catch(() => null),
+    // The availability hint is independent of paid/bonus full-page usage.
+    availabilityOnly ? 0 : readRefreshCompensation(admin, user.id).catch(() => null),
     readRecommendationPage(admin, user.id).catch(() => null),
     readRecommendationHistory(admin, user.id, nowMs).catch(() => null),
     !refreshPlan?.partialRepair && (refreshPlan || profiles.get(user.id)?.phone) ? readSingleCandidateSwaps(admin, user.id) : null,
@@ -654,7 +657,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       items = buildItems();
       plannedItems = refreshPlan ? buildItems(true) : [];
     }
-    const details = await fetchRecommendationDetails(admin, [...items, ...plannedItems].flatMap((item) =>
+    const details = await fetchRecommendationDetails(admin, availabilityOnly ? [] : [...items, ...plannedItems].flatMap((item) =>
       [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations, ...(item.expansion_candidates ?? [])].map((card) => card.id)));
     const hydrate = (cards: RecommendationCard[]) => cards.flatMap((card) => {
       const detail = details.get(card.id);
@@ -662,35 +665,64 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       return detail && detail.user_id === card.user_id && detail.sex === card.sex ? [detail] : [];
     });
     if (singleRefresh) {
-      const { sourceCardId, fromCandidateCardId, generationKey, plannedAt } = singleRefresh;
+      const { sourceCardId, generationKey, plannedAt } = singleRefresh;
       const item = items.find(row => row.source_card_id === sourceCardId);
       const source = mySourceCards.find(card => card.id === sourceCardId);
       const pageAt = pageGenerationTimes.get(sourceCardId);
       if (!item || !source || pageAt == null || !singleSwaps || singleRefreshGenerations.get(sourceCardId) !== generationKey) return staleSingle();
-      const main = hydrate(item.recommendations);
+      const main = availabilityOnly ? item.recommendations : hydrate(item.recommendations);
       const donorIds = repeatSingleCandidateIds(main, impressionResult?.rows ?? [], singleSwaps, generationKey, pageAt, nowMs);
-      if (!donorIds.includes(fromCandidateCardId)) return staleSingle();
+      const available = (found: boolean, refreshList = false) => NextResponse.json({
+        available: found, generation_key: generationKey, ...(refreshList ? { refresh_list: true } : {}),
+      });
+      const previousDeckIds = singleRefresh.mode === "availability" ? singleRefresh.previousCandidateCardIds ?? [] : [];
+      if (singleRefresh.mode === "replace" && !donorIds.includes(singleRefresh.fromCandidateCardId)) return staleSingle();
+      if (availabilityOnly && !donorIds.length && !previousDeckIds.length) return available(false);
       if (!hiddenCandidates.available || favoriteRowsRes.error || recoveryRes.error) return unavailableSingle();
+      const canContinue = () => !singleRefresh.signal?.aborted && Date.now() - nowMs < 10_000;
+      if (!canContinue()) return unavailableSingle();
       const alreadyDelivered = new Set((recentPages ?? []).flatMap(page => page.ids));
       const expansions = await admin.from(EXPANSION_TABLE).select("candidate_ids").eq("user_id", user.id)
         .gte("day_key", getKstDateString(new Date(nowMs - 30 * 86400000)));
       if (expansions.error && !["42P01", "PGRST205"].includes(expansions.error.code)) return unavailableSingle();
       for (const row of expansions.data ?? []) for (const id of row.candidate_ids ?? []) alreadyDelivered.add(id);
+      const onPreviousDeck = new Set(previousDeckIds);
       const pool = singleRefreshPools.get(sourceCardId) ?? [];
-      const deliveredUsers = await resolvePreviouslyDeliveredUsers(admin, alreadyDelivered, candidateUniverse);
+      const deliveredUsers = await resolvePreviouslyDeliveredUsers(admin, new Set([...alreadyDelivered, ...onPreviousDeck]), candidateUniverse);
+      const observed = impressionResult?.rows ?? [];
+      const alreadySwappedMembers = singleSwaps.map(row => row.to_candidate_user_id);
+      const pastMembers = new Set([...deliveredUsers, ...alreadySwappedMembers]);
+      const eligible = pool.filter(card => normalizePhoneForOneOnOneBlock(card.phone ?? ""));
+      // The canonical daily list can quietly gain a relevant new registration.
+      // Offer a read of that list if it wasn't already on this member's signed
+      // screen rather than telling them to replace a stale card.
+      if (availabilityOnly && onPreviousDeck.size) {
+        const currentlyShown = new Set(main.map(card => card.id));
+        const promoted = rankUnseenSingleCandidates(source, eligible.filter(card =>
+          currentlyShown.has(card.id) && !onPreviousDeck.has(card.id)), observed, alreadyDelivered, pastMembers);
+        if (promoted.length) {
+          if (!canContinue()) return unavailableSingle();
+          const read = await fetchRecommendationAvailabilityDetails(admin, promoted.map(card => card.id));
+          if (!canContinue()) return unavailableSingle();
+          if (promoted.some(card => {
+            const current = read.get(card.id);
+            return current?.hasPhoto && current.user_id === card.user_id &&
+              recommendationSourceKey(current) === recommendationSourceKey(card);
+          })) return available(true, true);
+        }
+      }
+      if (availabilityOnly && (!donorIds.length || singleSwaps.filter(row =>
+        Date.parse(row.created_at) > nowMs - 24 * 60 * 60 * 1000).length >= 10)) return available(false);
       const excludedUsers = new Set([
         ...[...item.recommendations, ...item.admin_recommendations, ...item.favorite_candidates].map(card => card.user_id),
-        ...singleSwaps.map(row => row.to_candidate_user_id),
-        ...deliveredUsers,
+        ...pastMembers,
       ]);
-      const eligible = pool.filter(card => normalizePhoneForOneOnOneBlock(card.phone ?? ""));
-      const choices = rankUnseenSingleCandidates(source, eligible, impressionResult?.rows ?? [], alreadyDelivered, excludedUsers);
+      const choices = rankUnseenSingleCandidates(source, eligible, observed, alreadyDelivered, excludedUsers);
       const noUnseen = () => NextResponse.json({ code: "NO_UNSEEN_CANDIDATE",
         error: "지금 보여드릴 새 후보를 찾지 못했어요. 현재 후보는 그대로예요." }, { status: 409 });
       const persisted = savedPageResult.page;
       const generationAt = persisted?.source_card_id === sourceCardId && Date.parse(persisted.refreshed_at) === pageAt &&
         persisted.source_profile_key === recommendationSourceKey(source) ? persisted.refreshed_at : new Date(pageAt).toISOString();
-      const canContinue = () => !singleRefresh.signal?.aborted && Date.now() - nowMs < 10_000;
       let resolvedConflicts = 0;
       for (let i = 0; i < choices.length; i += SINGLE_REFRESH_VALIDATION_BATCH) {
         if (!canContinue()) return unavailableSingle();
@@ -698,6 +730,16 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         const current = await getCurrentOneOnOneCardIds(admin, batch, profiles);
         const valid = batch.filter(card => current.has(card.id));
         if (!valid.length) continue;
+        if (singleRefresh.mode === "availability") {
+          const read = await fetchRecommendationAvailabilityDetails(admin, valid.map(card => card.id));
+          if (!canContinue()) return unavailableSingle();
+          if (valid.some(card => {
+            const current = read.get(card.id);
+            return current?.hasPhoto && current.user_id === card.user_id &&
+              recommendationSourceKey(current) === recommendationSourceKey(card);
+          })) return available(true);
+          continue;
+        }
         const choiceDetails = await fetchRecommendationDetails(admin, valid.map(card => card.id));
         for (const replacement of valid) {
           const detail = choiceDetails.get(replacement.id);
@@ -710,7 +752,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
             p_generation_key: generationKey,
             p_generation_at: generationAt,
             p_expected_refresh_at: source.recommendation_refresh_used_at ?? null,
-            p_from_candidate_card_id: fromCandidateCardId,
+            p_from_candidate_card_id: singleRefresh.fromCandidateCardId,
             p_to_candidate_card_id: replacement.id,
             p_planned_at: plannedAt,
             p_source_profile_key: recommendationSourceKey(source),
@@ -726,7 +768,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
             ++resolvedConflicts >= 3) return staleSingle();
         }
       }
-      return canContinue() ? noUnseen() : unavailableSingle();
+      return canContinue() ? availabilityOnly ? available(false) : noUnseen() : unavailableSingle();
     }
     if (expansion) {
       const item = items[0];

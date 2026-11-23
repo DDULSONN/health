@@ -3666,6 +3666,8 @@ function OpenCardsContent() {
           onReplaceCandidate={replaceOneOnOneCandidate}
           singleRefreshBusy={singleRefreshBusy}
           singleRefreshNotice={singleRefreshNotice}
+          singleRefreshViewerId={draftUserId}
+          singleRefreshIdentity={oneOnOneReplaceIdentityRef}
           refreshNotice={oneOnOneRefreshNotice}
         />
       ) : null}

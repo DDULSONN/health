@@ -111,6 +111,7 @@ function withoutLovePassMypageAdditions(source) {
 function withoutSingleCandidateMypageChanges(source) {
   const changes = [
     ['import OneOnOneCandidateReplaceButton from "@/components/dating/OneOnOneCandidateReplaceButton";\n', ''],
+    ['import OneOnOneCandidateAvailabilityNotice, { firstWaitingSingleCandidateGroup } from "@/components/dating/OneOnOneCandidateAvailabilityNotice";\n', ''],
     ['import { eligibleForSingleCandidateRefresh, useOneOnOneCandidateReplace, type SingleCandidateRefreshFields } from "@/lib/use-one-on-one-candidate-replace";\n', ''],
     ['type MyOneOnOneAutoRecommendationGroup = SingleCandidateRefreshFields & {\n', 'type MyOneOnOneAutoRecommendationGroup = {\n'],
     ['  source_card_id: string;\n  source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";\n', '  impression_ticket?: string | null;\n  source_card_id: string;\n  source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";\n'],
@@ -127,6 +128,15 @@ function withoutSingleCandidateMypageChanges(source) {
     ['    if (oneOnOneRefreshLocksRef.current.has(sourceCardId) || processingOneOnOneFavoriteKeys.includes(actionKey)) return;\n', '    if (processingOneOnOneFavoriteKeys.includes(actionKey)) return;\n'],
     ['blocked={!canRefreshAutoRecommendations || Boolean(oneOnOneRefreshReadError) || singleRefreshBusy?.sourceCardId === item.id}', 'blocked={!canRefreshAutoRecommendations || Boolean(oneOnOneRefreshReadError)}'],
     [`                        {singleRefreshNotice?.sourceCardId === item.id ? <p role="status" className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-700">{singleRefreshNotice.message}</p> : null}
+`, ''],
+    ['  const waitingSingleCandidateGroup = firstWaitingSingleCandidateGroup(myOneOnOneAutoRecommendations, singleRefreshNotice);\n', ''],
+    [`                        {waitingSingleCandidateGroup === autoRecommendationGroup && pageSectionTab === "matching" &&
+                          showMatchingGroup(matchingFilter, "one_on_one", myOneOnOneCards.length) && !isArchivedOneOnOneCard && !accountBanStatus?.is_banned &&
+                          !singleRefreshBusy && !refreshingOneOnOneRecommendationIds.length && !oneOnOneRefreshReadError &&
+                          !processingOneOnOneAutoKeys.length && !processingOneOnOneFavoriteKeys.length && !processingOneOnOneMatchIds.length &&
+                          !processingOneOnOneContactExchangeIds.length && !processingOneOnOneNudgeIds.length ?
+                          <OneOnOneCandidateAvailabilityNotice group={autoRecommendationGroup} viewerId={oneOnOneReplaceViewerId} identity={oneOnOneReplaceIdentityRef}
+                            onRead={() => { void reloadOneOnOneRecommendations(true, true).catch(() => setOneOnOneRefreshReadError("추천 후보를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.")); }} /> : null}
 `, ''],
     ['                            const replacing = singleRefreshBusy?.sourceCardId === item.id;\n', ''],
     ['disabled={processing || replacing}', 'disabled={processing}'],
@@ -202,6 +212,8 @@ function withoutSingleCandidateHomeChanges(source) {
     [`          onReplaceCandidate={replaceOneOnOneCandidate}
           singleRefreshBusy={singleRefreshBusy}
           singleRefreshNotice={singleRefreshNotice}
+          singleRefreshViewerId={draftUserId}
+          singleRefreshIdentity={oneOnOneReplaceIdentityRef}
 `, ''],
   ];
   for (const [index, [next, previous]] of changes.entries()) {
@@ -215,16 +227,19 @@ function withoutSingleCandidatePanelChanges(source) {
   source = source.replace(/\r\n/g, '\n');
   const changes = [
     ['import OneOnOneCandidateReplaceButton from "@/components/dating/OneOnOneCandidateReplaceButton";\n', ''],
-    ['import { eligibleForSingleCandidateRefresh, type SingleCandidateRefreshFields } from "@/lib/use-one-on-one-candidate-replace";\n', ''],
+    ['import OneOnOneCandidateAvailabilityNotice, { firstWaitingSingleCandidateGroup } from "@/components/dating/OneOnOneCandidateAvailabilityNotice";\n', ''],
+    ['import { eligibleForSingleCandidateRefresh, type SingleCandidateRefreshFields, type SingleCandidateRefreshNotice } from "@/lib/use-one-on-one-candidate-replace";\n', ''],
     ['type OneOnOneRecommendationGroup = SingleCandidateRefreshFields & {\n', 'type OneOnOneRecommendationGroup = {\n'],
     ['  expansion_enabled?: boolean;\n  source_card_status?: string;\n', '  impression_ticket?: string | null;\n  expansion_enabled?: boolean;\n  source_card_id?: string;\n  source_card_status?: string;\n'],
-    ['  onReplaceCandidate,\n  singleRefreshBusy,\n  singleRefreshNotice,\n', ''],
+    ['  onReplaceCandidate,\n  singleRefreshBusy,\n  singleRefreshNotice,\n  singleRefreshViewerId,\n  singleRefreshIdentity,\n', ''],
     ['  onRetryRecommendations,\n', ''],
     ['  onRetryRecommendations?: () => void;\n', ''],
     ['data-recommendation-retry onClick={onRetryRecommendations ?? onReload}', 'data-recommendation-retry onClick={onReload}'],
     [`  onReplaceCandidate?: (group: SingleCandidateRefreshFields, candidateId: string) => Promise<void>;
   singleRefreshBusy?: { sourceCardId: string; candidateId: string } | null;
-  singleRefreshNotice?: { sourceCardId: string; message: string } | null;
+  singleRefreshNotice?: SingleCandidateRefreshNotice | null;
+  singleRefreshViewerId?: string | null;
+  singleRefreshIdentity?: import("react").RefObject<string | null>;
 `, ''],
     ['                     const replacing = singleRefreshBusy?.sourceCardId === sourceCardId;\n', ''],
     ['disabled={!canSelect || replacing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}', 'disabled={!canSelect || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}'],
@@ -237,6 +252,12 @@ function withoutSingleCandidatePanelChanges(source) {
 `, ''],
     ['blocked={!canRefresh || replacing || favoriteBusyKeys.length > 0}', 'blocked={!canRefresh || favoriteBusyKeys.length > 0}'],
     [`                        {singleRefreshNotice?.sourceCardId === sourceCardId ? <p role="status" className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-700">{singleRefreshNotice.message}</p> : null}
+`, ''],
+    ['  const waitingSingleCandidateGroup = firstWaitingSingleCandidateGroup(displayedGroups, singleRefreshNotice);\n', ''],
+    [`                        {group === waitingSingleCandidateGroup && viewerLoggedIn && !sessionError && !singleRefreshBusy && !refreshingRecommendationIds.length &&
+                          !processingAutoKeys.length && !processingMatchIds.length && !processingContactIds.length &&
+                          !processingNudgeIds.length && !favoriteBusyKeys.length ?
+                          <OneOnOneCandidateAvailabilityNotice group={group} viewerId={singleRefreshViewerId} identity={singleRefreshIdentity} onRead={onRetryRecommendations} /> : null}
 `, ''],
   ];
   for (const [index, [next, previous]] of changes.entries()) {

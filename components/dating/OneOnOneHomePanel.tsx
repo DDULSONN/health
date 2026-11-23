@@ -24,7 +24,8 @@ import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } 
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import CandidateImpression from "@/components/dating/CandidateImpression";
 import OneOnOneCandidateReplaceButton from "@/components/dating/OneOnOneCandidateReplaceButton";
-import { eligibleForSingleCandidateRefresh, type SingleCandidateRefreshFields } from "@/lib/use-one-on-one-candidate-replace";
+import OneOnOneCandidateAvailabilityNotice, { firstWaitingSingleCandidateGroup } from "@/components/dating/OneOnOneCandidateAvailabilityNotice";
+import { eligibleForSingleCandidateRefresh, type SingleCandidateRefreshFields, type SingleCandidateRefreshNotice } from "@/lib/use-one-on-one-candidate-replace";
 import CandidateFavoriteButton from "@/components/dating/CandidateFavoriteButton";
 import OneOnOneFavorites from "@/components/dating/OneOnOneFavorites";
 import { getOneOnOneStarterKeys, getOneOnOneStarterGroups } from "@/lib/dating-1on1-starter";
@@ -183,6 +184,8 @@ export default function OneOnOneHomePanel({
   onReplaceCandidate,
   singleRefreshBusy,
   singleRefreshNotice,
+  singleRefreshViewerId,
+  singleRefreshIdentity,
   onCandidateHidden,
   onCandidateRestored,
   onFavoriteChanged,
@@ -221,7 +224,9 @@ export default function OneOnOneHomePanel({
   onRefreshRecommendations: (sourceCardId: string) => void;
   onReplaceCandidate?: (group: SingleCandidateRefreshFields, candidateId: string) => Promise<void>;
   singleRefreshBusy?: { sourceCardId: string; candidateId: string } | null;
-  singleRefreshNotice?: { sourceCardId: string; message: string } | null;
+  singleRefreshNotice?: SingleCandidateRefreshNotice | null;
+  singleRefreshViewerId?: string | null;
+  singleRefreshIdentity?: import("react").RefObject<string | null>;
   onCandidateHidden?: (candidateId: string) => void;
   onCandidateRestored?: () => Promise<void>;
   refreshNotice: OneOnOneRefreshNotice | null;
@@ -274,6 +279,7 @@ export default function OneOnOneHomePanel({
   const starterKeys = getOneOnOneStarterKeys(recommendationGroups);
   const starterPreview = arrivedFromOnboarding && !allCandidatesVisible && !targetMatchId && !focusIncomingRequests && starterKeys.size > 0;
   const displayedGroups = starterPreview ? getOneOnOneStarterGroups(recommendationGroups) : recommendationGroups;
+  const waitingSingleCandidateGroup = firstWaitingSingleCandidateGroup(displayedGroups, singleRefreshNotice);
   const favorites = recommendationGroups.flatMap(group => (group.favorite_candidates ?? [])
     .filter(card => card.id && group.source_card_id && !hiddenCandidateIds.has(card.id))
     .map(card => ({ group, card })));
@@ -631,6 +637,10 @@ export default function OneOnOneHomePanel({
                           notice={refreshNotice?.sourceCardId === sourceCardId ? refreshNotice : null}
                           onRequest={() => onRefreshRecommendations(sourceCardId)} /> : null}
                         {singleRefreshNotice?.sourceCardId === sourceCardId ? <p role="status" className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-700">{singleRefreshNotice.message}</p> : null}
+                        {group === waitingSingleCandidateGroup && viewerLoggedIn && !sessionError && !singleRefreshBusy && !refreshingRecommendationIds.length &&
+                          !processingAutoKeys.length && !processingMatchIds.length && !processingContactIds.length &&
+                          !processingNudgeIds.length && !favoriteBusyKeys.length ?
+                          <OneOnOneCandidateAvailabilityNotice group={group} viewerId={singleRefreshViewerId} identity={singleRefreshIdentity} onRead={onRetryRecommendations} /> : null}
                         {onCandidateRestored ? <CandidateHidesPanel enabled={group.hides_enabled === true}
                           availability={group.recommendation_availability}
                           revision={group} onRestored={onCandidateRestored} /> : null}

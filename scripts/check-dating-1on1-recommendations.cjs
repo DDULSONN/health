@@ -2198,12 +2198,138 @@ function singleReaders(fixture, { atTime = now, viewerId = fixture.own.user_id, 
     replace: async (body, origin = 'http://localhost') => observed(await apiLoad('@/app/api/dating/1on1/recommendations/replace/route').POST(new Request('http://localhost/api/dating/1on1/recommendations/replace', {
       method: 'POST', headers: { host: 'localhost', origin }, body: JSON.stringify(body),
     }))),
+    availability: async (group, patch = {}, receipt) => {
+      const query = new URLSearchParams({ source_card_id: group.source_card_id, generation_key: group.single_refresh_generation, ...patch });
+      return observed(await apiLoad('@/app/api/dating/1on1/recommendations/replace/route').GET(new Request(`http://localhost/api/dating/1on1/recommendations/replace?${query}`, {
+        headers: typeof receipt === 'string' ? { 'X-Jimtul-Candidate-Receipt': receipt } : undefined,
+      })));
+    },
   };
 }
 const singleQuota = group => Object.fromEntries(['refresh_remaining', 'refresh_bonus_remaining', 'refresh_used_count', 'refresh_used_at', 'refresh_limit', 'next_refresh_at', 'can_refresh'].map(key => [key, group[key]]));
 const payloadForSingle = (group, cardId) => ({ source_card_id: group.source_card_id, candidate_card_id: cardId,
   generation_key: group.single_refresh_generation, impression_ticket: group.impression_ticket });
 const noWrites = calls => calls.every(q => !q.insert && !q.update && !q.delete);
+
+function expectSingleAvailability(result, group, available, fixtureData, snapshot, refreshList = false) {
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.deepEqual(result.body, { available, generation_key: group.single_refresh_generation, ...(refreshList ? { refresh_list: true } : {}) },
+    'the response contains no candidate IDs, profile, photos, phone, or match data');
+  assert.match(result.response.headers.get('cache-control') ?? '', /private/);
+  assert.match(result.response.headers.get('cache-control') ?? '', /no-store/);
+  assert.equal(result.rpcCalls.length, 0, 'availability never attempts a swap, usage debit, or matching write');
+  assert.ok(noWrites(result.calls));
+  assert.deepEqual(fixtureData.tables, snapshot);
+}
+
+test('single-slot availability is read-only and notices a fresh eligible registration on the same generation', async () => {
+  const f = singleFixture(13);
+  const [group] = (await singleReaders(f).get()).body.items;
+  assert.ok(group.single_refresh_generation);
+  const before = structuredClone(f.tables);
+  expectSingleAvailability(await singleReaders(f).availability(group), group, false, f, before);
+  // This compatible newcomer is beyond the automatic page's 90km band but
+  // within the supported replacement radius; it is not counted as available
+  // if it was instead already inserted into the visible page.
+  const fresh = { ...f.cards[0], id: localId(880), user_id: localId(881), phone: '+821099911777', region: '대전',
+    created_at: new Date(now + 20).toISOString(), photo_paths: [`${localId(881)}/photo.webp`] };
+  f.tables.dating_1on1_cards.push(fresh);
+  f.tables.profiles.push({ user_id: fresh.user_id, phone_e164: fresh.phone, is_banned: false, phone_verified: true });
+  const reader = singleReaders(f, { atTime: now + 50 });
+  const [latestGroup] = (await reader.get()).body.items;
+  assert.equal(latestGroup.single_refresh_generation, group.single_refresh_generation);
+  assert.ok(![...latestGroup.recommendations, ...latestGroup.admin_recommendations].some(c => c.id === fresh.id));
+  assert.deepEqual(singleQuota(latestGroup), singleQuota(group));
+  const after = structuredClone(f.tables);
+  expectSingleAvailability(await singleReaders(f, { atTime: now + 50 }).availability(group), group, true, f, after);
+});
+
+test('single-slot availability with an authentic prior receipt can detect a newcomer already in the canonical list', async () => {
+  const f = singleFixture(13);
+  const [before] = (await singleReaders(f).get()).body.items;
+  const probeCandidate = before.single_refresh_candidate_ids[0];
+  const fresh = { ...f.cards[0], id: localId(887), user_id: localId(888), phone: '+821099911778',
+    created_at: new Date(now + 20).toISOString(), photo_paths: [`${localId(888)}/photo.webp`] };
+  f.tables.dating_1on1_cards.push(fresh);
+  f.tables.profiles.push({ user_id: fresh.user_id, phone_e164: fresh.phone, is_banned: false, phone_verified: true });
+  const reader = singleReaders(f, { atTime: now + 50 });
+  const [current] = (await reader.get()).body.items;
+  assert.equal(current.single_refresh_generation, before.single_refresh_generation);
+  assert.ok(current.recommendations.some(c => c.id === fresh.id), 'newcomer is already on the current server list');
+  assert.ok(current.single_refresh_candidate_ids.includes(probeCandidate), 'repeated card from the old list is still otherwise eligible');
+  const snapshot = structuredClone(f.tables);
+  const params = { probe_candidate_id: probeCandidate };
+  expectSingleAvailability(await singleReaders(f, { atTime: now + 50 }).availability(before), before, false, f, snapshot);
+  expectSingleAvailability(await singleReaders(f, { atTime: now + 50 }).availability(before, params, before.impression_ticket), before, true, f, snapshot, true);
+  expectSingleAvailability(await singleReaders(f, { atTime: now + 50 }).availability(before, params, current.impression_ticket), before, false, f, snapshot);
+  const wrongReceipt = reader.auth.createImpressionTicket(f.own.user_id, f.own.id, [before.admin_recommendations[0].id]);
+  const denied = await singleReaders(f, { atTime: now + 50 }).availability(before, params, wrongReceipt);
+  assert.equal(denied.response.status, 409);
+  assert.equal(denied.calls.length, 0);
+  assert.equal(denied.rpcCalls.length, 0);
+  assert.deepEqual(f.tables, snapshot);
+});
+
+test('single-slot availability honors active revisions, hides, and blocks rather than counting stale members', async () => {
+  const f = singleFixture(17);
+  const [hidden, blocked, olderRevision, held] = f.cards.slice(13);
+  held.status = 'rejected';
+  const latestRevision = { ...olderRevision, id: localId(885), region: '부산', created_at: '2026-01-02T00:00:00Z' };
+  f.tables.dating_1on1_cards.push(latestRevision);
+  f.tables.dating_1on1_candidate_hides = [{ id: localId(886), user_id: f.own.user_id, candidate_user_id: hidden.user_id,
+    candidate_card_id: hidden.id, candidate_name: hidden.name, created_at: new Date(now - 10).toISOString() }];
+  f.tables.dating_user_blocks = [{ blocker_user_id: blocked.user_id, blocked_user_id: f.own.user_id }];
+  const [group] = (await singleReaders(f).get()).body.items;
+  for (const [at, available, makeChange] of [
+    [now, false, () => {}],
+    [now + 100, true, () => { olderRevision.status = 'rejected'; latestRevision.region = '대전'; }],
+    [now + 200, false, () => { latestRevision.status = 'rejected'; }],
+  ]) {
+    makeChange();
+    const snapshot = structuredClone(f.tables);
+    expectSingleAvailability(await singleReaders(f, { atTime: at }).availability(group), group, available, f, snapshot);
+  }
+});
+
+test('single-slot availability rejects unauthenticated or stale-source reads without a reply containing any candidate data', async () => {
+  const f = singleFixture();
+  const [group] = (await singleReaders(f).get()).body.items;
+  const snapshot = structuredClone(f.tables);
+  for (const [viewerId, patch, expected] of [
+    [null, {}, 401],
+    [f.own.user_id, { generation_key: 'a'.repeat(64) }, 409],
+    [f.own.user_id, { source_card_id: f.cards[0].id }, 409],
+  ]) {
+    const result = await singleReaders(f, { viewerId }).availability(group, patch);
+    assert.equal(result.response.status, expected, JSON.stringify(result.body));
+    assert.equal(result.body.available, undefined);
+    assert.equal(result.body.items, undefined);
+    assert.equal(result.rpcCalls.length, 0);
+    assert.ok(noWrites(result.calls));
+    assert.deepEqual(f.tables, snapshot);
+  }
+});
+
+test('single-slot availability uses a rolling ten-per-24h ceiling without reading it as full-refresh quota', async () => {
+  const f = singleFixture(14);
+  f.tables.dating_1on1_refresh_compensations = [];
+  const [group] = (await singleReaders(f).get()).body.items;
+  assert.equal(group.refresh_remaining, 0, 'normal quota is already spent');
+  const older = new Date(now - day - 1).toISOString();
+  const recent = new Date(now - day + 60_000).toISOString();
+  for (let index = 0; index < 10; index++) f.tables[SWAPS].push({
+    user_id: f.own.user_id, source_card_id: localId(900 + index), generation_key: '1'.repeat(64),
+    from_candidate_card_id: localId(910 + index), to_candidate_card_id: localId(920 + index), to_candidate_user_id: localId(930 + index),
+    created_at: index === 0 ? older : recent,
+  });
+  const snapshot = structuredClone(f.tables);
+  expectSingleAvailability(await singleReaders(f).availability(group), group, true, f, snapshot);
+  f.tables[SWAPS][0].created_at = new Date(now - 1000).toISOString();
+  const capped = structuredClone(f.tables);
+  expectSingleAvailability(await singleReaders(f).availability(group), group, false, f, capped);
+  const [after] = (await singleReaders(f).get()).body.items;
+  assert.deepEqual(singleQuota(after), singleQuota(group));
+});
 
 test('single-slot GET only exposes tried, visible normal candidates, not extra cards, and authors no writes', async () => {
   const f = singleFixture();

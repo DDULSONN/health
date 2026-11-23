@@ -37,6 +37,7 @@ import FriendRecommendButton from "@/components/dating/sharing/FriendRecommendBu
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import CandidateImpression from "@/components/dating/CandidateImpression";
 import OneOnOneCandidateReplaceButton from "@/components/dating/OneOnOneCandidateReplaceButton";
+import OneOnOneCandidateAvailabilityNotice, { firstWaitingSingleCandidateGroup } from "@/components/dating/OneOnOneCandidateAvailabilityNotice";
 import { eligibleForSingleCandidateRefresh, useOneOnOneCandidateReplace, type SingleCandidateRefreshFields } from "@/lib/use-one-on-one-candidate-replace";
 import { CandidateHideButton, CandidateHidesPanel } from "@/components/dating/CandidateHides";
 import { flushCandidateImpressions } from "@/lib/dating-1on1-impressions-client";
@@ -8121,6 +8122,7 @@ export default function MyPage() {
   for (const group of myOneOnOneAutoRecommendations) {
     myOneOnOneAutoRecommendationsByCardId.set(group.source_card_id, group);
   }
+  const waitingSingleCandidateGroup = firstWaitingSingleCandidateGroup(myOneOnOneAutoRecommendations, singleRefreshNotice);
   const normalizedAdminApplyCreditSearch = adminApplyCreditSearch.trim().toLowerCase();
   const filteredAdminApplyCreditOrders =
     normalizedAdminApplyCreditSearch.length === 0
@@ -10483,6 +10485,13 @@ export default function MyPage() {
                           notice={oneOnOneRefreshNotice?.sourceCardId === item.id ? oneOnOneRefreshNotice : null}
                           onRequest={() => void handleRefreshOneOnOneRecommendations(item.id)} />
                         {singleRefreshNotice?.sourceCardId === item.id ? <p role="status" className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-700">{singleRefreshNotice.message}</p> : null}
+                        {waitingSingleCandidateGroup === autoRecommendationGroup && pageSectionTab === "matching" &&
+                          showMatchingGroup(matchingFilter, "one_on_one", myOneOnOneCards.length) && !isArchivedOneOnOneCard && !accountBanStatus?.is_banned &&
+                          !singleRefreshBusy && !refreshingOneOnOneRecommendationIds.length && !oneOnOneRefreshReadError &&
+                          !processingOneOnOneAutoKeys.length && !processingOneOnOneFavoriteKeys.length && !processingOneOnOneMatchIds.length &&
+                          !processingOneOnOneContactExchangeIds.length && !processingOneOnOneNudgeIds.length ?
+                          <OneOnOneCandidateAvailabilityNotice group={autoRecommendationGroup} viewerId={oneOnOneReplaceViewerId} identity={oneOnOneReplaceIdentityRef}
+                            onRead={() => { void reloadOneOnOneRecommendations(true, true).catch(() => setOneOnOneRefreshReadError("추천 후보를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.")); }} /> : null}
                         {!isArchivedOneOnOneCard && <CandidateHidesPanel enabled={autoRecommendationGroup?.hides_enabled === true}
                           availability={autoRecommendationGroup?.recommendation_availability}
                           revision={autoRecommendationGroup} onRestored={() => reloadOneOnOneRecommendations(true, true)} />}

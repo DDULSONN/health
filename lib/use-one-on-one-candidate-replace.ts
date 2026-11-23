@@ -10,6 +10,12 @@ export type SingleCandidateRefreshFields = {
   impression_ticket?: string | null;
 };
 
+export type SingleCandidateRefreshNotice = {
+  sourceCardId: string;
+  message: string;
+  noCandidateGeneration?: string | null;
+};
+
 export function eligibleForSingleCandidateRefresh(group: SingleCandidateRefreshFields | null | undefined, candidateId: string) {
   return Boolean(candidateId && group?.source_card_id && typeof group.single_refresh_generation === "string" && group.single_refresh_generation &&
     typeof group.impression_ticket === "string" && group.impression_ticket &&
@@ -27,7 +33,7 @@ type Options = {
 
 export function useOneOnOneCandidateReplace({ identity, viewerId, locks, needsReload, reload, onReadFailure }: Options) {
   const [busy, setBusy] = useState<{ userId: string; sourceCardId: string; candidateId: string } | null>(null);
-  const [notice, setNotice] = useState<{ userId: string; sourceCardId: string; message: string } | null>(null);
+  const [notice, setNotice] = useState<(SingleCandidateRefreshNotice & { userId: string }) | null>(null);
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => active.current?.abort(), []);
 
@@ -59,7 +65,8 @@ export function useOneOnOneCandidateReplace({ identity, viewerId, locks, needsRe
           : body?.code === "SINGLE_REFRESH_LIMIT" ? "최근 24시간 동안 한 명씩 바꾸기를 모두 사용했어요. 현재 후보는 그대로예요."
           : body?.code === "SINGLE_REFRESH_SLOW_DOWN" ? "잠시 후 다시 눌러 주세요. 현재 후보는 그대로예요." : null;
         if (response.status < 500 && unchangedMessage) {
-          setNotice({ userId, sourceCardId, message: unchangedMessage });
+          setNotice({ userId, sourceCardId, message: unchangedMessage,
+            ...(body?.code === "NO_UNSEEN_CANDIDATE" ? { noCandidateGeneration: group.single_refresh_generation } : {}) });
           return;
         }
         changed = response.ok && body?.ok === true && body.changed === true;

@@ -5,10 +5,11 @@ const path = require('node:path');
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const replacePath = '/api/dating/1on1/recommendations/replace';
 const listPath = '/api/dating/1on1/recommendations/my';
+const availabilityWait = 180_010;
 
 module.exports = async ({ browser, origin, output }) => {
   let passed = 0;
-  for (const surface of ['home', 'mypage']) for (const scenario of ['success', 'core-outage', 'empty', 'limit', 'slow-down', 'stale', 'unknown', 'identity-change', 'access-lost']) {
+  for (const surface of ['home', 'mypage']) for (const scenario of ['success', 'core-outage', 'empty', 'limit', 'slow-down', 'stale', 'unknown', 'identity-change', 'access-lost', 'availability-stock', 'availability-reload', 'availability-identity', 'availability-ineligible']) {
     if (surface === 'mypage' && scenario === 'access-lost') continue;
     const width = scenario === 'empty' ? 1280 : 360;
     const context = await browser.newContext({ viewport: { width, height: 844 } });
@@ -21,15 +22,40 @@ module.exports = async ({ browser, origin, output }) => {
     const nextOwn = { ...own, id: id(8), user_id: 'another-fixture-member', name: '다른 계정' }, nextCandidate = card(9, '다른 계정 후보');
     const requests = [], errors = [];
     let substituted = false, reads = 0, posts = 0, online = scenario !== 'unknown', external = 0, newIdentity = false;
+    const availabilityScenario = scenario.startsWith('availability-');
+    let availabilityReads = 0, availabilityReady = scenario === 'availability-reload' || scenario === 'availability-identity';
+    let releaseAvailability, startAvailability;
+    const holdAvailability = new Promise(resolve => { releaseAvailability = resolve; });
+    const availabilityStarted = new Promise(resolve => { startAvailability = resolve; });
     let releasePost, startPost;
     const holdPost = new Promise(resolve => { releasePost = resolve; });
     const postStarted = new Promise(resolve => { startPost = resolve; });
     page.on('pageerror', error => errors.push(error.message));
+    if (availabilityScenario) {
+      await page.clock.install();
+      await page.addInitScript(() => {
+        let visibility = 'visible';
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+        window.fixtureSetVisibility = next => {
+          visibility = next;
+          document.dispatchEvent(new Event('visibilitychange'));
+        };
+      });
+    }
     await context.route('**/*', async route => {
       const req = route.request(), url = new URL(req.url());
       if (url.origin !== origin) { external++; await route.abort(); return; }
       if (!url.pathname.startsWith('/api/')) return route.continue();
       requests.push([req.method(), url.pathname]);
+      if (req.method() === 'GET' && url.pathname === replacePath) {
+        assert.deepEqual(Object.fromEntries(url.searchParams), { source_card_id: own.id, generation_key: 'demo-generation', probe_candidate_id: old.id });
+        assert.equal(req.headers()['x-jimtul-candidate-receipt'], 'demo-receipt');
+        assert.equal(url.href.includes('demo-receipt'), false);
+        availabilityReads++;
+        startAvailability();
+        if (scenario === 'availability-identity') await holdAvailability;
+        return route.fulfill({ json: { available: availabilityReady, generation_key: 'demo-generation', refresh_list: scenario === 'availability-reload' } }).catch(() => {});
+      }
       if (req.method() !== 'GET') {
         if (url.pathname === '/api/dating/1on1/recommendations/impressions' || url.pathname.startsWith('/api/analytics/')) return route.fulfill({ json: { ok: true } });
         assert.equal(url.pathname, replacePath);
@@ -66,6 +92,7 @@ module.exports = async ({ browser, origin, output }) => {
             recommendations: [substituted ? fresh : old, other], admin_recommendations: [added], favorite_candidates: [favorite],
             // Extra/favorite intentionally included in the mock allowlist to verify the separate render gate.
             single_refresh_candidate_ids: substituted ? [] : [old.id, added.id, favorite.id],
+            new_candidate_notice: availabilityScenario && scenario !== 'availability-ineligible' ? { state: 'waiting', new_candidate_count: 0 } : null,
             impression_ticket: substituted ? 'next-receipt' : 'demo-receipt', single_refresh_generation: substituted ? 'next-generation' : 'demo-generation',
             refresh_limit: 2, refresh_remaining: 2, refresh_used_count: 0, can_refresh: true }] };
           break;
@@ -80,6 +107,59 @@ module.exports = async ({ browser, origin, output }) => {
       await replace.waitFor(); await quota.waitFor();
       assert.equal(await replace.count(), 1);
       assert.ok((await replace.boundingBox()).height >= 44);
+      if (availabilityScenario) {
+        const stock = page.getByText('조건에 맞는 새 후보가 있어요', { exact: true });
+        const checkNew = page.getByRole('button', { name: '새 후보 확인', exact: true });
+        await page.clock.fastForward(60_000);
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+        assert.equal(availabilityReads, 0, 'opening/focusing never skips the initial three-minute delay');
+        await page.clock.fastForward(availabilityWait);
+        if (scenario === 'availability-ineligible') {
+          assert.equal(availabilityReads, 0, 'a repeated card alone does not start checks');
+        } else {
+          await availabilityStarted;
+          if (scenario === 'availability-identity') {
+            newIdentity = true;
+            await page.evaluate(() => {
+              sessionStorage.setItem('gymtools-fixture-viewer', 'another-fixture-member');
+              window.dispatchEvent(new Event('gymtools-fixture-viewer-changed'));
+            });
+            await name(nextCandidate.name).waitFor();
+            releaseAvailability();
+            await page.clock.fastForward(availabilityWait);
+            assert.equal(await stock.count(), 0);
+            assert.equal(availabilityReads, 1);
+          } else if (scenario === 'availability-reload') {
+            await stock.waitFor();
+            const before = reads;
+            substituted = true;
+            await checkNew.evaluate(el => { el.click(); el.click(); });
+            await name(fresh.name).waitFor();
+            assert.equal(reads, before + 1);
+            assert.equal(await stock.count(), 0);
+          } else {
+            assert.equal(await stock.count(), 0);
+            await page.evaluate(() => window.fixtureSetVisibility('hidden'));
+            availabilityReady = true;
+            await page.clock.fastForward(availabilityWait);
+            assert.equal(availabilityReads, 1, 'hidden document did not poll');
+            await page.evaluate(() => window.fixtureSetVisibility('visible'));
+            await stock.waitFor(); assert.equal(availabilityReads, 2);
+            assert.equal(await checkNew.count(), 0, 'stock-only response does not open the canonical list');
+            await page.clock.fastForward(3 * availabilityWait);
+            assert.equal(availabilityReads, 2, 'positive notice stops polling');
+            assert.equal(posts, 0);
+            releasePost();
+            await replace.click();
+            await name(fresh.name).waitFor();
+            assert.equal(posts, 1); assert.equal(await stock.count(), 0);
+          }
+        }
+        assert.equal(posts, scenario === 'availability-stock' ? 1 : 0, 'GET probe and canonical read never issue a replacement');
+        assert.deepEqual(errors, []); assert.equal(external, 0);
+        passed++; console.log(`PASS single candidate ${surface} / ${scenario}: read-only availability until explicit swap`);
+        continue;
+      }
       const before = reads;
       await replace.evaluate(el => { el.click(); el.click(); });
       await page.getByRole('button', { name: '바꾸는 중…', exact: true }).waitFor();
@@ -148,7 +228,7 @@ module.exports = async ({ browser, origin, output }) => {
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       assert.deepEqual(errors, []); assert.equal(external, 0);
       passed++; console.log(`PASS single candidate ${surface} / ${scenario}: one replacement POST, bulk quota unchanged, 0 external requests`);
-    } finally { releasePost(); await context.close(); }
+    } finally { releasePost(); releaseAvailability(); await context.close(); }
   }
   return passed;
 };
