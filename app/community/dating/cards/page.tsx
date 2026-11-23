@@ -40,6 +40,7 @@ import { createLatestRequest } from "@/lib/latest-request";
 import { createViewerSessionRecovery, VIEWER_SESSION_ERROR } from "@/lib/viewer-session-recovery";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
 import { readDatingJson } from "@/lib/dating-read-json";
+import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 import AllPassProfileOfferBanner from "@/components/dating/AllPassProfileOfferBanner";
 import ProfileStartCard from "@/components/dating/ProfileStartCard";
@@ -234,6 +235,8 @@ const PAGE_SIZE = 20;
 const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v3";
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const ONE_ON_ONE_WAIT_NOTICE = /^(?:1\s*대\s*1|1\s*:\s*1)\s*매칭은\s*대기가\s*없어요[!！.]?$/u;
+const contactHomeDismissKey = (viewerId: string, matchId: string) => `gymtool:contact-home-dismiss:${viewerId}:${matchId}`;
+const ONE_ON_ONE_MUTUAL_NOTICE = "서로 수락했어요. 매칭을 확인해 보세요.";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 const DATING_REACTION_COUNT_EVENT = "dating-reaction-count";
@@ -1663,6 +1666,26 @@ function OpenCardsContent() {
   const [homeFeatureTab, setHomeFeatureTab] = useState<HomeFeatureTab>(
     () => parseHomeFeatureTab(searchParams.get("tab")) ?? "open_cards"
   );
+  const [contactHomeNotice, setContactHomeNotice] = useState<{ viewerId: string; matchId: string } | null>(null);
+  const contactNoticeViewer = homeFeatureTab === "open_cards" && viewerSessionReady && viewerLoggedIn &&
+    viewerPhoneVerified && !viewerSessionError && hasActiveOneOnOneProfile ? draftUserId : null;
+  useEffect(() => {
+    setContactHomeNotice(null);
+    if (!contactNoticeViewer) return;
+    const controller = new AbortController();
+    void fetchClientJson<{ matchId?: unknown }>("/api/dating/1on1/contact-home-notice", {
+      cache: "no-store",
+      signal: controller.signal,
+    }, 5000).then(({ response, body }) => {
+      const matchId = response.ok ? normalizeOneOnOneMatchId(body?.matchId) : null;
+      if (!matchId || controller.signal.aborted) return;
+      try {
+        if (sessionStorage.getItem(contactHomeDismissKey(contactNoticeViewer, matchId))) return;
+      } catch { /* Privacy mode may disable storage. */ }
+      setContactHomeNotice({ viewerId: contactNoticeViewer, matchId });
+    }).catch(() => { /* This optional notice cannot hold up the home feed. */ });
+    return () => controller.abort();
+  }, [contactNoticeViewer]);
   const homeFeatureTabRef = useRef(homeFeatureTab);
   useLayoutEffect(() => {
     homeFeatureTabRef.current = homeFeatureTab;
@@ -1691,6 +1714,7 @@ function OpenCardsContent() {
   const [processingOneOnOneNudgeIds, setProcessingOneOnOneNudgeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [oneOnOneActionNotice, setOneOnOneActionNotice] = useState("");
+  const [oneOnOneMutualNoticeId, setOneOnOneMutualNoticeId] = useState<string | null>(null);
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
   const { confirmOneOnOneRefresh, refreshConfirmationDialog } = useOneOnOneRefreshConfirmation();
   const [oneOnOneRefreshNotice, setOneOnOneRefreshNotice] = useState<OneOnOneRefreshNotice | null>(null);
@@ -1866,6 +1890,7 @@ function OpenCardsContent() {
         setOneOnOneHomeError("");
         setOneOnOneHomeLoading(false);
         setOneOnOneActionNotice("");
+        setOneOnOneMutualNoticeId(null);
         // Discard all component-local member data at an account boundary.
         window.location.reload();
       },
@@ -2613,7 +2638,7 @@ function OpenCardsContent() {
     ) => {
       if (oneOnOneMatchActionLocksRef.current.has(matchId)) return;
       oneOnOneMatchActionLocksRef.current.add(matchId);
-      if (action === "select_candidate") setOneOnOneActionNotice("");
+      setOneOnOneActionNotice("");
       setProcessingOneOnOneMatchIds((prev) => [...prev, matchId]);
       try {
         const res = await fetch(`/api/dating/1on1/matches/${matchId}`, {
@@ -2621,7 +2646,10 @@ function OpenCardsContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action }),
         });
-        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; code?: string };
+        const body = (await res.json().catch(() => ({}))) as {
+          ok?: boolean; error?: string; code?: string;
+          item?: { id?: string; state?: string; contact_exchange_status?: string } | null;
+        };
         if (!res.ok || !body.ok) {
           if ((action === "source_cancel" || action === "cancel_mutual") && res.status === 409) {
             await reloadOneOnOneHome();
@@ -2646,6 +2674,11 @@ function OpenCardsContent() {
         if (action === "select_candidate") {
           setOneOnOneHome((prev) => prev ? { ...prev, hasSentRequest: true } : prev);
           setOneOnOneActionNotice(buildOneOnOneRequestSentMessage(oneOnOneHome?.matches.find((match) => match.id === matchId)?.counterparty_card?.name));
+        }
+        if ((action === "source_accept" || action === "candidate_accept") && body.item?.id === matchId &&
+          normalizeOneOnOneMatchId(matchId) && canOfferOneOnOneContact(body.item)) {
+          setOneOnOneMutualNoticeId(matchId);
+          setOneOnOneActionNotice(ONE_ON_ONE_MUTUAL_NOTICE);
         }
         await reloadOneOnOneHome();
       } catch (error) {
@@ -2990,7 +3023,9 @@ function OpenCardsContent() {
   return (
     <main className="mx-auto max-w-5xl px-3 py-4 md:px-6 md:py-7">
       {refreshConfirmationDialog}
-      {viewerLoggedIn && homeFeatureTab === "one_on_one" ? <OneOnOneActionNotice message={oneOnOneActionNotice} onDismiss={() => setOneOnOneActionNotice("")} /> : null}
+      {viewerLoggedIn && homeFeatureTab === "one_on_one" ? <OneOnOneActionNotice message={oneOnOneActionNotice}
+        matchHref={oneOnOneMutualNoticeId && oneOnOneActionNotice === ONE_ON_ONE_MUTUAL_NOTICE ? oneOnOneMatchHref(oneOnOneMutualNoticeId) : undefined}
+        onDismiss={() => { setOneOnOneActionNotice(""); setOneOnOneMutualNoticeId(null); }} /> : null}
       <DatingAdultNotice />
       {viewerSessionError && !showOneOnOneSection ? (
         <div role="alert" className="mb-3 rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
@@ -3023,6 +3058,25 @@ function OpenCardsContent() {
           })}
         </div>
       </section>
+      {contactHomeNotice && contactHomeNotice.viewerId === contactNoticeViewer ? (
+        <section aria-label="서로 수락한 1:1 매칭 안내" className="mb-3 flex flex-wrap items-center gap-x-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-1.5">
+          <p className="min-w-0 flex-1 basis-32 break-keep py-1.5 text-sm font-semibold leading-5 text-neutral-900">서로 수락한 매칭이 있어요</p>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <Link href={oneOnOneMatchHref(contactHomeNotice.matchId)} prefetch={false}
+              className="inline-flex min-h-11 items-center whitespace-nowrap rounded-lg bg-white px-3 text-sm font-semibold text-rose-700 ring-1 ring-inset ring-rose-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700">
+              매칭 확인
+            </Link>
+            <button type="button" aria-label="안내 닫기"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-lg text-neutral-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700"
+              onClick={() => {
+                try { sessionStorage.setItem(contactHomeDismissKey(contactHomeNotice.viewerId, contactHomeNotice.matchId), "1"); } catch { /* Still close locally. */ }
+                setContactHomeNotice(null);
+              }}>
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
+        </section>
+      ) : null}
       {showDraftResumeCard && profileDraft ? <DatingDraftResumeCard draft={profileDraft} href="/onboarding/dating" /> : null}
       <AllPassProfileOfferBanner placement="matching_home_profile_complete" />
       {showProfileStartCard ? (

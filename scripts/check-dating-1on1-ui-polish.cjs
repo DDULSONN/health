@@ -67,7 +67,7 @@ if (require.main === module) {
       ? '12171b81d91fed7abe842e97eb22a4d55f776a43a67d23d4b4e1064c623926bc'
       // Same article/children/buttons, with a visibility-only observation hook.
       // Same photo links and action children; all profile text uses the shared disclosure.
-      : name === 'OneOnOneCandidateCard' ? '189e9053967893cf779d480e92fae212aa3a360e972816a71e48651ff217123a'
+      : name === 'OneOnOneCandidateCard' ? 'df450bedb6bb31ceffe30d1943dc946e291163ff620576355e9d02771474b61c'
       // Reviewed sender label/copy only; expand, pagination and accept/reject
       // children are exercised by participation SSR and actual-page tests.
       : name === 'OneOnOneIncomingRequests' ? '4f91d61efa993394937b165da22838d88a24ff3d08cedb756275f92e5322e9d1' : baseline.functions[name];
@@ -78,9 +78,6 @@ if (require.main === module) {
       const notice = '              <OneOnOneCandidateRegionNotice widened={card?.recommendation_region_widened} />\n';
       assert.equal(source.split(notice).length, 2);
       source = source.replace(notice, '');
-      const share = '          {card?.id && impressionTicket ? <FriendRecommendButton kind="one_on_one" cardId={card.id} ticket={impressionTicket} label={name} /> : null}\n';
-      assert.equal(source.split(share).length, 2);
-      source = source.replace(share, ''); // Separate sharing flow tested in check-friend-recommendation.
     }
     assert.equal(fingerprint(source, name), expected);
   });
@@ -99,19 +96,21 @@ if (require.main === module) {
     // check-home-candidate-hides executes it against incoming/sent/paid states.
     bindings.activeMatches = '97d0aadcc8c126739a2bd9517c464ed7e8f06d6cd02837f0d078222ebb8033e7';
     const expected = { ...baseline.panel, bindings, callbacks: [
-      ...baseline.panel.callbacks.filter(callback => callback !== 'onClick={() => setVisibleMatchCount((count) => count + 8)}'),
+      ...baseline.panel.callbacks.filter((callback, index, callbacks) =>
+        callback !== 'onClick={() => setVisibleMatchCount((count) => count + 8)}' &&
+        (callback !== 'onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}' || callbacks.indexOf(callback) === index)),
       'onClick={onReload}', 'onCheckUsage={onReload}', 'onExchange={onContactCheckout}', 'onNudge={onContactNudge}',
-      ...Array(4).fill('onHidden={onCandidateHidden}'), 'onRestored={onCandidateRestored}',
+      ...Array(3).fill('onHidden={onCandidateHidden}'), 'onRestored={onCandidateRestored}',
       // Reviewed saved-candidate actions reuse the existing matching callback.
       'onClick={() => onAutoSelect(sourceCardId, candidateId, card.name)}',
-      'onClick={() => setAllCandidatesVisible(true)}', 'onReported={onReported}',
-      ...Array(3).fill('onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}'),
-      ...Array(2).fill('onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, !group.favorite_candidates?.some(card => card.id === candidateId))}'),
+      'onClick={() => setAllCandidatesVisible(true)}',
+      ...Array(2).fill('onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}'),
+      'onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, !group.favorite_candidates?.some(card => card.id === candidateId))}',
       'onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, false)}',
-    ].sort(), disabled: [...baseline.panel.disabled.map(value => value === 'disabled={!canSelect || processingAutoKeys.includes(actionKey)}'
+    ].sort(), disabled: [...baseline.panel.disabled.slice(0, 1).map(value => value === 'disabled={!canSelect || processingAutoKeys.includes(actionKey)}'
       ? 'disabled={!canSelect || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}' : value),
-      ...Array(2).fill('disabled={!canSelect || refreshing || processingAutoKeys.length > 0}'),
-      ...Array(2).fill('disabled={!canSelect || refreshing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}'),
+      'disabled={!canSelect || refreshing || processingAutoKeys.length > 0}',
+      'disabled={!canSelect || refreshing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}',
       ...Array(2).fill('disabled={busy}'),
       'disabled={processingMatchIds.includes(match.id) || refreshingRecommendationIds.length > 0}',
     ].sort() };

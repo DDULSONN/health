@@ -14,7 +14,7 @@ export type ContactPresentationMatch = {
     available?: boolean;
     received_from_other?: { created_at?: string | null } | null;
     replies_available?: boolean;
-    sent_by_me?: { reply?: { created_at?: string | null } | null } | null;
+    sent_by_me?: { reply?: { created_at?: string | null; preset_key?: string } | null } | null;
   } | null;
 };
 

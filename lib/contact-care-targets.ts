@@ -10,7 +10,7 @@ const size = 30;
 
 // All lookups are server-only and fail closed. Explicit pair queries are bounded
 // by this page's participants, not by a global limit on a member's block history.
-async function blockedPeers(db: SupabaseClient, me: string, peers: string[]) {
+export async function getContactExchangeBlockedPeers(db: SupabaseClient, me: string, peers: string[]) {
   const blocked = new Set<string>();
   if (!peers.length) return blocked;
   async function pairs(table: string, from: string, to: string) {
@@ -83,7 +83,7 @@ export async function careTargetPage(db: SupabaseClient, me: string, cursor: Cur
     if (error) throw error;
     const rows: Row[] = data ?? [];
     const peers = [...new Set(rows.map(r => other(r, me)).filter(p => p && p !== me && !visibility.has(p)))];
-    const blocked = await blockedPeers(db, me, peers);
+    const blocked = await getContactExchangeBlockedPeers(db, me, peers);
     for (const peer of peers) visibility.set(peer, !blocked.has(peer));
     visible.push(...rows.filter(r => visibility.get(other(r, me))));
     if (rows.length < batch) break;

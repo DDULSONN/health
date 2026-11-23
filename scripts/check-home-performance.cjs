@@ -165,8 +165,8 @@ const movedFunctions = {
   // No handler changed; actual page tests preserve requests, contact and quota.
   // Reviewed first-request aside/eligibility; separate action/payment contracts
   // stay pinned. Actual-page tests cover navigation without refresh or submission.
-  OneOnOneHomePanel: 'c80f066ea6f39f6ade67cef77efc95b0a3151dbf3ab51a649c0a36bcfcab3cf8',
-  OneOnOneCandidateCard: 'ab83423c6962c84c974052b0bf024392846e572e8f7b2a4b8c7471a8f53a16a8',
+  OneOnOneHomePanel: '608617e73bab26a6511d95089089697ac87dbf5c5e919b3885c1cbdd49007c32',
+  OneOnOneCandidateCard: '45ce8332663f7e34260930d3b65955518c552f8dbe04d5eb858e9fbccf59d841',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',
   getOneOnOneDisplayName: 'cb337ea077c58b6fe6105cb1d3cb1079f5d0e8f3113e7a8bbd482dd3544ee0e9',
@@ -184,14 +184,11 @@ for (const [name, hash] of Object.entries(movedFunctions)) test('extraction pres
     code = code.replace(quotaCheck, '');
   }
   if (name === 'OneOnOneCandidateCard') {
-    // Allow only the separately tested region notice, preserving the old
-    // byte-for-byte contract for every existing photo and action control.
+    // Preserve the separately tested region note boundary. The new pin also
+    // covers the reviewed request-first layout and moved sharing control.
     const notice = '              <OneOnOneCandidateRegionNotice widened={card?.recommendation_region_widened} />\n';
     assert.equal(code.split(notice).length, 2);
     code = code.replace(notice, '');
-    const share = '          {card?.id && impressionTicket ? <FriendRecommendButton kind="one_on_one" cardId={card.id} ticket={impressionTicket} label={name} /> : null}\n';
-    assert.equal(code.split(share).length, 2);
-    code = code.replace(share, ''); // Isolated sharing control; existing actions stay pinned.
   }
   const ast = ts.createSourceFile('panel.tsx', code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const node = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name); assert.ok(node);

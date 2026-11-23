@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { PayerContactChoice } from "@/lib/dating-private-contact";
 import OneOnOneExchangedContact from "@/components/dating/OneOnOneExchangedContact";
 import FriendRecommendButton from "@/components/dating/sharing/FriendRecommendButton";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import DatingReportButton, { type DatingReportTargetType, type DatingReportResult } from "@/components/DatingReportButton";
 import OneOnOneRefreshControl, { type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
 import OneOnOneCandidateRegionNotice from "@/components/dating/OneOnOneCandidateRegionNotice";
@@ -100,6 +100,7 @@ type OneOnOneMatchPreview = {
 };
 
 const ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS = 72 * 60 * 60 * 1000;
+const INITIAL_BROWSE_COUNT = 3;
 
 function canCancelOneOnOneMatchPreview(match: OneOnOneMatchPreview) {
   if (match.state !== "mutual_accepted" && match.state !== "candidate_accepted") return false;
@@ -458,7 +459,7 @@ export default function OneOnOneHomePanel({
                   included={plusContactExchangeIncluded} processing={processingContactIds.includes(match.id)}
                   nudge={match.contact_nudge} nudgeProcessing={processingNudgeIds.includes(match.id)}
                   onExchange={onContactCheckout} onNudge={onContactNudge} />
-              )} />
+              )} homePreview focusedMatchId={focusedMatch?.id} />
             </div>
             <div id="one-on-one-incoming" ref={incomingSectionRef} tabIndex={-1} data-one-on-one-section="incoming" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
             {focusIncomingRequests && incomingRequests.length === 0 ? <p role="status" className="mb-3 rounded-xl bg-neutral-50 p-3 text-sm leading-6 text-neutral-600">현재 응답할 요청이 없어요. 이미 응답했거나 상대가 요청을 취소한 경우 목록이 달라질 수 있어요.</p> : null}
@@ -509,7 +510,7 @@ export default function OneOnOneHomePanel({
                 <div>
                   <p className="text-base font-bold text-neutral-900">{starterPreview ? "먼저 이 분들을 만나보세요" : "추천 후보"}</p>
                   <p className="mt-1 text-xs leading-5 text-neutral-600">
-                    {starterPreview ? "추천 후보 중 3명까지 먼저 보여드려요. 전체 후보도 바로 볼 수 있어요." : <>프로필 기준으로 먼저 보여드리는 후보예요. 최근 24시간 동안 {plusActive ? "2회" : "1회"} 새로 섞을 수 있어요.</>}
+                    {starterPreview ? "추천 후보 중 3명까지 먼저 보여드려요. 전체 후보도 바로 볼 수 있어요." : "프로필을 보고 무료로 요청을 보내세요. 서로 수락하면 연락처를 교환할 수 있어요."}
                   </p>
                 </div>
                 <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-rose-700">{starterPreview ? `${starterKeys.size}명 먼저 보기` : `${recommendationCount}명`}</span>
@@ -538,6 +539,60 @@ export default function OneOnOneHomePanel({
                     const adminRecommendations = group.admin_recommendations ?? [];
                     const refreshing = refreshingRecommendationIds.includes(sourceCardId);
                     const canRefresh = Boolean(sourceCardId && group.can_refresh);
+                    const remainingCount = !arrivedFromOnboarding
+                      ? Math.max(0, recommendations.length + adminRecommendations.length - INITIAL_BROWSE_COUNT)
+                      : 0;
+                    const firstRecommendations = remainingCount ? recommendations.slice(0, INITIAL_BROWSE_COUNT) : recommendations;
+                    const firstAdditional = remainingCount
+                      ? adminRecommendations.slice(0, INITIAL_BROWSE_COUNT - firstRecommendations.length)
+                      : adminRecommendations;
+                    function renderCandidate(candidate: OneOnOneCardPreview, additional = false) {
+                      const candidateId = String(candidate.id ?? "");
+                      const actionKey = `${sourceCardId}:${candidateId}`;
+                      const canSelect = Boolean(sourceCardId && candidateId);
+                      return (
+                        <OneOnOneCandidateCard
+                          compact
+                          browseCandidate
+                          impressionTicket={group.impression_ticket}
+                          key={`${sourceCardId}:${additional ? "admin:" : ""}${candidateId || getOneOnOneDisplayName(candidate)}`}
+                          card={candidate}
+                          reportTarget={{ type: "one_on_one_card", id: candidateId }}
+                          onReported={onReported}
+                          badge={additional ? "추가 후보" : undefined}
+                          badgeClassName="bg-neutral-100 text-neutral-600"
+                        >
+                          <button
+                            type="button"
+                            disabled={!canSelect || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
+                            onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}
+                            className="mt-2 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-sm font-semibold text-white hover:bg-[#d90037] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {processingAutoKeys.includes(actionKey) ? "요청 보내는 중..." : "매칭 요청 보내기"}
+                          </button>
+                          <div className="flex flex-wrap items-start justify-between gap-x-2">
+                            {onFavoriteChanged ? <CandidateFavoriteButton sourceCardId={sourceCardId} candidateId={candidateId}
+                              favorite={Boolean(group.favorite_candidates?.some(card => card.id === candidateId))}
+                              disabled={!canSelect || refreshing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
+                              onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}
+                              onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, !group.favorite_candidates?.some(card => card.id === candidateId))} /> : null}
+                            {onCandidateHidden ? <CandidateHideButton enabled={group.hides_enabled === true}
+                              sourceCardId={sourceCardId} candidateId={candidateId} ticket={group.impression_ticket}
+                              disabled={!canSelect || refreshing || processingAutoKeys.length > 0}
+                              onHidden={onCandidateHidden} /> : null}
+                          </div>
+                        </OneOnOneCandidateCard>
+                      );
+                    }
+                    function renderAdditional(candidates: OneOnOneCardPreview[], continuing = false) {
+                      if (!candidates.length) return null;
+                      return (
+                        <div className={continuing ? undefined : "border-t border-neutral-200 pt-3"}>
+                          {continuing ? null : <p className="mb-2 text-sm font-semibold text-neutral-900">오늘의 추가 후보</p>}
+                          <div className="space-y-3">{candidates.map(candidate => renderCandidate(candidate, true))}</div>
+                        </div>
+                      );
+                    }
 
                     return (
                       <div key={sourceCardId || `group-${groupIndex}`} className="bg-white">
@@ -557,92 +612,16 @@ export default function OneOnOneHomePanel({
                           availability={group.recommendation_availability}
                           revision={group} onRestored={onCandidateRestored} /> : null}
                         <div className="mt-3 space-y-3">
-                          {recommendations.map((candidate) => {
-                            const candidateId = String(candidate.id ?? "");
-                            const actionKey = `${sourceCardId}:${candidateId}`;
-                            const canSelect = Boolean(sourceCardId && candidateId);
-                            return (
-                              <OneOnOneCandidateCard
-                                compact
-                                impressionTicket={group.impression_ticket}
-                                key={`${sourceCardId}:${candidateId || getOneOnOneDisplayName(candidate)}`}
-                                card={candidate}
-                                reportTarget={{ type: "one_on_one_card", id: candidateId }}
-                                onReported={onReported}
-                                badge="추천"
-                                badgeClassName="bg-neutral-100 text-neutral-600"
-                              >
-                                <button
-                                  type="button"
-                                  disabled={!canSelect || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
-                                  onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}
-                                  className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#d90037]"
-                                >
-                                  {processingAutoKeys.includes(actionKey) ? "요청 보내는 중..." : "매칭 요청 보내기"}
-                                </button>
-                                <div className="flex flex-wrap items-start justify-between gap-x-2">
-                                {onFavoriteChanged ? <CandidateFavoriteButton sourceCardId={sourceCardId} candidateId={candidateId}
-                                  favorite={Boolean(group.favorite_candidates?.some(card => card.id === candidateId))}
-                                  disabled={!canSelect || refreshing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
-                                  onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}
-                                  onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, !group.favorite_candidates?.some(card => card.id === candidateId))} /> : null}
-                                {onCandidateHidden ? <CandidateHideButton enabled={group.hides_enabled === true}
-                                  sourceCardId={sourceCardId} candidateId={candidateId} ticket={group.impression_ticket}
-                                  disabled={!canSelect || refreshing || processingAutoKeys.length > 0}
-                                  onHidden={onCandidateHidden} /> : null}
-                                </div>
-                              </OneOnOneCandidateCard>
-                            );
-                          })}
-                          {adminRecommendations.length > 0 ? (
-                            <div className="border-t border-neutral-200 pt-4">
-                              <div className="mb-3">
-                                <p className="text-sm font-semibold text-neutral-900">오늘의 추가 후보</p>
-                                <p className="mt-1 text-xs leading-5 text-neutral-600">
-                                  기본 추천 10명과 겹치지 않는 나이대 맞춤 후보예요. 매일 자동으로 바뀝니다.
-                                </p>
-                              </div>
-                              <div className="space-y-3">
-                                {adminRecommendations.map((candidate) => {
-                                  const candidateId = String(candidate.id ?? "");
-                                  const actionKey = `${sourceCardId}:${candidateId}`;
-                                  const canSelect = Boolean(sourceCardId && candidateId);
-                                  return (
-                                    <OneOnOneCandidateCard
-                                      compact
-                                      impressionTicket={group.impression_ticket}
-                                      key={`${sourceCardId}:admin:${candidateId || getOneOnOneDisplayName(candidate)}`}
-                                      card={candidate}
-                                      reportTarget={{ type: "one_on_one_card", id: candidateId }}
-                                      onReported={onReported}
-                                      badge="추가 후보"
-                                      badgeClassName="bg-neutral-100 text-neutral-600"
-                                    >
-                                      <button
-                                        type="button"
-                                        disabled={!canSelect || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
-                                        onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}
-                                        className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#d90037]"
-                                      >
-                                        {processingAutoKeys.includes(actionKey) ? "요청 보내는 중..." : "매칭 요청 보내기"}
-                                      </button>
-                                      <div className="flex flex-wrap items-start justify-between gap-x-2">
-                                      {onFavoriteChanged ? <CandidateFavoriteButton sourceCardId={sourceCardId} candidateId={candidateId}
-                                        favorite={Boolean(group.favorite_candidates?.some(card => card.id === candidateId))}
-                                        disabled={!canSelect || refreshing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
-                                        onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}
-                                        onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, !group.favorite_candidates?.some(card => card.id === candidateId))} /> : null}
-                                      {onCandidateHidden ? <CandidateHideButton enabled={group.hides_enabled === true}
-                                        sourceCardId={sourceCardId} candidateId={candidateId} ticket={group.impression_ticket}
-                                        disabled={!canSelect || refreshing || processingAutoKeys.length > 0}
-                                        onHidden={onCandidateHidden} /> : null}
-                                      </div>
-                                    </OneOnOneCandidateCard>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ) : null}
+                          {remainingCount > 0 ? <OneOnOneCandidateMore count={remainingCount} initial={<>
+                            {firstRecommendations.map(candidate => renderCandidate(candidate))}
+                            {renderAdditional(firstAdditional)}
+                          </>}>
+                            {recommendations.slice(firstRecommendations.length).map(candidate => renderCandidate(candidate))}
+                            {renderAdditional(adminRecommendations.slice(firstAdditional.length), firstAdditional.length > 0)}
+                          </OneOnOneCandidateMore> : <>
+                            {firstRecommendations.map(candidate => renderCandidate(candidate))}
+                            {renderAdditional(firstAdditional)}
+                          </>}
                         </div>
                         <OneOnOneExpansionPanel enabled={!starterPreview && group.expansion_enabled === true} sourceCardId={sourceCardId}
                           revision={group} blocked={refreshing || processingAutoKeys.length > 0}
@@ -790,9 +769,36 @@ export default function OneOnOneHomePanel({
   );
 }
 
+function OneOnOneCandidateMore({ count, initial, children }: { count: number; initial: ReactNode; children: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  const listId = useId();
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-x-2 rounded-xl bg-neutral-50 px-3">
+        <p className="text-xs font-medium text-neutral-600">먼저 보는 후보 3명</p>
+        <button type="button" aria-expanded={expanded} aria-controls={listId}
+          onClick={() => setExpanded(open => !open)}
+          className="min-h-11 shrink-0 px-1 text-xs font-semibold text-neutral-800 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700">
+          {expanded ? "처음 3명만 보기" : "전체 후보 펼치기"}
+        </button>
+      </div>
+      {initial}
+      <button type="button" aria-expanded={expanded} aria-controls={listId}
+        onClick={() => setExpanded(open => !open)}
+        className="min-h-11 w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-800 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700">
+        {expanded ? "추가로 본 후보 접기" : `후보 ${count}명 더 보기`}
+      </button>
+      <div id={listId} hidden={!expanded} className="space-y-3">
+        {expanded ? children : null}
+      </div>
+    </>
+  );
+}
+
 function OneOnOneCandidateCard({
   impressionTicket,
   compact = false,
+  browseCandidate = false,
   reportTarget,
   onReported,
   card,
@@ -803,6 +809,7 @@ function OneOnOneCandidateCard({
 }: {
   impressionTicket?: string | null;
   compact?: boolean;
+  browseCandidate?: boolean;
   card?: OneOnOneCardPreview | null;
   reportTarget?: { type: DatingReportTargetType; id: string };
   onReported?: (result: DatingReportResult) => void;
@@ -816,6 +823,12 @@ function OneOnOneCandidateCard({
   const visiblePhotos = compact ? photos : photos.slice(1);
   const name = getOneOnOneDisplayName(card);
   const meta = getOneOnOneMeta(card);
+  const friendRecommendation = card?.id && impressionTicket
+    ? <FriendRecommendButton kind="one_on_one" cardId={card.id} ticket={impressionTicket} label={name} />
+    : null;
+  const report = reportTarget?.id
+    ? <DatingReportButton targetType={reportTarget.type} targetId={reportTarget.id} label={name} onReported={onReported} />
+    : null;
 
   return (
     <CandidateImpression as="article" ticket={impressionTicket} candidateId={card?.id} className="overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3">
@@ -847,8 +860,8 @@ function OneOnOneCandidateCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-neutral-900">{name}</p>
-              <p className="mt-1 text-xs font-normal leading-5 text-neutral-500">{meta}</p>
+              <p className={browseCandidate ? "break-words text-base font-semibold text-neutral-900" : "truncate text-sm font-semibold text-neutral-900"}>{name}</p>
+              <p className={browseCandidate ? "mt-1 break-keep text-sm leading-5 text-neutral-600" : "mt-1 text-xs font-normal leading-5 text-neutral-500"}>{meta}</p>
               <OneOnOneCandidateRegionNotice widened={card?.recommendation_region_widened} />
             </div>
             {badge ? (
@@ -858,10 +871,8 @@ function OneOnOneCandidateCard({
             ) : null}
           </div>
           {note ? <p className="mt-2 text-xs font-normal leading-5 text-neutral-600">{note}</p> : null}
-          {card?.id && impressionTicket ? <FriendRecommendButton kind="one_on_one" cardId={card.id} ticket={impressionTicket} label={name} /> : null}
-          {reportTarget?.id ? <div className="mt-2 flex justify-end"><DatingReportButton
-            targetType={reportTarget.type} targetId={reportTarget.id} label={name} onReported={onReported}
-          /></div> : null}
+          {!browseCandidate ? friendRecommendation : null}
+          {!browseCandidate && report ? <div className="mt-2 flex justify-end">{report}</div> : null}
         </div>
       </div>
 
@@ -891,6 +902,12 @@ function OneOnOneCandidateCard({
       ) : null}>
       {children}
       </OneOnOneProfileSummary>
+      {browseCandidate && (friendRecommendation || report) ? (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 border-t border-neutral-100 pt-1">
+          {friendRecommendation}
+          {report ? <div className="ml-auto">{report}</div> : null}
+        </div>
+      ) : null}
     </CandidateImpression>
   );
 }

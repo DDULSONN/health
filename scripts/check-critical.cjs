@@ -87,6 +87,7 @@ const unitFiles = [
   'check-private-chat-inbox.cjs',
   'check-contact-presentation.cjs',
   'check-contact-care.cjs',
+  'check-contact-home-notice.cjs',
   'check-admin-contact-vouchers.cjs',
   'check-contact-care-client.cjs',
   'check-payment-recovery.cjs',
@@ -107,6 +108,8 @@ const unitFiles = [
 ];
 const browserFiles = [
   'check-mobile-navigation-browser.cjs',
+  'check-contact-home-notice-browser.cjs',
+  'check-one-on-one-conversion-browser.cjs',
   'check-profile-edit-browser.cjs',
   'check-payment-confirmation-browser.cjs',
   'check-landing-stories-browser.cjs',
