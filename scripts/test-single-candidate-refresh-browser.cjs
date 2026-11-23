@@ -103,10 +103,27 @@ module.exports = async ({ browser, origin, output }) => {
       await page.goto(origin + (surface === 'home' ? '/community/dating/cards?tab=one_on_one' : '/mypage?section=matching&matching=one_on_one'));
       const replace = page.getByRole('button', { name: '새 후보', exact: true });
       const quota = page.getByRole('button', { name: /후보 새로고침 · 2회/ }).first();
+      const replaceTip = page.getByRole('complementary', { name: '개별 후보 새로고침 안내' });
       const name = display => surface === 'home' ? page.getByText(display, { exact: true }) : page.getByText(`${display} / 30세 / 서울`, { exact: true });
       await replace.waitFor(); await quota.waitFor();
       assert.equal(await replace.count(), 1);
       assert.ok((await replace.boundingBox()).height >= 44);
+      if (surface === 'home' && scenario === 'success') {
+        await replaceTip.waitFor();
+        assert.match(await replaceTip.innerText(), /이미 본 후보만 바꿔보세요/);
+        assert.match(await replaceTip.innerText(), /전체 새로고침 횟수는 그대로예요/);
+        const acknowledge = replaceTip.getByRole('button', { name: '확인', exact: true });
+        assert.ok((await acknowledge.boundingBox()).height >= 44);
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+        await replaceTip.screenshot({ path: path.join(output, 'single-candidate-feature-tip-mobile.png') });
+        await acknowledge.click();
+        await replaceTip.waitFor({ state: 'hidden' });
+        assert.equal(posts, 0, 'dismissing the tip never replaces a candidate');
+        await page.reload();
+        await replace.waitFor(); await quota.waitFor();
+        assert.equal(await replaceTip.count(), 0, 'an acknowledged tip does not return for this member on reload');
+      }
+      if (surface === 'mypage') assert.equal(await replaceTip.count(), 0, 'feature tip is limited to the 1:1 home tab');
       if (availabilityScenario) {
         const stock = page.getByText('조건에 맞는 새 후보가 있어요', { exact: true });
         const checkNew = page.getByRole('button', { name: '새 후보 확인', exact: true });
@@ -177,6 +194,7 @@ module.exports = async ({ browser, origin, output }) => {
         await page.waitForTimeout(200);
         assert.equal(reads, identityReads, 'late old-account response must not reload under the new account');
         assert.equal(posts, 1); assert.equal(await replace.count(), 0);
+        assert.equal(await replaceTip.count(), 0, 'no tip when the current account has no eligible candidate');
         assert.ok(!(await page.locator('body').innerText()).includes('01000000000'));
         assert.equal(await page.getByText('이 후보 한 명을 새 후보로 바꿨어요.', { exact: true }).count(), 0);
         assert.deepEqual(errors, []); assert.equal(external, 0);

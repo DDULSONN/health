@@ -102,6 +102,40 @@ type OneOnOneMatchPreview = {
 
 const ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS = 72 * 60 * 60 * 1000;
 const INITIAL_BROWSE_COUNT = 3;
+const acknowledgedReplaceTips = new Set<string>();
+
+function OneOnOneCandidateReplaceTip({ viewerId }: { viewerId: string }) {
+  const key = `site-announcement:one-on-one-single-candidate-v1:${viewerId}`;
+  const [visibleKey, setVisibleKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    function sync() {
+      let acknowledged = acknowledgedReplaceTips.has(key);
+      try { acknowledged ||= window.localStorage.getItem(key) === "1"; } catch { /* Keep the in-page state. */ }
+      setVisibleKey(acknowledged ? null : key);
+    }
+    function onStorage(event: StorageEvent) {
+      if (event.key === key) sync();
+    }
+    sync();
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [key]);
+
+  if (visibleKey !== key) return null;
+  return <aside aria-label="개별 후보 새로고침 안내"
+    className="mt-3 flex items-center gap-2 rounded-xl border border-rose-100 bg-rose-50/40 px-3 py-2">
+    <div className="min-w-0 flex-1">
+      <p className="text-xs font-semibold leading-5 text-neutral-900">이미 본 후보만 바꿔보세요</p>
+      <p className="text-xs leading-5 text-neutral-600">카드의 ‘새 후보’를 누르면 그 한 명만 바뀌어요. 전체 새로고침 횟수는 그대로예요.</p>
+    </div>
+    <button type="button" onClick={() => {
+      acknowledgedReplaceTips.add(key);
+      try { window.localStorage.setItem(key, "1"); } catch { /* Keep this visit dismissed. */ }
+      setVisibleKey(null);
+    }} className="min-h-11 min-w-11 shrink-0 rounded-lg px-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-rose-700">확인</button>
+  </aside>;
+}
 
 function canCancelOneOnOneMatchPreview(match: OneOnOneMatchPreview) {
   if (match.state !== "mutual_accepted" && match.state !== "candidate_accepted") return false;
@@ -319,6 +353,10 @@ export default function OneOnOneHomePanel({
       hasSentRequest: data?.hasSentRequest, phoneVerified: data?.status?.phoneVerified,
       cards: myCards, groups: recommendationGroups, matches,
     });
+  const showCandidateReplaceTip = viewerLoggedIn && hasOneOnOneCard && singleRefreshViewerId &&
+    !shortcutsDisabled && !profileError && !recommendationsLoading && !recommendationsError &&
+    !arrivedFromOnboarding && !targetMatchId && !focusIncomingRequests && onReplaceCandidate &&
+    displayedGroups.some(group => group.recommendations?.some(card => eligibleForSingleCandidateRefresh(group, card.id ?? "")));
   function favoriteBusy(sourceId: string, candidateId: string, busy: boolean) {
     const key = `${sourceId}:${candidateId}`;
     setFavoriteBusyKeys(keys => busy ? [...new Set([...keys, key])] : keys.filter(value => value !== key));
@@ -538,6 +576,7 @@ export default function OneOnOneHomePanel({
                 </div>
                 <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-rose-700">{starterPreview ? `${starterKeys.size}명 먼저 보기` : `${recommendationCount}명`}</span>
               </div>
+              {showCandidateReplaceTip && singleRefreshViewerId ? <OneOnOneCandidateReplaceTip viewerId={singleRefreshViewerId} /> : null}
               {starterPreview ? <button type="button" onClick={() => setAllCandidatesVisible(true)}
                 className="mt-2 min-h-[44px] rounded-lg border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
                 후보 모두 보기 · {recommendationCount}명

@@ -216,8 +216,20 @@ for (const [name, hash] of Object.entries(movedFunctions)) test('extraction pres
   const profileView = require('./fixtures/profile-state-contract.cjs').withoutProfileStateNotice(withoutProfileReadRecoveryView(read(panelFile)), panelFile);
   let code = require('./fixtures/private-contact-contract.cjs').withoutPrivateView(profileView).replaceAll('(matchId: string, offerId?: string) => void', '(matchId: string) => void');
   if (name === 'OneOnOneHomePanel') {
-    // Only the reviewed replacement UI and the separately tested GET-only quota check are excluded.
+    // Only the reviewed replacement UI, its local-only feature tip, and the separately tested GET-only quota check are excluded.
     code = require('./fixtures/love-pass-payment-contract.cjs').withoutSingleCandidatePanelChanges(code);
+    const replaceTip = [
+      `  const showCandidateReplaceTip = viewerLoggedIn && hasOneOnOneCard && singleRefreshViewerId &&
+    !shortcutsDisabled && !profileError && !recommendationsLoading && !recommendationsError &&
+    !arrivedFromOnboarding && !targetMatchId && !focusIncomingRequests && onReplaceCandidate &&
+    displayedGroups.some(group => group.recommendations?.some(card => eligibleForSingleCandidateRefresh(group, card.id ?? "")));
+`,
+      '              {showCandidateReplaceTip && singleRefreshViewerId ? <OneOnOneCandidateReplaceTip viewerId={singleRefreshViewerId} /> : null}\n',
+    ];
+    for (const snippet of replaceTip) {
+      assert.equal(code.split(snippet).length, 2, 'exact reviewed replacement feature tip');
+      code = code.replace(snippet, '');
+    }
     const quotaCheck = '                          onCheckUsage={onReload}\n';
     assert.equal(code.split(quotaCheck).length, 2);
     code = code.replace(quotaCheck, '');
