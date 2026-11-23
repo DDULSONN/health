@@ -1,9 +1,10 @@
 import {
+  buildDatingCardPreviewUrl,
   buildPublicLiteImageUrl,
   buildSignedImageUrl,
-  buildSignedImageUrlAllowRaw,
   extractStorageObjectPathFromBuckets,
 } from "@/lib/images";
+import { isDatingCardBlurPath } from "@/lib/dating-card-photo-visibility";
 import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
@@ -160,42 +161,26 @@ function normalizePhotoPath(raw: unknown): string {
   return extractStorageObjectPathFromBuckets(trimmed, ["dating-card-photos", "dating-photos", "dating-card-lite"]) ?? trimmed;
 }
 
-function toLitePath(rawPath: string): string {
-  return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
-}
-
 function toBlurWebpPath(path: string): string {
   return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
 }
 
-function toThumbPath(rawPath: string): string {
-  return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
-}
+type SwipePreviewRow = Pick<DatingCardRow, "owner_user_id" | "expires_at" | "photo_visibility" | "photo_paths" | "blur_paths" | "blur_thumb_path"> & { status?: string };
 
-type SwipePreviewRow = Pick<DatingCardRow, "photo_visibility" | "photo_paths" | "blur_paths" | "blur_thumb_path">;
-
-export function pickPreviewImage(row: SwipePreviewRow): string | null {
+export function pickPreviewImage(row: SwipePreviewRow, hasSwipeConnection = false): string | null {
   const visibility = row.photo_visibility === "public" ? "public" : "blur";
-  if (visibility === "public") {
+  const isCurrentlyPublic = row.status === "public" && Date.parse(row.expires_at ?? "") > Date.now();
+  if (visibility === "public" && (isCurrentlyPublic || hasSwipeConnection)) {
     const rawPath = Array.isArray(row.photo_paths)
       ? row.photo_paths.map((item) => normalizePhotoPath(item)).find((item) => item.length > 0) ?? ""
       : "";
     if (rawPath) {
-      const litePath = toLitePath(rawPath);
-      const thumbPath = toThumbPath(rawPath);
-      return (
-        buildPublicLiteImageUrl("dating-card-lite", thumbPath) ||
-        buildPublicLiteImageUrl("dating-card-lite", litePath) ||
-        buildSignedImageUrl("dating-card-lite", thumbPath) ||
-        buildSignedImageUrl("dating-card-lite", litePath) ||
-        buildSignedImageUrlAllowRaw("dating-card-photos", rawPath) ||
-        null
-      );
+      return buildDatingCardPreviewUrl(rawPath) || null;
     }
   }
 
   const blurPath = Array.isArray(row.blur_paths)
-    ? row.blur_paths.map((item) => normalizePhotoPath(item)).find((item) => item.length > 0) ?? ""
+    ? row.blur_paths.map((item) => normalizePhotoPath(item)).find((item) => isDatingCardBlurPath(item, row.owner_user_id)) ?? ""
     : "";
   if (blurPath) {
     const blurWebp = toBlurWebpPath(blurPath);
@@ -208,7 +193,7 @@ export function pickPreviewImage(row: SwipePreviewRow): string | null {
   }
 
   const blurThumb = normalizePhotoPath(row.blur_thumb_path ?? "");
-  if (blurThumb) {
+  if (isDatingCardBlurPath(blurThumb, row.owner_user_id)) {
     const blurWebp = toBlurWebpPath(blurThumb);
     return (
       buildPublicLiteImageUrl("dating-card-lite", blurWebp) ||

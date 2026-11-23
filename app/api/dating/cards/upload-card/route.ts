@@ -238,17 +238,19 @@ export async function POST(req: Request) {
 
     if (kind === "lite" || kind === "blur") {
       try {
-        const litePublicRes = await uploadLitePublicPhoto(adminClient, path, file, blurUploadOverride);
-        if (litePublicRes.error) {
-          console.warn("[POST /api/dating/cards/upload-card] public mirror upload failed", {
-            pathTail: path.split("/").slice(-2).join("/"),
-            message: litePublicRes.error.message ?? null,
-          });
+        if (kind === "blur") {
+          // Visibility is chosen after upload. Only a server-blurred image is
+          // safe to mirror in the public bucket at this stage.
+          const litePublicRes = await uploadLitePublicPhoto(adminClient, path, file, blurUploadOverride);
+          if (litePublicRes.error) {
+            console.warn("[POST /api/dating/cards/upload-card] public mirror upload failed", {
+              pathTail: path.split("/").slice(-2).join("/"),
+              message: litePublicRes.error.message ?? null,
+            });
+          } else {
+            await kvSetString(`litepublic:${path}`, "1", 365 * 24 * 60 * 60);
+          }
         } else {
-          await kvSetString(`litepublic:${path}`, "1", 365 * 24 * 60 * 60);
-        }
-
-        if (kind === "lite") {
           const thumbPath = toThumbPath(path);
           const thumbBytes = await generateThumbBytes(file);
           if (!thumbBytes) {
@@ -261,14 +263,6 @@ export async function POST(req: Request) {
               console.warn("[POST /api/dating/cards/upload-card] thumb private upload failed", {
                 pathTail: thumbPath.split("/").slice(-2).join("/"),
               });
-            }
-            const publicOk = await uploadBytesToBucket(adminClient, LITE_PUBLIC_BUCKET, thumbPath, thumbBytes, "31536000");
-            if (!publicOk) {
-              console.warn("[POST /api/dating/cards/upload-card] thumb public upload failed", {
-                pathTail: thumbPath.split("/").slice(-2).join("/"),
-              });
-            } else {
-              await kvSetString(`litepublic:${thumbPath}`, "1", 365 * 24 * 60 * 60);
             }
           }
         }

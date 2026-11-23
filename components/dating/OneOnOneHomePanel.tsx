@@ -113,6 +113,8 @@ export type OneOnOneHomeState = {
   hasSentRequest?: boolean | null;
   status: { canWrite?: boolean; totalApplications?: number; phoneVerified?: boolean; reason?: string | null } | null;
   myCards: OneOnOneCardPreview[];
+  profileCardsAvailable?: boolean;
+  profileError?: string;
   matches: OneOnOneMatchPreview[];
   recommendations: OneOnOneRecommendationGroup[];
   plus: { expires_at?: string | null; contact_exchange_included?: boolean } | null;
@@ -250,6 +252,8 @@ export default function OneOnOneHomePanel({
   );
   const plusActive = Boolean(data?.plus?.expires_at);
   const plusContactExchangeIncluded = data?.plus?.contact_exchange_included === true;
+  const contactOfferAvailable = data?.profileCardsAvailable !== false;
+  const profileError = data?.profileError ?? "";
   const recommendationCount = recommendationGroups.reduce(
     (sum, group) => sum + (group.recommendations?.length ?? 0) + (group.admin_recommendations?.length ?? 0),
     0
@@ -420,9 +424,9 @@ export default function OneOnOneHomePanel({
           </div>
         ) : (
           <div className="flex flex-col gap-5">
-            {!hasOneOnOneCard && myCards[0]?.status === "rejected" ? (
+            {!profileError && !hasOneOnOneCard && myCards[0]?.status === "rejected" ? (
               <OneOnOneProfileStateNotice profile={myCards[0]} showManageLink />
-            ) : !hasOneOnOneCard && !profileDraftAvailable ? (
+            ) : !profileError && !hasOneOnOneCard && !profileDraftAvailable ? (
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
             <p className="text-base font-semibold text-neutral-900">내 소개를 올리면 추천이 시작돼요</p>
             <p className="mt-2 text-[13px] leading-6 text-neutral-600">
@@ -447,19 +451,23 @@ export default function OneOnOneHomePanel({
                 card={focusedMatch.counterparty_card} reportTarget={{ type: "one_on_one_match", id: focusedMatch.id }}
                 onReported={onReported} badge={getOneOnOneMatchLabel(focusedMatch)} note={oneOnOneContactLabel(focusedMatch.contact_exchange_status)}>
                 {focusedMatch.contact_exchange_status === "approved" ? <OneOnOneExchangedContact contact={focusedMatch} /> : null}
-                <OneOnOneMatchActions match={focusedMatch} contactExchangeIncluded={plusContactExchangeIncluded}
+                <OneOnOneMatchActions match={focusedMatch} contactExchangeIncluded={plusContactExchangeIncluded} contactOfferAvailable={contactOfferAvailable}
                   processing={processingMatchIds.includes(focusedMatch.id)} contactProcessing={processingContactIds.includes(focusedMatch.id)}
                   nudgeProcessing={processingNudgeIds.includes(focusedMatch.id)} onMatchAction={onMatchAction}
                   onContactCheckout={onContactCheckout} onContactNudge={onContactNudge} />
               </OneOnOneCandidateCard> : <OneOnOneUnavailableNotice key={targetMatchId} matchId={targetMatchId} />}
             </div> : null}
+            {profileError ? <div role="status" className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+              <p>{profileError} 매칭 내역은 아래에서 확인할 수 있어요.</p>
+              <button type="button" onClick={onReload} className="min-h-[44px] font-semibold text-neutral-800 underline underline-offset-2">프로필 정보 다시 불러오기</button>
+            </div> : null}
             <div ref={nextStepsSectionRef} tabIndex={-1} data-one-on-one-section="next-steps" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
-              <OneOnOneNextSteps matches={activeMatches} renderContact={(match) => (
+              <OneOnOneNextSteps matches={activeMatches} renderContact={contactOfferAvailable ? (match) => (
                 <OneOnOneContactOffer compact matchId={match.id} name={match.counterparty_card?.name}
                   included={plusContactExchangeIncluded} processing={processingContactIds.includes(match.id)}
                   nudge={match.contact_nudge} nudgeProcessing={processingNudgeIds.includes(match.id)}
                   onExchange={onContactCheckout} onNudge={onContactNudge} />
-              )} homePreview focusedMatchId={focusedMatch?.id} />
+              ) : undefined} homePreview focusedMatchId={focusedMatch?.id} />
             </div>
             <div id="one-on-one-incoming" ref={incomingSectionRef} tabIndex={-1} data-one-on-one-section="incoming" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
             {focusIncomingRequests && incomingRequests.length === 0 ? <p role="status" className="mb-3 rounded-xl bg-neutral-50 p-3 text-sm leading-6 text-neutral-600">현재 응답할 요청이 없어요. 이미 응답했거나 상대가 요청을 취소한 경우 목록이 달라질 수 있어요.</p> : null}
@@ -475,6 +483,7 @@ export default function OneOnOneHomePanel({
                 <OneOnOneMatchActions
                   match={match}
                   contactExchangeIncluded={plusContactExchangeIncluded}
+                  contactOfferAvailable={contactOfferAvailable}
                   processing={processingMatchIds.includes(match.id)}
                   contactProcessing={processingContactIds.includes(match.id)}
                   nudgeProcessing={processingNudgeIds.includes(match.id)}
@@ -731,6 +740,7 @@ export default function OneOnOneHomePanel({
                       <OneOnOneMatchActions
                         match={match}
                         contactExchangeIncluded={plusContactExchangeIncluded}
+                        contactOfferAvailable={contactOfferAvailable}
                         processing={processingMatchIds.includes(match.id)}
                         contactProcessing={processingContactIds.includes(match.id)}
                         nudgeProcessing={processingNudgeIds.includes(match.id)}
@@ -915,6 +925,7 @@ function OneOnOneCandidateCard({
 function OneOnOneMatchActions({
   match,
   contactExchangeIncluded,
+  contactOfferAvailable,
   processing,
   contactProcessing,
   nudgeProcessing,
@@ -924,6 +935,7 @@ function OneOnOneMatchActions({
 }: {
   match: OneOnOneMatchPreview;
   contactExchangeIncluded: boolean;
+  contactOfferAvailable: boolean;
   processing: boolean;
   contactProcessing: boolean;
   nudgeProcessing: boolean;
@@ -1066,10 +1078,10 @@ function OneOnOneMatchActions({
 
     return (
       <div className="mt-3 border-t border-neutral-200 pt-3">
-        <OneOnOneContactOffer matchId={match.id} name={match.counterparty_card?.name}
+        {contactOfferAvailable ? <OneOnOneContactOffer matchId={match.id} name={match.counterparty_card?.name}
           included={contactExchangeIncluded} processing={contactProcessing}
           nudge={match.contact_nudge} nudgeProcessing={nudgeProcessing}
-          onExchange={onContactCheckout} onNudge={onContactNudge} />
+          onExchange={onContactCheckout} onNudge={onContactNudge} /> : <p className="text-xs text-neutral-600">혜택을 다시 확인한 뒤 연락처 교환을 진행해 주세요.</p>}
         <div className="mt-2 flex flex-wrap gap-2">
           <Link href="/mypage?section=matching" className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50">
             상세 보기

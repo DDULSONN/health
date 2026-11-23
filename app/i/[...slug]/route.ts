@@ -1,6 +1,7 @@
 import { getCachedSignedUrlWithBucket } from "@/lib/signed-url-cache";
 import { hasCityViewCardAccess } from "@/lib/dating-city-view";
 import { hasMoreViewAccess, normalizeCardSex } from "@/lib/dating-more-view";
+import { isDatingCardBlurPath } from "@/lib/dating-card-photo-visibility";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -24,8 +25,13 @@ const BLOCKED_SIGNED_PREFIXES: Record<string, string[]> = {
 const DEFAULT_MAX_WIDTH = 1080;
 const DEFAULT_QUALITY = 72;
 const LONG_IMAGE_CACHE_CONTROL = "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=604800";
-const PRIVATE_MATCH_IMAGE_CACHE_CONTROL = "private, max-age=3600";
-const ADMIN_PREVIEW_CACHE_CONTROL = "private, max-age=3600";
+const PRIVATE_PHOTO_CACHE_CONTROL = "private, no-store";
+
+function withoutPhotoCache(response: Response): Response {
+  response.headers.set("Cache-Control", PRIVATE_PHOTO_CACHE_CONTROL);
+  response.headers.set("Vary", "Cookie, Authorization, Accept");
+  return response;
+}
 
 function pickUpstreamHeaders(src: Headers): Headers {
   const dst = new Headers();
@@ -177,7 +183,6 @@ async function canReadDatingCardPhoto(
   const ownerId = ownerFromPath(objectPath);
   if (isAdmin || (ownerId && userId === ownerId)) return true;
 
-  const isRaw = objectPath.includes("/raw/");
   const nowIso = new Date().toISOString();
   const openRowsRes = ownerId
     ? await admin
@@ -193,19 +198,20 @@ async function canReadDatingCardPhoto(
   if (!openRowsRes.error && Array.isArray(openRowsRes.data)) {
     for (const row of openRowsRes.data as Array<Record<string, unknown>>) {
       if (!matchesDatingCardPhoto(objectPath, row)) continue;
+      const rowOwnerId = typeof row.owner_user_id === "string" ? row.owner_user_id : "";
+      if (row.photo_visibility !== "public" && !isDatingCardBlurPath(objectPath, rowOwnerId)) return false;
       const status = String(row.status ?? "");
       const expiresAt = typeof row.expires_at === "string" ? row.expires_at : "";
       const activePublic = status === "public" && expiresAt > nowIso;
-      if (activePublic && (!isRaw || row.photo_visibility === "public")) return true;
+      if (activePublic) return true;
 
-      const rowOwnerId = typeof row.owner_user_id === "string" ? row.owner_user_id : "";
       const rowCardId = typeof row.id === "string" ? row.id : "";
       if (userId && rowOwnerId && rowCardId) {
         const acceptedConnection = await canReadAcceptedDatingCardPhoto(admin, userId, rowCardId);
-        if (acceptedConnection) return !isRaw || row.photo_visibility === "public";
+        if (acceptedConnection) return true;
 
         const swipeRelated = await canReadSwipeRelatedDatingCardPhoto(admin, userId, rowOwnerId, rowCardId);
-        if (swipeRelated) return !isRaw || row.photo_visibility === "public";
+        if (swipeRelated) return true;
       }
 
       if (!userId || status !== "pending") return false;
@@ -237,7 +243,8 @@ async function canReadDatingCardPhoto(
     for (const row of paidRowsRes.data as Array<Record<string, unknown>>) {
       if (!matchesDatingCardPhoto(objectPath, row)) continue;
       const activeApproved = row.status === "approved" && typeof row.expires_at === "string" && row.expires_at > nowIso;
-      return activeApproved && (!isRaw || row.photo_visibility === "public");
+      const rowOwnerId = typeof row.user_id === "string" ? row.user_id : "";
+      return activeApproved && (row.photo_visibility === "public" || isDatingCardBlurPath(objectPath, rowOwnerId));
     }
   }
 
@@ -380,8 +387,14 @@ async function canReadReelsApplicationPhoto(
   return !listingRes.error && Boolean(listingRes.data?.id);
 }
 
+function isPermissionedLitePhoto(bucket: string, objectPath: string): boolean {
+  return bucket === "dating-card-lite" && !isDatingCardBlurPath(objectPath, ownerFromPath(objectPath));
+}
+
 async function canReadSignedObject(req: Request, bucket: string, objectPath: string): Promise<boolean> {
-  if (PUBLIC_SIGNED_BUCKETS.has(bucket)) return true;
+  const permissionedLite = isPermissionedLitePhoto(bucket, objectPath);
+  if (PUBLIC_SIGNED_BUCKETS.has(bucket) && !permissionedLite) return true;
+  if (permissionedLite) bucket = "dating-card-photos";
   if (!SENSITIVE_SIGNED_BUCKETS.has(bucket)) return false;
 
   const { user } = await getRequestAuthContext(req);
@@ -537,8 +550,6 @@ async function fetchAdminDatingCardPreview(
 
   const cacheHeaders = new Headers();
   cacheHeaders.set("Content-Type", "image/webp");
-  cacheHeaders.set("Cache-Control", ADMIN_PREVIEW_CACHE_CONTROL);
-  cacheHeaders.set("Vary", "Cookie, Accept");
   cacheHeaders.set("X-Content-Type-Options", "nosniff");
 
   if (method === "HEAD") {
@@ -570,18 +581,27 @@ async function fetchAdminDatingCardPreview(
   }
 }
 
-async function fetchSigned(bucket: string, objectPath: string, method: string, requestId: string) {
+async function fetchSigned(bucket: string, objectPath: string, method: string, requestId: string, preferPreview = false) {
   if (BLOCKED_SIGNED_PREFIXES[bucket]?.some((prefix) => objectPath.startsWith(prefix))) {
     return new Response("Not Found", { status: 404 });
   }
 
-  const signedUrl = await createSignedUpstreamUrl(bucket, objectPath, requestId);
-  if (!signedUrl) return new Response("Not Found", { status: 404 });
-
-  const upstream = await fetch(signedUrl, {
-    method,
-    cache: "no-store",
-  }).catch(() => null);
+  let upstream: Response | null = null;
+  if (preferPreview && bucket === "dating-card-photos" && objectPath.includes("/raw/")) {
+    // The raw object's authorization has already passed. Prefer a small,
+    // private derivative, but preserve old photos without one.
+    const liteUrl = await createSignedUpstreamUrl(bucket, toLitePath(objectPath), requestId, false);
+    if (liteUrl) {
+      const preview = await fetch(liteUrl, { method, cache: "no-store" }).catch(() => null);
+      if (preview?.ok && isCacheableImage(preview.headers)) upstream = preview;
+      else await preview?.body?.cancel().catch(() => {});
+    }
+  }
+  if (!upstream) {
+    const signedUrl = await createSignedUpstreamUrl(bucket, objectPath, requestId);
+    if (!signedUrl) return new Response("Not Found", { status: 404 });
+    upstream = await fetch(signedUrl, { method, cache: "no-store" }).catch(() => null);
+  }
   if (!upstream) return new Response("Bad Gateway", { status: 502 });
 
   const headers = pickUpstreamHeaders(upstream.headers);
@@ -594,11 +614,8 @@ async function fetchSigned(bucket: string, objectPath: string, method: string, r
     });
   }
 
-  // 1:1 photos are permission-gated per member. Keep them out of shared caches so a
-  // stale mobile/CDN response cannot cross sessions; the browser may cache briefly.
-  const isPrivateMatchPhoto = bucket === "dating-1on1-photos";
-  headers.set("Cache-Control", isPrivateMatchPhoto ? PRIVATE_MATCH_IMAGE_CACHE_CONTROL : LONG_IMAGE_CACHE_CONTROL);
-  headers.set("Vary", isPrivateMatchPhoto ? "Cookie, Accept" : "Accept");
+  headers.set("Cache-Control", LONG_IMAGE_CACHE_CONTROL);
+  headers.set("Vary", "Accept");
   headers.delete("set-cookie");
   return new Response(method === "HEAD" ? null : upstream.body, {
     status: upstream.status,
@@ -697,23 +714,31 @@ async function handler(req: Request, params: Promise<{ slug: string[] }>) {
   if (!bucket || !objectPath) return new Response("Bad Request", { status: 400 });
 
   if (mode === "public-lite") {
+    if (!PUBLIC_SIGNED_BUCKETS.has(bucket)) {
+      return withoutPhotoCache(new Response("Not Found", { status: 404 }));
+    }
+    if (isPermissionedLitePhoto(bucket, objectPath)) {
+      const allowed = await canReadSignedObject(req, bucket, objectPath);
+      return withoutPhotoCache(allowed
+        ? await fetchPublicLite(bucket, objectPath, req.method, requestId)
+        : new Response("Not Found", { status: 404 }));
+    }
     return fetchPublicLite(bucket, objectPath, req.method, requestId);
   }
   if (mode === "admin-preview") {
-    return fetchAdminDatingCardPreview(req, bucket, objectPath, req.method, requestId);
+    return withoutPhotoCache(await fetchAdminDatingCardPreview(req, bucket, objectPath, req.method, requestId));
   }
   if (mode === "signed") {
     const allowed = await canReadSignedObject(req, bucket, objectPath);
     if (!allowed) {
-      return new Response("Not Found", {
-        status: 404,
-        headers: { "Cache-Control": "no-store" },
-      });
+      return withoutPhotoCache(new Response("Not Found", { status: 404 }));
     }
-    if (OPTIMIZED_BUCKETS.has(bucket)) {
-      return optimizeSignedImageResponse(req, bucket, objectPath, req.method, requestId);
-    }
-    return fetchSigned(bucket, objectPath, req.method, requestId);
+    const response = OPTIMIZED_BUCKETS.has(bucket)
+      ? await optimizeSignedImageResponse(req, bucket, objectPath, req.method, requestId)
+      : await fetchSigned(bucket, objectPath, req.method, requestId, new URL(req.url).searchParams.get("preview") === "1");
+    // Authorization-dependent recordings must not be reused across account
+    // sessions or after a card is hidden, including optimized GET and HEAD.
+    return SENSITIVE_SIGNED_BUCKETS.has(bucket) || isPermissionedLitePhoto(bucket, objectPath) ? withoutPhotoCache(response) : response;
   }
   return new Response("Not Found", { status: 404 });
 }

@@ -80,6 +80,7 @@ async function makeHarness() {
   for (const file of ['dating_card_swipe_matches.sql', 'dating_love_pass.sql', 'dating_love_pass_swipe.sql']) await db.exec(read(`supabase/sql/${file}`));
 
   const dbCalls = [], providerCalls = [], payments = new Map(), diagnostics = [], unexpected = [];
+  const faults = { nearbyLimited: false, nearbyUnavailable: false, lookupUnavailable: false };
   const allowedRpcs = new Set([
     'dating_love_pass_ready', 'dating_love_pass_status', 'get_dating_love_pass_purchase_eligible', 'reserve_dating_love_pass_order',
     'activate_dating_love_pass', 'close_dating_love_pass_order', 'set_dating_love_pass_areas',
@@ -92,6 +93,7 @@ async function makeHarness() {
     async rpc(name, args = {}) {
       assert.ok(allowedRpcs.has(name), `Unexpected RPC ${name}`);
       dbCalls.push({rpc: name, args});
+      if (name === 'get_dating_love_pass_reviewable_cards' && faults.nearbyUnavailable) return fail({code: 'FIXTURE_UNAVAILABLE'});
       try { const keys = Object.keys(args).map(column); const call = keys.map((k,i) => `${k}=>$${i+1}`).join(',');
         return reply((await sql(`select public.${name}(${call}) val`, Object.values(args))).rows[0].val);
       } catch (e) { diagnostics.push(`${name}: ${e.message}`); return fail(e); }
@@ -138,7 +140,12 @@ async function makeHarness() {
       assert.ok(authorized && success);
       return receipt;
     },
-    async getTossPaymentByOrderId(orderId) { providerCalls.push('lookup-order');return payments.get(orderId)??null; },
+    async getTossPaymentByOrderId(orderId) {
+      providerCalls.push('lookup-order');
+      if (faults.lookupUnavailable) throw new TypeError('Synthetic provider connection error');
+      if (!payments.has(orderId)) throw Error('{"code":"NOT_FOUND_PAYMENT"}');
+      return payments.get(orderId);
+    },
     async getTossPayment(key) { providerCalls.push('lookup-key');return [...payments.values()].find(p=>p.paymentKey===key)??null; },
   };
   const globals = {process:{env:{}},fetch:()=>{throw Error('Fixture prohibits upstream network');},console:{...console,warn:message=>diagnostics.push(message),error:message=>diagnostics.push(message)}};
@@ -146,7 +153,7 @@ async function makeHarness() {
     '@/lib/toss-payments':provider,
     '@/lib/supabase/server':{createAdminClient:()=>admin},
     '@/lib/supabase/request':{getRequestAuthContext:async()=>({user:{id:member}})},
-    '@/lib/request-rate-limit':{checkRouteRateLimit:async()=>({allowed:true}),extractClientIp:()=> 'test-limit'},
+    '@/lib/request-rate-limit':{checkRouteRateLimit:async({scope})=>({allowed:scope !== 'dating-love-pass-nearby' || !faults.nearbyLimited}),extractClientIp:()=> 'test-limit'},
     '@/lib/dating-blocks':{getDatingBlockedUserIds:async()=>new Set(),hasDatingBlockBetween:async()=>false},
     '@/lib/dating-contact-blocks':{filterDatingCardsByContactBlocks:async(_admin,_user,rows)=>rows,hasDatingContactBlockBetween:async()=>false},
     '@/lib/contact-intro-offer-server':{ContactIntroError:class extends Error{}},
@@ -162,7 +169,7 @@ async function makeHarness() {
   };
   const sale = enabled => sql(`insert into public.site_settings values('dating_love_pass_sale',$1::jsonb)
     on conflict(key) do update set value_json=excluded.value_json`, [{enabled}]);
-  return {db,sql,sale,route,dbCalls,providerCalls,payments,diagnostics,unexpected};
+  return {db,sql,sale,route,dbCalls,providerCalls,payments,diagnostics,unexpected,faults};
 }
 
 async function startServer(assets, h) {
@@ -195,7 +202,7 @@ async function startServer(assets, h) {
       if (!handler) {h.unexpected.push(`${verb} ${pathName}`);end(404,'text/plain','Unexpected fixture path');return;}
       let body='';for await(const chunk of incoming) body+=chunk;
       const headers={};for(const [key,value] of Object.entries(incoming.headers)) if(typeof value==='string') headers[key]=value;
-      requests.push({verb, path:pathName, body:body?JSON.parse(body):null});
+      requests.push({verb, path:pathName, search:url.search, body:body?JSON.parse(body):null});
       const response=await handler(new Request(url,{method:verb,headers,...(body?{body}:{})}));
       const json=await response.json();
       if (pathName==='/api/payments/toss/create'&&json.checkoutUrl) {
@@ -232,7 +239,8 @@ async function check(browser, assets, width) {
   try {
     await h.sale(false);
     await page.goto(offer);
-    await text('지금은 판매를 준비 중이에요.').waitFor();
+    await page.getByText('지금은 판매를 준비 중이에요.',{exact:false}).waitFor();
+    assert.equal(await page.getByRole('link',{name:'내 결제 내역',exact:true}).getAttribute('href'),'/mypage?section=payment');
     assert.equal(await btn('연애 패스 구매하기').count(),0);
     assert.deepEqual(h.providerCalls,[]);
     await h.sale(true);await page.reload();
@@ -266,20 +274,51 @@ async function check(browser, assets, width) {
     assert.equal(await nearby.getByRole('article').first().getByRole('link').getAttribute('href'),`/community/dating/cards/${waitingCard}?from=love-pass`);
     assert.equal(await text('검수 전 비노출 프로필').count(),0);
     assert.equal(await btn('대구').isDisabled(),true);
+
+    h.faults.nearbyUnavailable=true;
+    await page.reload();
+    await text('추가 지원권 40장').waitFor();
+    await text('바로 공개 4회 남음').waitFor();
+    await nearby.getByText('근처 오픈카드를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.',{exact:true}).waitFor();
+    assert.equal(await nearby.getByRole('article').count(),0);
+    assert.equal(await btn('연애 패스 구매하기').count(),0);
+    assert.equal(await text('지금은 선택한 지역에 볼 수 있는 카드가 없어요.').count(),0);
+    const beforeRetry=server.requests.length;
+    h.faults.nearbyUnavailable=false;h.faults.nearbyLimited=true;
+    await btn('근처 카드 다시 확인').click();
+    await nearby.getByText('잠시 후 지역 카드를 다시 확인해 주세요.',{exact:true}).waitFor();
+    assert.deepEqual(server.requests.slice(beforeRetry).map(r=>r.search),['?nearby=1']);
+    await text('바로 공개 4회 남음').waitFor();
     await btn('지금 공개').click();
     await page.getByRole('status').getByText('내 오픈카드를 공개했어요.',{exact:true}).waitFor();
     await text('바로 공개 3회 남음').waitFor();
     assert.equal(await btn('지금 공개').count(),0);
+    await btn('근처 카드 다시 확인').waitFor();
+    h.faults.nearbyLimited=false;
+    await btn('근처 카드 다시 확인').click();
+    await nearby.getByRole('heading',{name:'검수 완료 대기 프로필',exact:true}).waitFor();
     const updates=server.requests.filter(r=>r.verb==='POST'&&r.path==='/api/dating/love-pass').map(r=>r.body);
     assert.deepEqual(updates,[{action:'areas',areas:['서울']},{action:'areas',areas:regions},{action:'publish',cardId:ownCard}]);
     const publication=await h.sql('select card_id from public.dating_love_pass_publications');
     assert.deepEqual(publication.rows,[{card_id:ownCard}]);
+    h.faults.nearbyLimited=true;
     await page.goto(callback);await text('연애 패스 혜택 적용 완료').waitFor();
     assert.deepEqual(h.providerCalls,['create','confirm']);
     await page.getByRole('link',{name:'연애 패스 혜택 보기',exact:true}).click();
     await text('바로 공개 3회 남음').waitFor();
     await text('추가 지원권 40장').waitFor();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+
+    // A fresh scoped request rechecks eligibility; an old view doesn't keep
+    // private cards or purchase controls around after verification is revoked.
+    await btn('근처 카드 다시 확인').waitFor();
+    await h.sql('update public.profiles set phone_verified=false where user_id=$1',[member]);
+    await btn('근처 카드 다시 확인').click();
+    await page.getByRole('alert').filter({hasText:'연애 패스 이용 상태가 바뀌었어요. 다시 확인해 주세요.'}).waitFor();
+    assert.equal(await nearby.getByRole('article').count(),0);
+    assert.equal(await btn('연애 패스 구매하기').count(),0);
+    await btn('상태 다시 확인').click();
+    await page.getByText('휴대폰 인증을 확인해 주세요.',{exact:false}).waitFor();
     assert.deepEqual(outbound,[]);assert.deepEqual(h.unexpected,[]);assert.deepEqual(h.diagnostics,[]);assert.deepEqual(server.errors,[]);assert.deepEqual(browserErrors,[]);
     assert.equal((await h.sql('select count(*)::int n from public.dating_love_passes')).rows[0].n,1);
   } catch (e) {
@@ -288,12 +327,61 @@ async function check(browser, assets, width) {
   } finally {await context.close();await server.close();await h.db.close();}
 }
 
+async function checkPausedRecovery() {
+  const h=await makeHarness();
+  const endpoint='http://localhost/api/payments/toss/create';
+  const request=async (resumedFromOrderId) => {
+    const resp=await h.route.create(new Request(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...purchaseBody,resumedFromOrderId})}));
+    return {status:resp.status,...await resp.json()};
+  };
+  const grants=async()=> (await h.sql('select count(*)::int n from public.dating_love_passes')).rows[0].n;
+  try {
+    await h.sale(true);
+    const started=await request();
+    assert.equal(started.status,200);
+    const order=(await h.sql('select id from public.toss_test_payment_orders where toss_order_id=$1',[started.orderId])).rows[0];
+    await h.sale(false);
+    assert.equal((await request()).code,'LOVE_PASS_NOT_ON_SALE');
+    assert.equal((await request(id(987))).code,'LOVE_PASS_ORDER_NOT_FOUND');
+    await h.sql('update public.toss_test_payment_orders set user_id=$1 where id=$2',[waiting,order.id]);
+    assert.equal((await request(order.id)).code,'LOVE_PASS_ORDER_NOT_FOUND');
+    await h.sql("update public.toss_test_payment_orders set user_id=$1,product_type='apply_credits' where id=$2",[member,order.id]);
+    assert.equal((await request(order.id)).code,'LOVE_PASS_ORDER_NOT_FOUND');
+    await h.sql('update public.toss_test_payment_orders set product_type=$1 where id=$2',[sku,order.id]);
+    assert.deepEqual(h.providerCalls,['create']);
+
+    // An existing open Toss checkout is not returned while new sales are paused.
+    assert.equal((await request(order.id)).code,'LOVE_PASS_ORDER_NOT_APPROVED');
+    const payment=h.payments.get(started.orderId);
+    Object.assign(payment,{status:'DONE',approvedAt:new Date().toISOString()});
+    h.faults.lookupUnavailable=true;
+    assert.equal((await request(order.id)).code,'LOVE_PASS_PAYMENT_UNRESOLVED');
+    h.faults.lookupUnavailable=false;
+    payment.totalAmount=29_000;
+    assert.equal((await request(order.id)).code,'LOVE_PASS_PAYMENT_UNRESOLVED');
+    assert.equal(await grants(),0);
+    payment.totalAmount=30_000;
+
+    const fulfilled=await request(order.id);
+    assert.equal(fulfilled.status,200);
+    assert.equal(fulfilled.alreadyActive,true);
+    assert.equal(fulfilled.checkoutUrl,undefined);
+    assert.equal((await request(order.id)).alreadyActive,true);
+    assert.equal(await grants(),1);
+    assert.equal(h.providerCalls.filter(call=>call==='create').length,1);
+    assert.equal(h.providerCalls.includes('confirm'),false);
+    assert.deepEqual((await h.sql('select status, amount from public.toss_test_payment_orders')).rows,[{status:'paid',amount:30_000}]);
+    console.log('PASS paused sale recovery: owned approved order only; no new checkout, one verified grant');
+  } finally { await h.db.close(); }
+}
+
 (async()=>{
+  await checkPausedRecovery();
   const assets=await buildAssets();
   const channel=process.env.TEST_BROWSER_CHANNEL||(process.platform==='win32'&&!existsSync(chromium.executablePath())?'chrome':undefined);
   for(const [label,engine,channelName] of [['Chromium',chromium,channel],['WebKit',webkit]]) {
     const browser=await engine.launch({headless:true,...(channelName?{channel:channelName}:{})});
-    try {for(const width of [320,390]){await check(browser,assets,width);console.log(`PASS ${label} ${width}px: real UI -> checkout/confirm -> atomic 30-day grant, areas, cards, publish and sale pause`);}}
+    try {for(const width of [320,390]){await check(browser,assets,width);console.log(`PASS ${label} ${width}px: checkout, grant, areas, scoped nearby retry, publish and sale pause`);}}
     finally {await browser.close();}
   }
 })().catch(e=>{console.error(e);process.exitCode=1;});

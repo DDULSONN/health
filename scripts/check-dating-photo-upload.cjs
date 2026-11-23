@@ -44,8 +44,10 @@ function server(options={}){
 for(const kind of ['raw','lite','blur'])test('valid '+kind+' remains owner scoped with matching WebP extension',async()=>{
   const f=server(),r=await f.post(kind);assert.equal(r.status,201);const body=await r.json();assert.equal(body.path,'cards/fixture-owner/'+kind+'/fixture-asset-0.webp');assert.equal(f.writes[0].config.upsert,false);
   if(kind==='raw')assert.equal(f.writes.length,1);
+  if(kind==='lite')assert.deepEqual(f.writes.map(write=>write.bucket),['dating-card-photos','dating-card-photos']);
+  if(kind==='blur')assert.deepEqual(f.writes.map(write=>write.bucket),['dating-card-photos','dating-card-lite']);
 });
-for(const options of [{processingThrow:true},{publicThrow:true},{thumbUploadThrow:true},{kvThrow:true}])test('optional thumbnail/mirror failure cannot undo private lite upload '+JSON.stringify(options),async()=>{const f=server(options),r=await f.post('lite');assert.equal(r.status,201);assert.match((await r.json()).path,/\/lite\//);assert.ok(f.logs.length);});
+for(const [kind,options] of [['lite',{processingThrow:true}],['lite',{thumbUploadThrow:true}],['blur',{publicThrow:true}],['blur',{kvThrow:true}]])test('optional thumbnail/mirror failure cannot undo private '+kind+' upload '+JSON.stringify(options),async()=>{const f=server(options),r=await f.post(kind);assert.equal(r.status,201);assert.ok((await r.json()).path.includes('/'+kind+'/'));assert.ok(f.logs.length);});
 test('blur processing is mandatory, never falls back to public raw image',async()=>{const f=server({processingThrow:true});assert.equal((await f.post('blur')).status,500);assert.equal(f.writes.length,0);});
 for(const kind of ['raw','lite','blur'])test('primary '+kind+' storage failure is still fatal',async()=>{const f=server({primaryFailure:true});assert.equal((await f.post(kind)).status,500);assert.equal(f.writes.length,1);assert.equal(f.kv.length,0);});
 for(const options of [{signedOut:true},{badOrigin:true}])test('upload authorization stays fail closed '+JSON.stringify(options),async()=>{const f=server(options);assert.ok((await f.post('raw')).status>=400);assert.equal(f.writes.length,0);});

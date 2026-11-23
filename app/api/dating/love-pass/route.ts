@@ -8,6 +8,26 @@ import { createAdminClient } from "@/lib/supabase/server";
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie, Authorization" };
 function json(body: object, status = 200) { return NextResponse.json(body, { status, headers }); }
 
+async function loadNearbyCards(
+  req: Request,
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  pass: NonNullable<Awaited<ReturnType<typeof getLovePassStatus>>>,
+  viewer: Awaited<ReturnType<typeof getLovePassViewer>>,
+) {
+  if (!viewer.verified || !viewer.targetSex || pass.areas.length === 0) return { items: [] };
+  try {
+    const limited = await checkRouteRateLimit({
+      requestId: crypto.randomUUID(), scope: "dating-love-pass-nearby", path: "/api/dating/love-pass", userId,
+      ip: extractClientIp(req), userLimitPerMin: 20, ipLimitPerMin: 80,
+    });
+    if (!limited.allowed) return { status: 429, error: "잠시 후 지역 카드를 다시 확인해 주세요." } as const;
+    return { items: await listLovePassNearbyCards(admin, userId, pass, viewer.targetSex) };
+  } catch {
+    return { status: 503, error: "근처 오픈카드를 불러오지 못했어요. 잠시 후 다시 확인해 주세요." } as const;
+  }
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   if (searchParams.get("availability") === "1") {
@@ -16,28 +36,32 @@ export async function GET(req: Request) {
       return json({ saleAvailable: !sale.error && sale.data === true });
     } catch { return json({ saleAvailable: false }); }
   }
+  const nearbyOnly = searchParams.get("nearby") === "1";
   const { user } = await getRequestAuthContext(req);
+  if (!user && nearbyOnly) return json({ error: "로그인이 필요해요." }, 401);
   if (!user) return json({ loggedIn: false, saleAvailable: false, pass: null });
   const admin = createAdminClient();
   try {
+    if (nearbyOnly) {
+      const [pass, viewer] = await Promise.all([getLovePassStatus(admin, user.id), getLovePassViewer(admin, user.id)]);
+      if (!pass || !viewer.verified) return json({ error: "이용 중인 연애 패스와 휴대폰 인증이 필요해요." }, 403);
+      const nearby = await loadNearbyCards(req, admin, user.id, pass, viewer);
+      if (nearby.error) return json({ error: nearby.error }, nearby.status);
+      return json({ items: nearby.items, passId: pass.id, areas: pass.areas });
+    }
     const [sale, pass, viewer] = await Promise.all([
       admin.rpc("dating_love_pass_ready"), getLovePassStatus(admin, user.id), getLovePassViewer(admin, user.id),
     ]);
     const saleAvailable = !sale.error && sale.data === true;
     const eligibility = saleAvailable && !pass ? await admin.rpc("get_dating_love_pass_purchase_eligible", { p_user_id: user.id }) : null;
-    const viewing = searchParams.get("cards") === "1";
-    if (viewing && pass && pass.areas.length > 0) {
-      const limited = await checkRouteRateLimit({ requestId: crypto.randomUUID(), scope: "dating-love-pass-nearby", path: "/api/dating/love-pass", userId: user.id,
-        ip: extractClientIp(req), userLimitPerMin: 20, ipLimitPerMin: 80 });
-      if (!limited.allowed) return json({ error: "잠시 후 지역 카드를 다시 확인해 주세요." }, 429);
-    }
-    const items = viewing && pass && viewer.verified && viewer.targetSex && pass.areas.length > 0
-      ? await listLovePassNearbyCards(admin, user.id, pass, viewer.targetSex) : [];
+    const nearby = searchParams.get("cards") === "1" && pass ? await loadNearbyCards(req, admin, user.id, pass, viewer) : { items: [] };
     const canPublish = Boolean(pass && pass.publicationsRemaining > 0 && (!pass.nextPublicationAt || Date.parse(pass.nextPublicationAt) <= Date.now()));
     return json({ loggedIn: true, saleAvailable, purchaseEligible: eligibility?.data === true && !eligibility.error, canPublish,
-      verified: viewer.verified, pass, ownCard: viewer.verified ? viewer.ownCard : null, items });
+      verified: viewer.verified, pass, ownCard: viewer.verified ? viewer.ownCard : null, items: nearby.items ?? [], itemsError: nearby.error });
   } catch {
-    return json({ error: "연애 패스 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요." }, 503);
+    return json({ error: nearbyOnly
+      ? "근처 오픈카드를 불러오지 못했어요. 잠시 후 다시 확인해 주세요."
+      : "연애 패스 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요." }, 503);
   }
 }
 

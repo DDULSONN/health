@@ -16,29 +16,36 @@ const storage = { getItem: (k) => storageValues.get(k) ?? null, setItem: (k, v) 
 global.window = { sessionStorage: storage, location: { href: "" } };
 global.alert = () => {};
 let applyCalls = 0, checkoutCalls = 0, lastCheckout, storageFails = false;
+let detailStatus = 200, latestOverride = null;
+const redirectPaths = [];
 const latest = { id: "old", age: 25, height_cm: 170, region: "서울", job: "회사원", training_years: 0, intro_text: "안녕하세요 ☕", instagram_id: "test", photo_paths: ["card-applications/viewer/a.webp", "card-applications/viewer/b.webp"], created_at: new Date().toISOString() };
 global.fetch = async (url, options) => {
-  if (url === `/api/dating/cards/${cardId}`) return { ok: true, json: async () => ({ card: { id: cardId, display_nickname: "상대", image_urls: [] } }) };
-  if (url.endsWith("/latest")) return { ok: true, json: async () => ({ item: latest }) };
+  if (url === `/api/dating/cards/${cardId}`) return { ok: detailStatus === 200, status: detailStatus, json: async () => ({ card: detailStatus === 200 ? { id: cardId, display_nickname: "상대", image_urls: [] } : undefined }) };
+  if (url.endsWith("/latest")) return latestOverride ? latestOverride() : { ok: true, json: async () => ({ item: latest }) };
   if (url === "/api/dating/cards/apply") { applyCalls++; return { ok: false, json: async () => ({ code: "DAILY_APPLY_LIMIT" }) }; }
   if (url === "/api/payments/toss/create") { checkoutCalls++; lastCheckout = JSON.parse(options.body); return { ok: true, json: async () => ({ checkoutUrl: "https://checkout.test/order" }) }; }
   throw new Error(`Unexpected request: ${url}`);
 };
-const router = { replace: () => {}, push: () => {} };
+const router = { replace: (href) => redirectPaths.push(href), push: () => {} };
 const supabase = { auth: { getUser: async () => ({ data: { user: { id: "viewer" } } }) } };
-const Page = load("app/community/dating/cards/[id]/apply/page.tsx", (id) => {
-  if (id === "react") return { ...React, useMemo: (fn) => fn(), useEffect: (fn) => effects.push(fn), useState: (initial) => { const i = stateIndex++; if (!(i in states)) states[i] = initial; return [states[i], (value) => { states[i] = typeof value === "function" ? value(states[i]) : value; }]; }, useRef: (initial) => { const i = refIndex++; return refs[i] ??= { current: initial }; } };
+const imports = (id) => {
+  if (id === "react") return { ...React, useMemo: (fn) => fn(), useCallback: (fn) => fn, useEffect: (fn) => effects.push(fn), useState: (initial) => { const i = stateIndex++; if (!(i in states)) states[i] = initial; return [states[i], (value) => { states[i] = typeof value === "function" ? value(states[i]) : value; }]; }, useRef: (initial) => { const i = refIndex++; return refs[i] ??= { current: initial }; } };
   if (id === "react/jsx-runtime") return require(id);
   if (id === "next/link") return ({ children, href }) => React.createElement("a", { href }, children);
   if (id === "next/navigation") return { useParams: () => ({ id: cardId }), useRouter: () => router, useSearchParams: () => new URLSearchParams("from=nearby") };
   if (id.endsWith("supabase/client")) return { createClient: () => supabase };
   if (id.endsWith("use-dating-photo-preparation")) return { useDatingPhotoPreparation: () => ({ cancel() {}, isProcessing: () => false, busy: false, pending: [], errors: ["", ""] }) };
+  if (id.endsWith("client-json-request")) return load("lib/client-json-request.ts");
+  if (id.endsWith("dating-read-recovery")) return load("lib/dating-read-recovery.ts");
   if (id.endsWith("dating-apply-draft")) return { ...drafts, saveApplyCheckoutDraft: (...args) => { if (storageFails) throw new Error("disabled"); return drafts.saveApplyCheckoutDraft(...args); } };
   return () => null;
-}).default;
-function render() { stateIndex = refIndex = 0; effects = []; return Page(); }
+};
+const Page = load("app/community/dating/cards/[id]/apply/page.tsx", imports).default;
+const DetailPage = load("app/community/dating/cards/[id]/page.tsx", imports).default;
+function render(page = Page) { stateIndex = refIndex = 0; effects = []; return page(); }
 function nodes(tree) { if (!tree || typeof tree !== "object") return []; return [tree, ...React.Children.toArray(tree.props?.children).flatMap(nodes)]; }
-async function mount() { states = []; refs = []; render(); for (const effect of effects) effect(); for (let i = 0; i < 10; i++) await new Promise(setImmediate); return render(); }
+async function flush() { for (let i = 0; i < 10; i++) await new Promise(setImmediate); }
+async function mount(page = Page) { states = []; refs = []; render(page); for (const effect of effects) effect(); await flush(); return render(page); }
 (async () => {
   let tree = await mount();
   assert.equal(applyCalls, 0);
@@ -67,6 +74,60 @@ async function mount() { states = []; refs = []; render(); for (const effect of 
   for (let i = 0; i < 10; i++) await new Promise(setImmediate);
   assert.equal(checkoutCalls, 1, "Storage failure must not discard the form by leaving for checkout");
   assert.equal(window.location.href, "");
+  storageValues.clear();
+  latestOverride = async () => { throw new TypeError("Failed to fetch"); };
+  tree = await mount();
+  assert.ok(nodes(tree).some(n => n.type === "form"), "The optional previous-application response cannot bounce a valid applicant");
+  assert.deepEqual(redirectPaths, []);
+  let resolveLate;
+  latestOverride = () => new Promise(resolve => { resolveLate = resolve; });
+  tree = await mount();
+  const form = nodes(tree).find(n => n.type === "form");
+  assert.ok(form, "Support form renders while optional prefill is still pending");
+  form.props.onChangeCapture();
+  nodes(tree).find(n => n.props?.label === "자기소개").props.children.props.onChange({ target: { value: "새 소개글을 작성하고 있어요" } });
+  resolveLate({ ok: true, status: 200, json: async () => ({ item: latest }) });
+  await flush();
+  tree = render();
+  assert.equal(nodes(tree).find(n => n.props?.label === "자기소개").props.children.props.value, "새 소개글을 작성하고 있어요");
+  assert.equal(nodes(tree).find(n => n.props?.type === "checkbox").props.checked, false);
+  assert.ok(nodes(tree).some(n => n.type === "button" && n.props.children === "불러오기"), "Member may explicitly choose past contents even after editing");
+  latestOverride = null;
+  detailStatus = 503;
+  tree = await mount();
+  assert.ok(nodes(tree).some(n => n.type === "button" && n.props.children === "다시 불러오기"));
+  assert.deepEqual(redirectPaths, []);
+  nodes(tree).find(n => n.type === "button" && n.props.children === "다시 불러오기").props.onClick();
+  detailStatus = 200;
+  render();
+  for (const effect of effects) effect();
+  await flush();
+  assert.ok(nodes(render()).some(n => n.type === "form"));
+  detailStatus = 403;
+  tree = await mount();
+  assert.ok(!nodes(tree).some(n => n.type === "form" || (n.type === "button" && n.props.children === "다시 불러오기")));
+  detailStatus = 401;
+  await mount();
+  assert.equal(redirectPaths.at(-1), `/login?redirect=${encodeURIComponent(`/community/dating/cards/${cardId}/apply?from=nearby`)}`);
+  redirectPaths.length = 0;
+  detailStatus = 429;
+  tree = await mount(DetailPage);
+  const retryDetail = nodes(tree).find(n => n.type === "button" && n.props.children === "다시 불러오기");
+  assert.ok(retryDetail);
+  assert.deepEqual(redirectPaths, []);
+  retryDetail.props.onClick();
+  detailStatus = 200;
+  render(DetailPage);
+  for (const effect of effects) effect();
+  await flush();
+  tree = render(DetailPage);
+  assert.ok(nodes(tree).some(n => n.props?.children === "표시할 사진이 없어요."));
+  assert.ok(nodes(tree).some(n => n.props?.href === `/community/dating/cards/${cardId}/apply?from=nearby`));
+  detailStatus = 404;
+  tree = await mount(DetailPage);
+  assert.ok(nodes(tree).some(n => n.props?.children === "지금은 볼 수 없는 카드예요."));
+  assert.ok(!nodes(tree).some(n => n.type === "button" && n.props.children === "다시 불러오기"));
+  assert.deepEqual(redirectPaths, []);
   let newCount = 0, previewFails = false, paymentCalls = [], writes = 0;
   const paymentDb = { from() {
     let inserted = false;
@@ -111,5 +172,6 @@ async function mount() { states = []; refs = []; render(); for (const effect of 
   await request({ productType: "apply_credits", returnTo: "https://evil.test" });
   assert.equal(new URL(paymentCalls.at(-1).successUrl).searchParams.get("returnTo"), null);
   console.log("PASS: credit shortage, one checkout per double-click, exact return route, Korean/zero-year/photo draft restore, manual confirmation, storage failure");
+  console.log("PASS: optional previous application failure and delay never block the form or overwrite new input; 503 retry, permission state, login return");
   console.log("PASS: payment API rejects zero candidates, changed sex and lookup failure before writes; unchanged price and safe success/failure returns");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

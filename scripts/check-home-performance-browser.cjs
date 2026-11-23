@@ -45,6 +45,7 @@ async function main() {
     for (const width of [320, 390, 1280]) for (const firstTab of ['open_cards', 'one_on_one', 'quick_match']) {
       const context = await browser.newContext({ viewport: { width, height: 844 } });
       const page = await context.newPage(); page.setDefaultTimeout(15000);
+      const hasLovePass = firstTab === 'quick_match';
       const calls = [], chunks = [], errors = []; let blocked = 0, mutations = 0;
       const card = { id: 'fixture-one', name: '검증회원', user_id: 'fixture-member', status: 'approved', sex: 'female', age: 29, birth_year: 1998,
         region: '서울', height_cm: 165, job: '회사원', intro_text: '로컬 확인용 프로필이에요.', strengths_text: '배려해요.', preferred_partner_text: '편안한 대화', photo_signed_urls: ['/fixture-photo.png', '/fixture-photo.png'] };
@@ -72,8 +73,8 @@ async function main() {
           case '/api/dating/cards/queue-stats': body = { male: { public_count: 0, pending_count: 0, slot_limit: 45 }, female: { public_count: 0, pending_count: 0, slot_limit: 45 } }; break;
           case '/api/dating/cards/more-view/status': body = { loggedIn: true, male: 'none', female: 'none' }; break;
           case '/api/dating/paid/list': assert.equal(url.searchParams.get('sex'), 'male'); body = { items: [paidCard] }; break;
-          case '/api/dating/cards/swipe': assert.equal(url.searchParams.get('sex'), 'male'); body = { loggedIn: true, canSwipe: true, remaining: 7, limit: 7, candidate: null, reason: null }; break;
-          case '/api/dating/cards/swipe/subscription': body = { status: 'none', dailyLimit: 7, baseLimit: 7, premiumLimit: 20, priceKrw: 9900, durationDays: 7 }; break;
+          case '/api/dating/cards/swipe': assert.equal(url.searchParams.get('sex'), 'male'); body = { loggedIn: true, canSwipe: true, remaining: hasLovePass ? 0 : 7, limit: hasLovePass ? 50 : 7, unlimitedPass: hasLovePass, candidate: null, reason: null }; break;
+          case '/api/dating/cards/swipe/subscription': body = { status: 'none', dailyLimit: 7, baseLimit: 7, premiumLimit: 20, priceKrw: 9900, durationDays: 7, lovePassActive: hasLovePass }; break;
           case '/api/dating/all-pass-offer': body = { available: false }; break;
           case '/api/site/ad-inquiry': body = { enabled: false }; break;
         }
@@ -102,6 +103,16 @@ async function main() {
         const paidBefore = count('/api/dating/paid/list');
         await tabButton('빠른매칭').click(); await page.waitForTimeout(350);
         assert.ok(count('/api/dating/cards/swipe?') > 0); assert.ok(count('/api/dating/cards/swipe/subscription') > 0);
+        const swipePlus = page.getByRole('button', { name: '빠른매칭 플러스', exact: true });
+        if (hasLovePass) {
+          await page.getByRole('link', { name: '연애 패스 이용 중', exact: true }).waitFor();
+          assert.equal(await swipePlus.count(), 0);
+          assert.equal(await page.getByRole('button', { name: '빠른매칭 플러스 보기', exact: true }).count(), 0);
+        } else {
+          await swipePlus.click();
+          await page.getByRole('dialog').getByText('빠른매칭 플러스 30일', { exact: true }).waitFor();
+          await page.getByRole('button', { name: '빠른매칭 플러스 안내 닫기' }).click();
+        }
         await tabButton('1대1매칭').click(); await page.getByRole('button', { name: '매칭 요청 보내기', exact: true }).waitFor();
         await tabButton('오픈카드').click(); await page.getByText('유료공개검증', { exact: true }).waitFor(); await page.waitForTimeout(200);
         assert.ok(count('/api/dating/paid/list') > paidBefore, 'return to open cards revalidates');

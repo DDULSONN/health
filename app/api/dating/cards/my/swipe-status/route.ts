@@ -332,7 +332,7 @@ export async function GET(req: Request) {
               ideal_type: card.ideal_type ?? null,
               strengths_text: card.strengths_text ?? null,
               intro_text: card.intro_text ?? null,
-              image_url: pickPreviewImage(card),
+              image_url: pickPreviewImage(card, true),
             }
           : null,
       };
@@ -363,7 +363,7 @@ export async function GET(req: Request) {
               ideal_type: card.ideal_type ?? null,
               strengths_text: card.strengths_text ?? null,
               intro_text: card.intro_text ?? null,
-              image_url: pickPreviewImage(card),
+              image_url: pickPreviewImage(card, true),
             }
           : null,
       };

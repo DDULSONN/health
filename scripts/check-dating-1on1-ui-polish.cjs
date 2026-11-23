@@ -100,6 +100,8 @@ if (require.main === module) {
         callback !== 'onClick={() => setVisibleMatchCount((count) => count + 8)}' &&
         (callback !== 'onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}' || callbacks.indexOf(callback) === index)),
       'onClick={onReload}', 'onCheckUsage={onReload}', 'onExchange={onContactCheckout}', 'onNudge={onContactNudge}',
+      // Profile-only retry never invokes checkout or consumes a refresh.
+      'onClick={onReload}',
       ...Array(3).fill('onHidden={onCandidateHidden}'), 'onRestored={onCandidateRestored}',
       // Reviewed saved-candidate actions reuse the existing matching callback.
       'onClick={() => onAutoSelect(sourceCardId, candidateId, card.name)}',

@@ -1,4 +1,4 @@
-import { getLatestSwipeCardForUser, getSwipeLimitInfo } from "@/lib/dating-swipe";
+import { getLatestSwipeCardForUser, getLovePassSwipeStatus, getSwipeLimitInfo } from "@/lib/dating-swipe";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -38,8 +38,8 @@ export async function GET(req: Request) {
 
   try {
     const admin = createAdminClient();
-    const limitInfo = await getSwipeLimitInfo(admin, user.id);
-    return NextResponse.json(toPayload(limitInfo));
+    const [limitInfo, lovePass] = await Promise.all([getSwipeLimitInfo(admin, user.id), getLovePassSwipeStatus(admin, user.id)]);
+    return NextResponse.json({ ...toPayload(limitInfo), lovePassActive: lovePass !== null });
   } catch (error) {
     console.error("[GET /api/dating/cards/swipe/subscription] failed", error);
     return NextResponse.json({ error: "빠른매칭 구매 상태를 불러오지 못했습니다." }, { status: 500 });
@@ -78,6 +78,14 @@ export async function POST(req: Request) {
         requestId,
         message: "이미 승인 대기 중인 구매 신청이 있습니다.",
       });
+    }
+    if (await getLovePassSwipeStatus(admin, user.id)) {
+      return NextResponse.json({
+        ok: false,
+        requestId,
+        code: "SWIPE_ALREADY_INCLUDED_IN_LOVE_PASS",
+        message: "이용 중인 연애 패스에 빠른매칭 혜택이 포함돼 있어요. 따로 신청하지 않아도 돼요.",
+      }, { status: 409 });
     }
 
     const insertRes = await admin

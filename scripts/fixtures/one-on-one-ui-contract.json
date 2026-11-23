@@ -2,7 +2,7 @@
   "commit": "4792201",
   "functions": {
     "OneOnOneCandidateCard": "77e40a762f4c6426bd7d2a523150acec44917fdde20c58c52764001f607e1650",
-    "OneOnOneMatchActions": "4164283b6dae92b4d5c7a4e6a92d86ccd57d1c6e966a2b2cd7d3074ecfd261f3",
+    "OneOnOneMatchActions": "f83870ef58c42fb3f387b7653d5715b3738da30e8abbf32dc55929a9d3f202c0",
     "OneOnOneContactOffer": "d959d40d31bc555e300951e0e38ef58d0e1c65f6a89d9a38631399b770812919",
     "OneOnOneIncomingRequests": "e63979deff971f7c57f33080f4145549c9db299ed0db031c5db4d8a0e23205fa"
   },

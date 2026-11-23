@@ -1,5 +1,7 @@
 import { getDailyBaseApplyLimit, getKstDateString, isKoreanWeekend } from "@/lib/dating-apply-limits";
+import { getLovePassStatus } from "@/lib/dating-love-pass-access";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 function json(status: number, payload: Record<string, unknown>) {
@@ -23,12 +25,13 @@ export async function GET(req: Request) {
         baseUsed: 0,
         baseRemaining: 0,
         creditsRemaining: 0,
+        passCreditsRemaining: null,
       });
     }
 
     const kstDate = getKstDateString();
 
-    const [usageRes, creditsRes] = await Promise.all([
+    const [usageRes, creditsRes, pass] = await Promise.all([
       supabase
         .from("user_daily_apply_usage")
         .select("base_used")
@@ -36,6 +39,7 @@ export async function GET(req: Request) {
         .eq("kst_date", kstDate)
         .maybeSingle(),
       supabase.from("user_apply_credits").select("credits").eq("user_id", user.id).maybeSingle(),
+      getLovePassStatus(createAdminClient(), user.id),
     ]);
 
     if (usageRes.error) {
@@ -63,6 +67,7 @@ export async function GET(req: Request) {
       baseUsed,
       baseRemaining,
       creditsRemaining,
+      passCreditsRemaining: pass?.creditsRemaining ?? null,
     });
   } catch (error) {
     console.error(`[apply-credits-status] ${requestId} unhandled`, error);

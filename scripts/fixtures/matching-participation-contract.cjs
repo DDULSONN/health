@@ -8,7 +8,7 @@ function withoutParticipationMetadata(source) {
   for (const [after, before] of [
     ['; has_sent_request?: boolean | null; error?: string', '; error?: string'],
     ['"/api/dating/1on1/my?participation=1"', '"/api/dating/1on1/my"'],
-    ['          hasSentRequest: typeof myCardsBody.has_sent_request === "boolean" ? myCardsBody.has_sent_request : null,\n', ''],
+    ['          hasSentRequest: typeof profileCards?.has_sent_request === "boolean" ? profileCards.has_sent_request : null,\n', ''],
     ['          setOneOnOneHome((prev) => prev ? { ...prev, hasSentRequest: true } : prev);\n', ''],
     ['        setOneOnOneHome((prev) => prev ? { ...prev, hasSentRequest: true } : prev);\n', ''],
   ]) {

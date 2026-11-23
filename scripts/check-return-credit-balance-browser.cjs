@@ -38,7 +38,7 @@ async function main(){
    if(url.pathname==='/api/mypage/dating-adult-confirmation')return route.fulfill({json:{authenticated:true,confirmed:true}});
    if(url.pathname==='/api/dating/apply-credits/status'){
     s.reads++;if(s.onBalance)return s.onBalance(route,s);
-    return route.fulfill({status:s.failBalance?503:200,json:{ok:!s.failBalance,loggedIn:true,baseRemaining:s.base,creditsRemaining:s.balance}});
+    return route.fulfill({status:s.failBalance?503:200,json:{ok:!s.failBalance,loggedIn:true,baseRemaining:s.base,creditsRemaining:s.balance,passCreditsRemaining:s.passCredits}});
    }
    if(url.pathname==='/api/return-profile-reward'){
     if(s.onReward)return s.onReward(route,s);
@@ -67,6 +67,12 @@ async function main(){
   {const t=await setup({stage:'rewarded'});await granted(t.page).waitFor();await empty(t.page).waitFor();
    await t.page.getByText('지급 이력이에요. 사용 후 남은 수량은 지원권 내역에서 확인해 주세요.',{exact:true}).waitFor();
    assert.equal(t.s.posts,0);assert.equal(t.s.reads,1);await t.done();}
+  {const t=await setup({stage:'rewarded',passCredits:4,width:320});await t.page.getByText('패스 지원권 4장',{exact:true}).waitFor();
+   assert.equal(await empty(t.page).count(),0);assert.equal(await t.page.getByText(/오늘 .*회 지원 가능/).count(),0);
+   assert.ok(await t.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await t.done();}
+  {const t=await setup({stage:'rewarded',base:1,balance:2,passCredits:4});await t.page.getByText('총 7회 지원 가능 · 패스 4장',{exact:true}).waitFor();
+   assert.equal(await empty(t.page).count(),0);await t.done();}
+  {const t=await setup({stage:'rewarded',passCredits:0});await empty(t.page).waitFor();await t.done();}
   {const t=await setup({first:true,base:2});await t.page.getByText('오픈카드 지원권 1장 지급 완료',{exact:true}).waitFor();
    await t.page.getByText('오늘 3회 지원 가능',{exact:true}).waitFor();assert.equal(t.s.balance,1);assert.equal(t.s.posts,1);await t.done();}
   {const t=await setup({failClaim:true});await t.page.getByText('프로필은 등록됐어요. 지원권 지급만 다시 확인해 주세요.').waitFor();
@@ -95,6 +101,10 @@ async function main(){
    assert.equal(await granted(t.page).count(),0);assert.equal(t.s.posts,0);await t.done();
   }
   {const t=await setup({creditPage:true});await granted(t.page).waitFor();await t.page.locator('dl').getByText('5장',{exact:true}).waitFor();assert.equal(t.s.reads,2);assert.equal(t.s.posts,1);await t.done();}
+  {const t=await setup({creditPage:true,stage:'rewarded',base:2,balance:5,passCredits:8,width:320});
+   await t.page.locator('dl').getByText('연애 패스 지원권',{exact:true}).waitFor();
+   for(const amount of ['2회','5장','8장']) await t.page.locator('dl').getByText(amount,{exact:true}).waitFor();
+   assert.ok(await t.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await t.done();}
   {const t=await setup({creditPage:true,onBalance:async(route,s)=>route.fulfill({status:s.reads>1?503:200,json:{ok:s.reads===1,loggedIn:true,baseRemaining:0,creditsRemaining:0}})});
    await granted(t.page).waitFor();await t.page.getByText('남은 지원권을 불러오지 못했어요. 다시 확인해 주세요.',{exact:true}).waitFor();
    assert.equal(await t.page.locator('dl').getByText('0장',{exact:true}).count(),0);assert.equal(t.s.balance,5);

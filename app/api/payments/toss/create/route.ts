@@ -19,6 +19,7 @@ import {
   SWIPE_PREMIUM_DURATION_DAYS,
   SWIPE_PREMIUM_PRICE_KRW,
   getLatestSwipeCardForUser,
+  getLovePassSwipeStatus,
   getSwipeLimitInfo,
 } from "@/lib/dating-swipe";
 import { isAllowedAdminUser } from "@/lib/admin";
@@ -314,7 +315,7 @@ export async function POST(req: Request) {
     const body = ((await req.json().catch(() => null)) ?? {}) as CreateBody;
     if (body.productType === "dating_love_pass_30d") {
       try {
-        return json(200, { ...await createLovePassCheckout(createAdminClient(), user, getBaseUrl(req)), requestId });
+        return json(200, { ...await createLovePassCheckout(createAdminClient(), user, getBaseUrl(req), body.resumedFromOrderId), requestId });
       } catch (error) {
         if (error instanceof LovePassCheckoutError) return json(error.status, { ok: false, code: error.code, requestId, message: error.message });
         throw error;
@@ -773,6 +774,19 @@ export async function POST(req: Request) {
     }
 
     if (productType === "swipe_premium_30d") {
+      try {
+        if (await getLovePassSwipeStatus(admin, user.id)) {
+          return json(409, {
+            ok: false,
+            code: "SWIPE_ALREADY_INCLUDED_IN_LOVE_PASS",
+            requestId,
+            message: "이용 중인 연애 패스에 빠른매칭 혜택이 포함돼 있어요. 따로 결제하지 않아도 돼요.",
+          });
+        }
+      } catch (error) {
+        console.error("[toss-create] Love Pass swipe status check failed", error);
+        return json(503, { ok: false, code: "SWIPE_BENEFIT_CHECK_FAILED", requestId, message: "이용 중인 혜택을 확인하지 못했어요. 잠시 후 다시 시도해 주세요." });
+      }
       const myCard = await getLatestSwipeCardForUser(admin, user.id);
       if (!myCard) {
         return json(403, {

@@ -6,7 +6,9 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import DatingReportButton from "@/components/DatingReportButton";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
-import { readOpenCardDetail, removeOpenCardDetail } from "@/lib/dating-detail-cache";
+import { removeOpenCardDetail } from "@/lib/dating-detail-cache";
+import { datingAuthSessionMissing } from "@/lib/dating-read-recovery";
+import { fetchClientJson } from "@/lib/client-json-request";
 import { createClient } from "@/lib/supabase/client";
 
 type CardDetail = {
@@ -44,43 +46,44 @@ export default function OpenCardDetailPage() {
   const sourceQuery = fromLovePass ? "?from=love-pass" : fromNearby ? "?from=nearby" : "";
   const detailHref = `/community/dating/cards/${id}${sourceQuery}`;
   const supabase = useMemo(() => createClient(), []);
-  const [card, setCard] = useState<CardDetail | null>(() => fromLovePass ? null : readOpenCardDetail<CardDetail>(id));
-  const [loading, setLoading] = useState(() => fromLovePass || !readOpenCardDetail<CardDetail>(id));
-
+  const [view, setView] = useState<{ href: string; attempt: number; card?: CardDetail; message?: string; retry?: boolean } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const currentView = view?.href === detailHref && view.attempt === attempt ? view : null;
+  const card = currentView?.card;
 
   useEffect(() => {
-    queueMicrotask(async () => {
+    const controller = new AbortController();
+    const login = () => router.replace(`/login?redirect=${encodeURIComponent(detailHref)}`);
+    const unavailable = () => setView({ href: detailHref, attempt, message: "지금은 볼 수 없는 카드예요." });
+    void (async () => {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (controller.signal.aborted) return;
+        if (error && !datingAuthSessionMissing(error)) throw error;
         if (!user) {
-          router.replace(`/login?redirect=${encodeURIComponent(detailHref)}`);
+          login();
           return;
         }
-        const res = await fetch(`/api/dating/cards/${id}`, fromLovePass ? { cache: "no-store" } : undefined);
-        if (!res.ok) {
-          if (res.status === 401) {
-            router.replace(`/login?redirect=${encodeURIComponent(detailHref)}`);
-            return;
-          }
-          router.replace(listHref);
+        const { response, body } = await fetchClientJson<{ card?: CardDetail }>(`/api/dating/cards/${id}`, { cache: "no-store", signal: controller.signal });
+        if (controller.signal.aborted) return;
+        if (response.status === 401) {
+          login();
           return;
         }
-        const data = (await res.json()) as { card?: CardDetail };
-        if (!data.card) {
-          router.replace(listHref);
+        if (response.status === 403 || response.status === 404 || response.status === 410) {
+          unavailable();
           return;
         }
-        setCard(data.card);
+        if (!response.ok || body?.card?.id !== id || !Array.isArray(body.card.image_urls)) throw new Error("card_detail_read_failed");
+        setView({ href: detailHref, attempt, card: body.card });
       } catch {
-        router.replace(listHref);
+        if (!controller.signal.aborted) setView({ href: detailHref, attempt, message: "카드를 잠시 불러오지 못했어요.", retry: true });
       }
-      setLoading(false);
-    });
-  }, [detailHref, fromLovePass, id, listHref, router, supabase]);
+    })();
+    return () => controller.abort();
+  }, [attempt, detailHref, id, router, supabase]);
 
-  if (loading && !card) {
+  if (!currentView) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-8">
         <DetailSkeleton />
@@ -88,7 +91,17 @@ export default function OpenCardDetailPage() {
     );
   }
 
-  if (!card) return null;
+  if (!card) return (
+    <main className="mx-auto max-w-2xl px-4 py-8">
+      <div role="status" className="rounded-2xl border border-neutral-200 bg-white p-5 text-sm text-neutral-700">
+        <p>{currentView.message}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          {currentView.retry ? <button type="button" onClick={() => setAttempt(value => value + 1)} className="min-h-11 rounded-xl border border-neutral-300 px-3 font-semibold">다시 불러오기</button> : null}
+          <Link href={listHref} className="inline-flex min-h-11 items-center underline underline-offset-2">목록으로</Link>
+        </div>
+      </div>
+    </main>
+  );
 
 
   return (
@@ -121,20 +134,10 @@ export default function OpenCardDetailPage() {
         >
           {card.image_urls.length > 0 ? (
             card.image_urls.map((url, idx) => (
-              <div key={`${card.id}-${idx}`} className="flex h-52 w-full items-center justify-center bg-neutral-50 md:h-56">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={url}
-                  alt=""
-                  decoding="async"
-                  className={`h-auto max-h-full w-auto max-w-full object-contain object-center ${
-                    card.photo_visibility === "public" ? "" : "blur-[9px]"
-                  }`}
-                />
-              </div>
+              <OpenCardPhoto key={`${card.id}-${idx}-${url}`} url={url} blur={card.photo_visibility !== "public"} />
             ))
           ) : (
-            <div className="h-52 w-full animate-pulse bg-neutral-100 md:h-56" />
+            <div className="flex h-52 items-center justify-center bg-neutral-100 text-sm text-neutral-500 md:h-56">표시할 사진이 없어요.</div>
           )}
         </div>
 
@@ -189,6 +192,18 @@ export default function OpenCardDetailPage() {
       </div>
 
     </main>
+  );
+}
+
+function OpenCardPhoto({ url, blur }: { url: string; blur: boolean }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="flex h-52 items-center justify-center bg-neutral-50 md:h-56">
+      {failed ? <span className="text-xs text-neutral-500">사진을 불러오지 못했어요.</span> : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="" decoding="async" onError={() => setFailed(true)} className={`h-auto max-h-full w-auto max-w-full object-contain object-center${blur ? " blur-[9px]" : ""}`} />
+      )}
+    </div>
   );
 }
 

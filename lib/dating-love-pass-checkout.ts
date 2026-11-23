@@ -8,7 +8,9 @@ export const DATING_LOVE_PASS_ORDER_NAME = "짐툴 연애 패스";
 
 const orderAmount = OPEN_QUICK_PASS.priceKrw;
 const orderIdPattern = /^[a-f0-9]{32}$/;
+const paymentRowIdPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const checkoutTerminalStatuses = new Set(["ABORTED", "EXPIRED", "CANCELED"]);
+const common = { ok: true, productType: DATING_LOVE_PASS_PRODUCT_TYPE, amount: orderAmount } as const;
 
 export class LovePassCheckoutError extends Error {
   constructor(readonly code: string, readonly status: number, message: string) { super(message); }
@@ -20,6 +22,10 @@ function statusUnknown() {
 
 function salesUnavailable() {
   return new LovePassCheckoutError("LOVE_PASS_NOT_ON_SALE", 503, "연애 패스 구매는 아직 이용할 수 없어요.");
+}
+
+function orderNotFound() {
+  return new LovePassCheckoutError("LOVE_PASS_ORDER_NOT_FOUND", 404, "다시 확인할 연애 패스 결제 내역을 찾지 못했어요. 마이페이지에서 내역을 다시 확인해 주세요.");
 }
 
 function checkoutUrl(input: unknown): string | null {
@@ -55,22 +61,63 @@ export async function activateLovePassOrder(
   }
 }
 
+async function getResumedOrder(admin: ReturnType<typeof createAdminClient>, userId: string, id: unknown) {
+  if (typeof id !== "string" || !paymentRowIdPattern.test(id)) throw orderNotFound();
+  const { data, error } = await admin.from("toss_test_payment_orders")
+    .select("toss_order_id,amount,status,product_meta")
+    .eq("id", id).eq("user_id", userId).eq("product_type", DATING_LOVE_PASS_PRODUCT_TYPE)
+    .in("status", ["ready", "paid"]).maybeSingle();
+  if (error) throw statusUnknown();
+  if (!data || data.amount !== orderAmount || !orderIdPattern.test(data.toss_order_id) || data.product_meta?.lovePassVersion !== 1) throw orderNotFound();
+  return data;
+}
+
+async function readExistingTossPayment(orderId: string) {
+  try {
+    const payment = await getTossPaymentByOrderId(orderId);
+    if (payment.orderId !== orderId || payment.totalAmount !== orderAmount) throw statusUnknown();
+    return payment;
+  } catch (error) {
+    if (getPaymentConfirmationFailureCode(error) === "NOT_FOUND_PAYMENT") return null;
+    throw statusUnknown();
+  }
+}
+
+async function recoverApprovedOrder(admin: ReturnType<typeof createAdminClient>, orderId: string) {
+  const payment = await readExistingTossPayment(orderId);
+  if (!payment || payment.status === "READY" || payment.status === "IN_PROGRESS" || checkoutTerminalStatuses.has(payment.status ?? "")) {
+    throw new LovePassCheckoutError("LOVE_PASS_ORDER_NOT_APPROVED", 409, "이 주문에는 승인된 결제가 없어요. 새 결제는 판매가 다시 열리면 이용할 수 있어요.");
+  }
+  if (payment.status !== "DONE" || !payment.paymentKey) throw statusUnknown();
+  await activateLovePassOrder(admin, orderId, payment.paymentKey, payment);
+  return { ...common, alreadyActive: true };
+}
+
 export async function createLovePassCheckout(
   admin: ReturnType<typeof createAdminClient>,
   user: { id: string; email?: string | null },
   baseUrl: string,
+  resumedFromOrderId?: unknown,
 ) {
-  const common = { ok: true, productType: DATING_LOVE_PASS_PRODUCT_TYPE, amount: orderAmount } as const;
-  // Both this endpoint and reserve RPC fail closed when schema/launch controls are missing.
+  // The MyPage identifier is a local row UUID, not a provider order ID supplied by the browser.
+  const resumed = resumedFromOrderId === undefined ? null : await getResumedOrder(admin, user.id, resumedFromOrderId);
   const ready = await admin.rpc("dating_love_pass_ready");
-  if (ready.error || ready.data !== true) throw salesUnavailable();
+  if (ready.error || ready.data !== true) {
+    // A sales pause blocks new payment, not fulfillment of an already approved charge.
+    if (resumed) return recoverApprovedOrder(admin, resumed.toss_order_id);
+    throw salesUnavailable();
+  }
+  if (resumed?.status === "paid") return recoverApprovedOrder(admin, resumed.toss_order_id);
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const reservation = await admin.rpc("reserve_dating_love_pass_order", {
       p_user_id: user.id,
       p_toss_order_id: crypto.randomUUID().replace(/-/g, ""),
     });
-    if (reservation.error || !reservation.data || reservation.data.code === "DISABLED") throw salesUnavailable();
+    if (reservation.error || !reservation.data || reservation.data.code === "DISABLED") {
+      if (!reservation.error && reservation.data?.code === "DISABLED" && resumed) return recoverApprovedOrder(admin, resumed.toss_order_id);
+      throw salesUnavailable();
+    }
     if (reservation.data.code === "ACTIVE") return { ...common, alreadyActive: true };
     if (reservation.data.code === "INELIGIBLE") {
       throw new LovePassCheckoutError("LOVE_PASS_PROFILE_REQUIRED", 403, "휴대폰 인증과 오픈카드 등록을 마친 뒤 구매할 수 있어요.");
@@ -81,17 +128,10 @@ export async function createLovePassCheckout(
 
     const reusedOrder = reservation.data.reused;
     if (reusedOrder) {
-      let existing: TossConfirmPaymentResponse | null;
-      try {
-        existing = await getTossPaymentByOrderId(orderId);
-      } catch (error) {
-        // No payment record: retry the exact order and stable provider key. Never
-        // replace it based on a network failure or the browser's fail callback.
-        if (getPaymentConfirmationFailureCode(error) !== "NOT_FOUND_PAYMENT") throw statusUnknown();
-        existing = null;
-      }
+      // A confirmed NOT_FOUND retries the same provider order and stable key.
+      // Network errors and browser failure callbacks never replace the order.
+      const existing = await readExistingTossPayment(orderId);
       if (existing) {
-        if (existing.orderId !== orderId || existing.totalAmount !== orderAmount) throw statusUnknown();
         if (existing.status === "DONE") {
           if (!existing.paymentKey) throw statusUnknown();
           await activateLovePassOrder(admin, orderId, existing.paymentKey, existing);

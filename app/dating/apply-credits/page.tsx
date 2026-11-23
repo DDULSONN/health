@@ -7,22 +7,18 @@ import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
 import { APPLY_CREDIT_BALANCE_CHANGED, isApplyCreditBalanceChangeForUser } from "@/lib/apply-credit-balance-events";
+import { readApplyCreditStatus } from "@/lib/contextual-paid-offers";
 
-type ApplyCreditsStatusResponse = { loggedIn?: boolean; baseRemaining?: number; creditsRemaining?: number };
+type ApplyCreditsStatusResponse = { loggedIn?: boolean; baseRemaining?: number; creditsRemaining?: number; passCreditsRemaining?: number | null };
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
 const PACK_SIZE = 5;
 const PACK_AMOUNT = 5000;
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE = "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 function withPaymentCardNotice(message: string) { return message + "\n" + PAYMENT_CARD_UNAVAILABLE_MESSAGE; }
-function safeCount(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
-}
-
 export default function ApplyCreditsPage() {
   const supabase = useMemo(() => createClient(), []);
   const [loggedIn, setLoggedIn] = useState(false);
-  const [baseRemaining, setBaseRemaining] = useState<number | null>(null);
-  const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
+  const [balance, setBalance] = useState<ReturnType<typeof readApplyCreditStatus>>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -52,10 +48,12 @@ export default function ApplyCreditsPage() {
       if (!res.ok) throw new Error("STATUS_FAILED");
       const body = (await res.json()) as ApplyCreditsStatusResponse;
       if (!current()) return;
-      if (!body || safeCount(body.baseRemaining) === null || safeCount(body.creditsRemaining) === null) throw new Error("INVALID_STATUS");
-      setLoggedIn(body.loggedIn === true || Boolean(accessToken));
-      setBaseRemaining(safeCount(body.baseRemaining));
-      setCreditsRemaining(safeCount(body.creditsRemaining));
+      if (!body || typeof body !== "object") throw new Error("INVALID_STATUS");
+      const signedIn = body.loggedIn === true || (body.loggedIn === undefined && Boolean(accessToken));
+      const next = signedIn ? readApplyCreditStatus({ ...body, loggedIn: true }) : null;
+      if (signedIn && !next) throw new Error("INVALID_STATUS");
+      setLoggedIn(signedIn);
+      setBalance(next);
     } catch {
       if (current()) setStatusError("남은 지원권을 불러오지 못했어요. 다시 확인해 주세요.");
     } finally { if (current()) setStatusLoading(false); }
@@ -90,6 +88,8 @@ export default function ApplyCreditsPage() {
     finally { checkoutLock.current = false; setSubmitting(false); }
   }, [submitting, supabase]);
 
+  const passRemaining = balance?.passCreditsRemaining ?? null;
+  const formatCount = (count: number | null, unit: "회" | "장") => statusLoading ? "확인 중" : statusError || count === null ? "—" : `${count}${unit}`;
   return (
     <main className="mx-auto max-w-lg px-4 py-6">
       <nav aria-label="오픈카드 메뉴" className="mb-4 flex flex-wrap gap-4 text-sm text-neutral-500">
@@ -99,9 +99,10 @@ export default function ApplyCreditsPage() {
       <section className="rounded-2xl border border-neutral-200 bg-white p-5">
         <h1 className="text-xl font-bold text-neutral-950">오픈카드 지원권</h1>
         <p className="mt-2 text-sm leading-6 text-neutral-600">오늘 기본 지원을 모두 썼다면 추가로 지원할 수 있어요.</p>
-        <dl className="mt-4 grid grid-cols-2 divide-x divide-neutral-200 rounded-xl bg-neutral-50 py-3 text-center">
-          <div><dt className="text-xs text-neutral-500">오늘 기본 지원</dt><dd className="mt-1 text-lg font-bold text-neutral-900">{statusLoading ? "확인 중" : statusError ? "—" : `${baseRemaining}회`}</dd></div>
-          <div><dt className="text-xs text-neutral-500">남은 추가 지원권</dt><dd className="mt-1 text-lg font-bold text-neutral-900">{statusLoading ? "확인 중" : statusError ? "—" : `${creditsRemaining}장`}</dd></div>
+        <dl className={`mt-4 grid ${passRemaining === null ? "grid-cols-2" : "grid-cols-3"} divide-x divide-neutral-200 rounded-xl bg-neutral-50 py-3 text-center`}>
+          <div className="min-w-0 px-1"><dt className="text-xs text-neutral-500">오늘 기본 지원</dt><dd className="mt-1 text-lg font-bold text-neutral-900">{formatCount(balance?.baseRemaining ?? null, "회")}</dd></div>
+          <div className="min-w-0 px-1"><dt className="text-xs text-neutral-500">남은 추가 지원권</dt><dd className="mt-1 text-lg font-bold text-neutral-900">{formatCount(balance?.creditsRemaining ?? null, "장")}</dd></div>
+          {passRemaining !== null ? <div className="min-w-0 px-1"><dt className="text-xs text-neutral-500">연애 패스 지원권</dt><dd className="mt-1 text-lg font-bold text-neutral-900">{formatCount(passRemaining, "장")}</dd></div> : null}
         </dl>
         {statusError ? <div role="alert" className="mt-3 text-xs leading-5 text-rose-700"><p>{statusError}</p><button type="button" disabled={statusLoading} onClick={() => void loadStatus()} className="min-h-[44px] font-semibold underline">다시 확인</button></div> : null}
         <div className="mt-5 flex items-center justify-between gap-3"><span className="text-sm font-semibold text-neutral-900">추가 지원권 {PACK_SIZE}장</span><span className="text-xl font-bold text-neutral-950">{PACK_AMOUNT.toLocaleString("ko-KR")}원</span></div>

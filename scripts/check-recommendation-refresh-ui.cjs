@@ -14,6 +14,7 @@ function evaluate(source, bindings = {}) {
 }
 const latest = evaluate(fs.readFileSync(path.join(root, 'lib/latest-request.ts'), 'utf8'));
 const payloadRules = evaluate(fs.readFileSync(path.join(root, 'lib/dating-1on1-refresh-response.ts'), 'utf8'));
+const readRules = evaluate(fs.readFileSync(path.join(root, 'lib/dating-read-recovery.ts'), 'utf8'));
 function initializer(file, name) {
   const text = fs.readFileSync(path.join(root, file), 'utf8');
   const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -27,7 +28,7 @@ function initializer(file, name) {
   return expression;
 }
 function fixture(surface, outcome = 'ok', confirmation = true) {
-  const state = { posts: 0, reads: 0, commits: 0, alerts: [], error: '', outcome };
+  const state = { posts: 0, reads: 0, commits: 0, alerts: [], error: '', outcome, home: null, homeViewer: null };
   const file = surface === 'home' ? 'app/community/dating/cards/page.tsx' : 'app/mypage/page.tsx';
   const rawGate = latest.createLatestRequest();
   const gate = { ...rawGate, run: options => rawGate.run({ ...options, commit: value => { state.commits++; options.commit(value); } }) };
@@ -35,10 +36,11 @@ function fixture(surface, outcome = 'ok', confirmation = true) {
   const recovery = { current: false };
   const common = {
     flushCandidateImpressions: async () => {},
-    ...payloadRules, oneOnOneRefreshNeedsReloadRef: recovery,
-    useCallback: fn => fn, viewerLoggedIn: true,
+    ...payloadRules, ...readRules, oneOnOneRefreshNeedsReloadRef: recovery,
+    useCallback: fn => fn, viewerLoggedIn: true, draftUserId: 'viewer',
     oneOnOneHomeRequest: coreGate, oneOnOneRecommendationsRequest: gate,
-    setOneOnOneHome: () => {}, setMyOneOnOneAutoRecommendations: () => {},
+    setOneOnOneHome: value => { state.home = value; },
+    setOneOnOneHomeViewerId: value => { state.homeViewer = value; }, setMyOneOnOneAutoRecommendations: () => {},
     setOneOnOneRecommendations: () => {}, setOneOnOneRecommendationsLoading: () => {},
     setOneOnOneRecommendationsError: value => { state.error = value; },
     setOneOnOneHomeError: value => { state.error = value; }, setOneOnOneRefreshReadError: value => { state.error = value; },
@@ -47,12 +49,16 @@ function fixture(surface, outcome = 'ok', confirmation = true) {
       assert.notEqual(init?.method, 'POST');
       state.reads++;
       if (state.outcome === 'core-error' && _url !== '/api/dating/1on1/recommendations/my') throw Error('core read failed');
+      if (state.outcome === 'profile-error' && ['/api/dating/1on1/write-status', '/api/dating/1on1/my?participation=1'].includes(_url)) return Response.json({}, { status: 503 });
+      if (state.outcome === 'lost-auth' && _url === '/api/dating/1on1/matches/my') return Response.json({}, { status: 401 });
       if (state.outcome === 'read-error' || state.outcome === 'no-charge-read-error') throw Error('offline');
       if (state.outcome === 'aborted-read') gate.cancel();
       if (state.outcome === 'null-group') return Response.json({ items: [null] });
       if (state.outcome === 'bad-extra') return Response.json({ items: [{ source_card_id: 'source', recommendations: [], admin_recommendations: 'not-a-list' }] });
       if (state.outcome === 'bad-photo') return Response.json({ items: [{ source_card_id: 'source', recommendations: [{ id: 'candidate', photo_signed_urls: {} }] }] });
       if (state.outcome === 'empty-read') return Response.json({ items: [] });
+      if (_url === '/api/dating/1on1/write-status') return Response.json({ loggedIn: true });
+      if (_url === '/api/dating/1on1/matches/my' && state.outcome !== 'bad-read') return Response.json({ items: [{ id: 'authorized-match' }] });
       return Response.json(state.outcome === 'bad-read' ? {} : { items: [{ source_card_id: 'source', recommendations: [] }] });
     },
   };
@@ -141,6 +147,23 @@ test('home: a successful candidate read clears a stale refresh lock independentl
   assert.equal(f.state.commits, 1);
   assert.equal(f.recovery.current, false, 'an authoritative candidate/quota read must not leave an invisible click lock');
   assert.equal(f.state.posts, 1);
+});
+
+test('home: transient profile failures preserve fresh authorized matches; a subsequent permission denial clears them', async () => {
+  const f = fixture('home', 'profile-error');
+  await f.reload(true, true);
+  assert.deepEqual(f.state.home.matches, [{ id: 'authorized-match' }]);
+  assert.equal(f.state.home.profileCardsAvailable, false);
+  assert.match(f.state.home.profileError, /프로필/);
+  assert.equal(f.state.home.plus, null);
+  assert.equal(f.state.homeViewer, 'viewer');
+  assert.equal(f.state.posts, 0);
+  f.state.outcome = 'lost-auth';
+  await f.reload(true, false);
+  assert.equal(f.state.home, null);
+  assert.equal(f.state.homeViewer, null);
+  assert.match(f.state.error, /로그인/);
+  assert.equal(f.state.posts, 0);
 });
 
 test('mypage: a stale quota refusal reloads the authoritative balance without another mutation', async () => {

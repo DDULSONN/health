@@ -8,8 +8,10 @@ import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
 import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { saveApplyCheckoutDraft, readApplyCheckoutDraft, clearApplyCheckoutDraft } from "@/lib/dating-apply-draft";
+import { fetchClientJson } from "@/lib/client-json-request";
+import { datingAuthSessionMissing } from "@/lib/dating-read-recovery";
 
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import { createClient } from "@/lib/supabase/client";
@@ -89,6 +91,8 @@ export default function DatingCardApplyPage() {
   const uploadedPathsRef = useRef<string[]>([]);
   const creditCheckoutInFlightRef = useRef(false);
   const [loading, setLoading] = useState(true);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadIssue, setLoadIssue] = useState<{ message: string; retry: boolean } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [error, setError] = useState("");
@@ -98,6 +102,7 @@ export default function DatingCardApplyPage() {
   const [lastApplication, setLastApplication] = useState<LatestApplicationPrefill | null>(null);
   const [reuseLastPhotos, setReuseLastPhotos] = useState(false);
   const [prefillNotice, setPrefillNotice] = useState("");
+  const editedBeforePrefill = useRef(false);
 
   const [age, setAge] = useState("");
   const [heightCm, setHeightCm] = useState("");
@@ -110,9 +115,7 @@ export default function DatingCardApplyPage() {
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
   const photoPreparation = useDatingPhotoPreparation(MAX_FILE_SIZE);
 
-  const fillFromLatestApplication = (item: LatestApplicationPrefill) => {
-    photoPreparation.cancel(0);
-    photoPreparation.cancel(1);
+  const fillFromLatestApplication = useCallback((item: LatestApplicationPrefill) => {
     uploadedPathsRef.current = item.photo_paths;
     setAge(item.age ? String(item.age) : "");
     setHeightCm(item.height_cm ? String(item.height_cm) : "");
@@ -121,82 +124,75 @@ export default function DatingCardApplyPage() {
     setTrainingYears(item.training_years != null ? String(item.training_years) : "");
     setIntroText(item.intro_text ?? "");
     setInstagramId(normalizeInstagramId(item.instagram_id ?? ""));
-    setConsent(true);
+    setConsent(item.id !== "checkout-draft");
     setPhotos([null, null]);
     setReuseLastPhotos(item.photo_paths.length === 2);
-    setPrefillNotice(`마지막 지원 내용(${formatDateTime(item.created_at)})을 불러왔어요.`);
-  };
+    setPrefillNotice(item.id === "checkout-draft"
+      ? "결제 전 작성 내용을 복구했어요. 내용을 확인하고 동의 후 지원해주세요. 결제만으로 지원되지는 않아요."
+      : `마지막 지원 내용(${formatDateTime(item.created_at)})을 불러왔어요.`);
+  }, []);
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
+    const { signal } = controller;
+    const login = () => router.replace(`/login?redirect=${encodeURIComponent(applyHref)}`);
 
     const load = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        router.replace(`/login?redirect=${encodeURIComponent(applyHref)}`);
-        return;
-      }
-      viewerIdRef.current = user.id;
-
       try {
-        const [cardRes, latestRes] = await Promise.all([
-          fetch(`/api/dating/cards/${id}`, { cache: "no-store" }),
-          fetch("/api/dating/cards/my/applied/latest", { cache: "no-store" }),
-        ]);
-
-        if (!cardRes.ok) {
-          router.replace(listHref);
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (signal.aborted) return;
+        if (error && !datingAuthSessionMissing(error)) throw error;
+        if (!user) {
+          login();
           return;
         }
+        viewerIdRef.current = user.id;
 
-        const cardBody = (await cardRes.json()) as { card?: CardDetail };
-        if (!cardBody.card) {
-          router.replace(listHref);
+        const cardRead = fetchClientJson<{ card?: CardDetail }>(`/api/dating/cards/${id}`, { cache: "no-store", signal });
+        const latestRead = fetchClientJson<{ item?: LatestApplicationPrefill | null }>("/api/dating/cards/my/applied/latest", { cache: "no-store", signal }).catch(() => null);
+        const { response, body } = await cardRead;
+        if (signal.aborted) return;
+        if (response.status === 401) {
+          login();
           return;
         }
-
-        if (!active) return;
-        setCard(cardBody.card);
-
-        if (latestRes.ok) {
-          const latestBody = (await latestRes.json()) as { item?: LatestApplicationPrefill | null };
-          if (active && latestBody.item) {
-            setLastApplication(latestBody.item);
-            fillFromLatestApplication(latestBody.item);
-          }
+        if (response.status === 403 || response.status === 404 || response.status === 410) {
+          setLoadIssue({ message: "지금은 이 카드에 지원할 수 없어요.", retry: false });
+          return;
         }
-        if (active) {
-          let draft = null;
-          try { draft = readApplyCheckoutDraft(window.sessionStorage, user.id, id); } catch { /* Continue without a draft when storage is disabled. */ }
-          if (draft) {
-            setAge(draft.age); setHeightCm(draft.heightCm); setRegion(draft.region); setJob(draft.job);
-            setTrainingYears(draft.trainingYears); setIntroText(draft.introText); setInstagramId(draft.instagramId);
-            setConsent(false);
-            setReuseLastPhotos(draft.photoPaths.length === 2);
-            uploadedPathsRef.current = draft.photoPaths;
-            setLastApplication({ id: "checkout-draft", age: Number(draft.age), height_cm: Number(draft.heightCm), region: draft.region, job: draft.job, training_years: Number(draft.trainingYears), intro_text: draft.introText, instagram_id: draft.instagramId, photo_paths: draft.photoPaths, created_at: new Date().toISOString() });
-            setPrefillNotice("결제 전 작성 내용을 복구했어요. 내용을 확인하고 동의 후 지원해주세요. 결제만으로 지원되지는 않아요.");
-          }
+        if (!response.ok || body?.card?.id !== id || !Array.isArray(body.card.image_urls)) throw new Error("card_apply_read_failed");
+
+        setCard(body.card);
+        let draft = null;
+        try { draft = readApplyCheckoutDraft(window.sessionStorage, user.id, id); } catch { /* Continue without a draft when storage is disabled. */ }
+        if (draft) {
+          setAge(draft.age); setHeightCm(draft.heightCm); setRegion(draft.region); setJob(draft.job);
+          setTrainingYears(draft.trainingYears); setIntroText(draft.introText); setInstagramId(draft.instagramId);
+          setConsent(false);
+          setReuseLastPhotos(draft.photoPaths.length === 2);
+          uploadedPathsRef.current = draft.photoPaths;
+          setLastApplication({ id: "checkout-draft", age: Number(draft.age), height_cm: Number(draft.heightCm), region: draft.region, job: draft.job, training_years: Number(draft.trainingYears), intro_text: draft.introText, instagram_id: draft.instagramId, photo_paths: draft.photoPaths, created_at: new Date().toISOString() });
+          setPrefillNotice("결제 전 작성 내용을 복구했어요. 내용을 확인하고 동의 후 지원해주세요. 결제만으로 지원되지는 않아요.");
+        } else {
+          // Prior support history is optional. A late response cannot overwrite a new edit.
+          void latestRead.then((result) => {
+            const item = result?.response.ok ? result.body?.item : null;
+            if (signal.aborted || !item || !Array.isArray(item.photo_paths)) return;
+            setLastApplication(item);
+            if (!editedBeforePrefill.current) fillFromLatestApplication(item);
+          });
         }
       } catch {
-        router.replace(listHref);
-        return;
-      }
-
-      if (active) {
-        setLoading(false);
+        if (!signal.aborted) setLoadIssue({ message: "지원 화면을 잠시 불러오지 못했어요.", retry: true });
+      } finally {
+        if (!signal.aborted) setLoading(false);
       }
     };
 
     void load();
 
-    return () => {
-      active = false;
-    };
-  }, [applyHref, id, listHref, router, supabase]);
+    return () => controller.abort();
+  }, [applyHref, fillFromLatestApplication, id, loadAttempt, router, supabase]);
 
   const handlePhotoChange = (index: number, file: File | null) => {
     uploadedPathsRef.current = [];
@@ -208,6 +204,9 @@ export default function DatingCardApplyPage() {
 
   const handleUseLatestAgain = () => {
     if (!lastApplication) return;
+    editedBeforePrefill.current = true;
+    photoPreparation.cancel(0);
+    photoPreparation.cancel(1);
     fillFromLatestApplication(lastApplication);
   };
 
@@ -394,7 +393,23 @@ export default function DatingCardApplyPage() {
 
   if (completed) return <ApplicationCompleteNotice historyHref="/mypage?section=matching&match=applied#open-card-applied" listHref={listHref} />;
 
-  if (loading || !card) {
+  if (loadIssue) return (
+    <main className="mx-auto max-w-lg px-4 py-8">
+      <div role="status" className="rounded-2xl border border-neutral-200 bg-white p-5 text-sm text-neutral-700">
+        <p>{loadIssue.message}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          {loadIssue.retry ? <button type="button" onClick={() => {
+            setLoadIssue(null);
+            setLoading(true);
+            setLoadAttempt(value => value + 1);
+          }} className="min-h-11 rounded-xl border border-neutral-300 px-3 font-semibold">다시 불러오기</button> : null}
+          <Link href={listHref} className="inline-flex min-h-11 items-center underline underline-offset-2">목록으로</Link>
+        </div>
+      </div>
+    </main>
+  );
+
+  if (loading || card?.id !== id) {
     return (
       <main className="mx-auto max-w-lg px-4 py-8">
         <p className="text-sm text-neutral-500">불러오는 중...</p>
@@ -436,20 +451,20 @@ export default function DatingCardApplyPage() {
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+      <form onSubmit={handleSubmit} onChangeCapture={() => { editedBeforePrefill.current = true; }} className="mt-6 space-y-4">
         {lastApplication ? (
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-sm font-semibold text-emerald-900">{lastApplication.id === "checkout-draft" ? "작성하던 지원서를 불러왔어요" : "마지막 지원 내용을 불러왔어요"}</p>
-                <p className="mt-1 text-xs text-emerald-800">{prefillNotice || `${formatDateTime(lastApplication.created_at)} 기준 내용입니다.`}</p>
+                <p className="text-sm font-semibold text-emerald-900">{lastApplication.id === "checkout-draft" ? "작성하던 지원서를 불러왔어요" : prefillNotice ? "마지막 지원 내용을 불러왔어요" : "이전 지원 내용 불러오기"}</p>
+                <p className="mt-1 text-xs text-emerald-800">{prefillNotice || "이전 지원 내용이 있어요. 원하면 지금 입력한 내용 대신 사용할 수 있어요."}</p>
               </div>
               <button
                 type="button"
                 onClick={handleUseLatestAgain}
                 className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
               >
-                다시 불러오기
+                {prefillNotice ? "다시 불러오기" : "불러오기"}
               </button>
             </div>
 
@@ -464,6 +479,7 @@ export default function DatingCardApplyPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    editedBeforePrefill.current = true;
                     photoPreparation.cancel(0);
                     photoPreparation.cancel(1);
                     setReuseLastPhotos(true);

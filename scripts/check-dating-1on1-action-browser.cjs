@@ -47,7 +47,7 @@ async function main() {
     for (const surface of (inboxOnly ? ['mypage'] : polishOnly || resilienceOnly ? ['home'] : ['home', 'mypage'])) for (const width of [320, 390, 1280]) for (const scenario of (inboxOnly ? inboxScenarios : duplicatesOnly
       ? ['duplicate', 'duplicate-active']
       : resilienceOnly
-      ? ['resilience-outage', 'resilience-malformed', 'resilience-slow', 'resilience-timeout', 'resilience-unauthorized', 'resilience-match-error', 'resilience-no-profile-closed', 'resilience-rejected-profile', 'resilience-no-profile-active', 'resilience-no-profile-empty']
+      ? ['resilience-outage', 'resilience-malformed', 'resilience-slow', 'resilience-timeout', 'resilience-unauthorized', 'resilience-match-error', 'resilience-profile-error', 'resilience-profile-auth', 'resilience-no-profile-closed', 'resilience-rejected-profile', 'resilience-no-profile-active', 'resilience-no-profile-empty']
       : polishOnly
       ? ['polish-incoming', 'polish-next', 'polish-final-accept', 'polish-waiting', 'polish-empty', 'polish-no-candidates', 'polish-read-error', 'polish-focused']
       : journeyOnly
@@ -66,6 +66,7 @@ async function main() {
       let recommendationReads = 0;
       let statusReads = 0;
       let allowStatusSuccess = false;
+      let allowProfileRecovery = false;
       const missingJourney = ['journey-missing','journey-deleted','journey-profile-deleted','journey-status-error','journey-status-auth','journey-status-foreign'].includes(scenario);
       let matchListReads = 0, incomingArrived = false, failInboxRead = ['inbox-retry', 'inbox-malformed'].includes(scenario);
       const inboxCase = scenario.startsWith('inbox-');
@@ -135,6 +136,7 @@ async function main() {
           case '/api/mypage/summary': body = { profile: { email: 'fixture@example.invalid', nickname: '검증회원', phone_verified: true, nickname_changed_count: 0, nickname_change_credits: 0, swipe_profile_visible: true }, account: { is_banned: false }, isAdmin: false, weekly_win_count: 0, bodycheck_posts: [] }; break;
           case '/api/dating/1on1/my':
             if (scenario === 'inbox-delayed-open') await gate;
+            if (!allowProfileRecovery && ['resilience-profile-error', 'resilience-profile-auth'].includes(scenario)) { await route.fulfill({ status: scenario === 'resilience-profile-error' ? 503 : 401, json: {} }); return; }
             body = { items: noProfile ? (scenario === 'resilience-rejected-profile' ? [{ ...profile, status: 'rejected' }] : []) : [profile], plus: { expires_at: profile.plus_expires_at, contact_exchange_included: false } }; break;
           case '/api/dating/1on1/write-status': body = { canWrite: noProfile, phoneVerified: true, activeRequestStatus: noProfile ? null : 'approved' }; break;
           case '/api/dating/1on1/matches/my':
@@ -252,10 +254,27 @@ async function main() {
           if (['resilience-unauthorized', 'resilience-match-error'].includes(scenario)) {
             await panel.getByRole('alert').filter({ hasText: scenario === 'resilience-unauthorized' ? '로그인 상태와 이용 권한' : '로컬 매칭 조회 실패' }).waitFor();
             assert.equal(await phone.count(), 0); assert.equal(await panel.getByRole('button', { name: '연락처 교환하기', exact: true }).count(), 0);
+          } else if (scenario === 'resilience-profile-auth') {
+            await panel.getByRole('alert').filter({ hasText: /로그인 상태를 다시 확인/ }).waitFor();
+            assert.equal(await phone.count(), 0);
+            assert.equal(await panel.getByRole('button', { name: '연락처 교환하기', exact: true }).count(), 0);
+          } else if (scenario === 'resilience-profile-error') {
+            await phone.waitFor();
+            const retry = panel.getByRole('button', { name: '프로필 정보 다시 불러오기', exact: true });
+            await retry.waitFor();
+            assert.equal(await panel.getByRole('button', { name: '연락처 교환하기', exact: true }).count(), 0);
+            allowProfileRecovery = true;
+            await retry.click();
+            await retry.waitFor({ state: 'hidden' });
+            await phone.waitFor();
           } else if (noProfile) {
-            await panel.getByText('내 소개를 등록하고 후보를 만나보세요', { exact: true }).waitFor();
-            const start = panel.getByRole('link', { name: '프로필 작성하기', exact: true });
-            assert.ok((await start.getAttribute('href')).startsWith('/onboarding/dating'));
+            if (scenario === 'resilience-rejected-profile') {
+              await panel.getByRole('region', { name: '내 프로필 상태' }).getByRole('link', { name: '프로필 상태 확인', exact: true }).waitFor();
+            } else {
+              await panel.getByText('내 소개를 올리면 추천이 시작돼요', { exact: true }).waitFor();
+              const start = panel.getByRole('link', { name: '프로필 작성하기', exact: true });
+              assert.ok((await start.getAttribute('href')).startsWith('/onboarding/dating'));
+            }
             assert.equal(await panel.getByText(/조건에 맞는 후보가 생기면/).count(), 0);
             assert.equal(await panel.locator('[data-one-on-one-section="profile"]').count(), 0);
             if (scenario === 'resilience-no-profile-active') await phone.waitFor();

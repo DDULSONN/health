@@ -1,7 +1,7 @@
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
-import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { buildDatingCardPreviewUrl, buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
@@ -73,14 +73,6 @@ type SignCounters = {
   rawGuardExceeded: boolean;
   rawGuardFallbackCount: number;
 };
-
-function toLitePath(rawPath: string): string {
-  return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
-}
-
-function toThumbPath(rawPath: string): string {
-  return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
-}
 
 function toBlurWebpPath(path: string): string {
   return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
@@ -156,21 +148,7 @@ async function createSignedImageUrls(
         counters.rawGuardFallbackCount += 1;
         break;
       }
-      const litePath = toLitePath(rawPath);
-      const litePublicUrl = await getLitePublicUrlIfAvailable(adminClient, litePath);
-      if (litePublicUrl) {
-        rawUrls.push(litePublicUrl);
-        counters.rawCount += 1;
-        continue;
-      }
-      const thumbPath = toThumbPath(rawPath);
-      const thumbPublicUrl = await getLitePublicUrlIfAvailable(adminClient, thumbPath);
-      if (thumbPublicUrl) {
-        rawUrls.push(thumbPublicUrl);
-        counters.rawCount += 1;
-        continue;
-      }
-      const rawSignedUrl = buildSignedImageUrlAllowRaw("dating-card-photos", rawPath);
+      const rawSignedUrl = buildDatingCardPreviewUrl(rawPath);
       if (rawSignedUrl) {
         rawUrls.push(rawSignedUrl);
         counters.rawCount += 1;

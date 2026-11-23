@@ -10,7 +10,10 @@ import type { LovePassNearbyItem, LovePassOwnCard, LovePassStatus } from "@/lib/
 const passPath = "/dating/love-pass";
 const { priceKrw, durationDays, instantPublishes, instantCooldownDays, extraApplications, dailyLikes, maxPreferredAreas } = OPEN_QUICK_PASS;
 const dateLabel = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
-type Status = { loggedIn: boolean; saleAvailable: boolean; purchaseEligible?: boolean; verified?: boolean; canPublish?: boolean; pass: LovePassStatus | null; ownCard?: LovePassOwnCard | null; items?: LovePassNearbyItem[]; error?: string };
+type Status = { loggedIn: boolean; saleAvailable: boolean; purchaseEligible?: boolean; verified?: boolean; canPublish?: boolean; pass: LovePassStatus | null; ownCard?: LovePassOwnCard | null; error?: string };
+type NearbyState = { items: LovePassNearbyItem[]; error: string; loading: boolean };
+const emptyNearby: NearbyState = { items: [], error: "", loading: true };
+const nearbyFailure = "근처 오픈카드를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.";
 const outline = "inline-flex min-h-11 items-center justify-center rounded-xl border border-neutral-300 bg-white px-3 text-sm font-semibold text-neutral-800 disabled:opacity-50";
 const cardBox = "rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5";
 
@@ -19,19 +22,55 @@ export default function DatingLovePassPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [nearby, setNearby] = useState<NearbyState>(emptyNearby);
   const activeRequest = useRef<AbortController | null>(null);
+  const nearbyRequest = useRef<AbortController | null>(null);
   const writeLock = useRef(false);
+
   const load = useCallback(async () => {
     activeRequest.current?.abort();
+    nearbyRequest.current?.abort();
+    setNearby(emptyNearby);
     const controller = new AbortController();
     activeRequest.current = controller;
     try {
-      const { response, body } = await fetchClientJson<Status>("/api/dating/love-pass?cards=1", { cache: "no-store", signal: controller.signal }, 15_000);
+      const { response, body } = await fetchClientJson<Status>("/api/dating/love-pass", { cache: "no-store", signal: controller.signal }, 15_000);
       if (controller.signal.aborted) return;
       if (!response.ok || !body) throw new Error(body?.error || "연애 패스 상태를 불러오지 못했어요.");
       setStatus(body);
     } catch (cause) {
-      if (!controller.signal.aborted) { setStatus(null); setError(cause instanceof Error ? cause.message : "잠시 후 다시 확인해 주세요."); }
+      if (!controller.signal.aborted) {
+        setStatus(null);
+        setError(cause instanceof Error && cause.name !== "AbortError" ? cause.message : "연애 패스 상태를 불러오지 못했어요. 다시 확인해 주세요.");
+      }
+    }
+  }, []);
+
+  const loadNearby = useCallback(async (expected: LovePassStatus) => {
+    nearbyRequest.current?.abort();
+    const controller = new AbortController();
+    nearbyRequest.current = controller;
+    setNearby(emptyNearby);
+    try {
+      const { response, body } = await fetchClientJson<{ items?: LovePassNearbyItem[]; passId?: string; areas?: string[]; error?: string }>(
+        "/api/dating/love-pass?nearby=1", { cache: "no-store", signal: controller.signal }, 12_000,
+      );
+      if (controller.signal.aborted) return;
+      if (response.status === 401 || response.status === 403 || (response.ok && body &&
+        (body.passId !== expected.id || !Array.isArray(body.areas) ||
+          body.areas.length !== expected.areas.length || !expected.areas.every(area => body.areas?.includes(area))))) {
+        // Do not keep potentially private data when the current access or area selection has changed.
+        setStatus(null);
+        setError("연애 패스 이용 상태가 바뀌었어요. 다시 확인해 주세요.");
+        return;
+      }
+      if (!response.ok || !Array.isArray(body?.items)) {
+        setNearby({ items: [], error: body?.error || nearbyFailure, loading: false });
+        return;
+      }
+      setNearby({ items: body.items, error: "", loading: false });
+    } catch {
+      if (!controller.signal.aborted) setNearby({ items: [], error: nearbyFailure, loading: false });
     }
   }, []);
 
@@ -39,6 +78,13 @@ export default function DatingLovePassPage() {
     void load();
     return () => activeRequest.current?.abort();
   }, [load]);
+
+  const pass = status?.pass;
+  const verified = status?.verified;
+  useEffect(() => {
+    if (verified && pass && pass.areas.length > 0) void loadNearby(pass);
+    return () => nearbyRequest.current?.abort();
+  }, [verified, pass, loadNearby]);
 
   const perform = async (task: () => Promise<void>) => {
     if (writeLock.current) return;
@@ -70,7 +116,6 @@ export default function DatingLovePassPage() {
     if (payload.action === "publish") setNotice("내 오픈카드를 공개했어요.");
   });
 
-  const pass = status?.pass;
   const saved = pass?.areas ?? [];
   const ownCard = status?.ownCard;
   const publicationReady = status?.canPublish === true;
@@ -78,7 +123,12 @@ export default function DatingLovePassPage() {
   return (
     <main className="mx-auto w-full max-w-lg px-4 py-6">
       <Link href="/community/dating/cards?tab=open_cards" className="inline-flex min-h-11 items-center text-sm text-neutral-600 hover:text-neutral-950">‹ 오픈카드</Link>
-      {pass ? (
+      {!status ? (
+        <section className={cardBox} aria-labelledby="love-pass-loading-title">
+          <h1 id="love-pass-loading-title" className="text-xl font-bold text-neutral-950">짐툴 연애 패스</h1>
+          {!error ? <p className="mt-2 text-sm text-neutral-600" role="status">이용 가능 여부 확인 중…</p> : null}
+        </section>
+      ) : pass ? (
         <>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-bold text-neutral-950">짐툴 연애 패스</h1>
@@ -96,8 +146,13 @@ export default function DatingLovePassPage() {
                     onClick={() => update({ action: "areas", areas: selected ? saved.filter(a => a !== area) : [...saved, area] })}>{area}</button>;
                 })}
               </div>
-              {saved.length > 0 && (status.items ?? []).length === 0 ? <p className="mt-3 text-sm text-neutral-600">지금은 선택한 지역에 볼 수 있는 카드가 없어요.</p> : null}
-              {(status.items ?? []).map(item => <article key={item.id} className="mt-2 flex items-center justify-between gap-2 border-t border-neutral-100 pt-2">
+              {saved.length > 0 && (nearby.loading ? <p className="mt-3 text-sm text-neutral-600" role="status">근처 오픈카드 확인 중…</p>
+                : nearby.error ? <div className="mt-3 rounded-lg bg-neutral-50 px-3 pt-2 text-sm text-neutral-700">
+                  <p role="status">{nearby.error}</p>
+                  <button type="button" className="min-h-11 font-semibold underline" disabled={pending} onClick={() => void loadNearby(pass)}>근처 카드 다시 확인</button>
+                </div>
+                : nearby.items.length === 0 ? <p className="mt-3 text-sm text-neutral-600">지금은 선택한 지역에 볼 수 있는 카드가 없어요.</p> : null)}
+              {nearby.items.map(item => <article key={item.id} className="mt-2 flex items-center justify-between gap-2 border-t border-neutral-100 pt-2">
                 <div className="min-w-0 break-words"><h3 className="text-sm font-semibold">{item.nickname}</h3><p className="text-xs text-neutral-600">{item.age}세 · {item.region} · {item.status === "pending" ? <strong className="text-rose-700">대기 중</strong> : "공개 중"}</p></div>
                 <Link className={`${outline} shrink-0`} href={`/community/dating/cards/${item.id}?from=love-pass`}>프로필 보기</Link>
               </article>)}
@@ -129,9 +184,8 @@ export default function DatingLovePassPage() {
             <li className="py-2"><strong>빠른매칭은 횟수 제한 없이 보기</strong><p className="text-xs leading-5 text-neutral-600">좋아요는 하루 {dailyLikes}번까지. 내 프로필도 더 자주 보여줘요.</p></li>
           </ul>
           <p className="my-2 flex items-center justify-between gap-2 text-sm font-semibold"><span>{durationDays}일 이용권</span><strong className="text-xl">{priceKrw.toLocaleString("ko-KR")}원</strong></p>
-          {!status ? <p className="text-sm text-neutral-600">{error ? "" : "이용 가능 여부 확인 중…"}</p>
-            : !status.loggedIn ? <Link href={`/login?redirect=${encodeURIComponent(passPath)}`} className={`${outline} w-full`}>로그인하고 확인하기</Link>
-            : !status.saleAvailable ? <p className="rounded-xl bg-neutral-50 p-3 text-sm text-neutral-600">지금은 판매를 준비 중이에요.</p>
+          {!status.loggedIn ? <Link href={`/login?redirect=${encodeURIComponent(passPath)}`} className={`${outline} w-full`}>로그인하고 확인하기</Link>
+            : !status.saleAvailable ? <p className="rounded-xl bg-neutral-50 p-3 text-sm text-neutral-600">지금은 판매를 준비 중이에요. 이미 결제했다면 <Link href="/mypage?section=payment" className="font-semibold underline">내 결제 내역</Link>에서 확인해 주세요.</p>
             : !status.purchaseEligible ? <p className="rounded-xl bg-neutral-50 p-3 text-sm text-neutral-700">휴대폰 인증과 오픈카드 등록을 마치면 구매할 수 있어요. <Link href={status.verified ? "/dating/card/new" : "/mypage"} className="font-semibold underline">{status.verified ? "오픈카드 등록" : "인증 확인"}</Link></p>
             : <button type="button" disabled={pending} onClick={purchase} className="min-h-[46px] w-full rounded-xl bg-[#d90037] px-4 text-sm font-bold text-white hover:bg-[#be0030] disabled:opacity-50">{pending ? "결제창 준비 중…" : "연애 패스 구매하기"}</button>}
           <p className="mt-2 text-center text-xs text-neutral-500">자동결제 없음 · 1:1 연락처 교환 별도</p>

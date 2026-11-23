@@ -24,16 +24,10 @@ const changes = {
     [', swipeState.loggedIn, swipeState.unlimitedPass, swipeState.remaining, swipeSubmitting]', ', swipeState.loggedIn, swipeSubmitting]'],
     ['{swipeState.unlimitedPass ? `후보는 계속 볼 수 있어요. 좋아요는 하루 ${swipeState.limit}번까지예요.` : <>랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있어요.</>}', '랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있어요.'],
     ['{swipeState.unlimitedPass ? "오늘 남은 좋아요" : "오늘 남은"}', '오늘 남은'],
-    ['          {swipeState.unlimitedPass ? <Link href="/dating/love-pass" className="inline-flex min-h-11 items-center rounded-full border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-800">연애 패스 이용 중</Link> : <LovePassLink />}\n', ''],
-    ['{swipeState.loggedIn && !swipeState.unlimitedPass && swipeState.remaining <= 0 ? (', '{swipeState.loggedIn && swipeState.remaining <= 0 ? ('],
     ['disabled={swipeSubmitting || (swipeState.unlimitedPass === true && swipeState.remaining <= 0)}', 'disabled={swipeSubmitting}'],
   ],
   'app/community/dating/cards/[id]/page.tsx': [
     ...navigation,
-    ['(() => fromLovePass ? null : readOpenCardDetail<CardDetail>(id))', '(() => readOpenCardDetail<CardDetail>(id))'],
-    ['(() => fromLovePass || !readOpenCardDetail<CardDetail>(id))', '(() => !readOpenCardDetail<CardDetail>(id))'],
-    ['fetch(`/api/dating/cards/${id}`, fromLovePass ? { cache: "no-store" } : undefined)', 'fetch(`/api/dating/cards/${id}`)'],
-    ['[detailHref, fromLovePass, id, listHref, router, supabase]', '[detailHref, id, listHref, router, supabase]'],
     ['href={`/community/dating/cards/${card.id}/apply${sourceQuery}`}', 'href={`/community/dating/cards/${card.id}/apply${fromNearby ? "?from=nearby" : ""}`}'],
   ],
   'app/community/dating/cards/[id]/apply/page.tsx': [

@@ -11,6 +11,11 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === "development",
   runtimeCaching: [
     {
+      // Do not let generic image or navigation caches bypass member permissions.
+      urlPattern: /^https?:\/\/[^/]+\/i\/(?:signed\/|admin-preview\/|public-lite\/dating-card-lite\/)/i,
+      handler: "NetworkOnly",
+    },
+    {
       urlPattern: /^https?.*\/_next\/static\/.*/i,
       handler: "CacheFirst",
       options: {

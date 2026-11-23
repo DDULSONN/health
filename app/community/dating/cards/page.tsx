@@ -43,6 +43,7 @@ import { readDatingJson } from "@/lib/dating-read-json";
 import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 import LovePassLink from "@/components/dating/LovePassLink";
+import { resolveOneOnOneHomeReads } from "@/lib/dating-read-recovery";
 import AllPassProfileOfferBanner from "@/components/dating/AllPassProfileOfferBanner";
 import ProfileStartCard from "@/components/dating/ProfileStartCard";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
@@ -198,6 +199,7 @@ type SwipeState = {
 
 type SwipeSubscriptionStatus = {
   status: "none" | "pending" | "active";
+  lovePassActive?: boolean;
   dailyLimit: number;
   baseLimit: number;
   premiumLimit: number;
@@ -1644,7 +1646,8 @@ function OpenCardsContent() {
   const [hasActiveOneOnOneProfile, setHasActiveOneOnOneProfile] = useState(false);
   const [reactivatingHomeOpenCardId, setReactivatingHomeOpenCardId] = useState("");
   const [boostingFirstQueueCardId, setBoostingFirstQueueCardId] = useState("");
-  const [swipeSubscriptionStatus, setSwipeSubscriptionStatus] = useState<SwipeSubscriptionStatus | null>(null);
+  const [swipeSubscription, setSwipeSubscriptionStatus] = useState<(SwipeSubscriptionStatus & { userId: string }) | null>(null);
+  const swipeSubscriptionStatus = viewerLoggedIn && swipeSubscription?.userId === draftUserId ? swipeSubscription : null;
   const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
   const [swipePremiumGuideOpen, setSwipePremiumGuideOpen] = useState(false);
   const [homeAdLink, setHomeAdLink] = useState<HomeAdLinkSetting | null>(null);
@@ -1700,12 +1703,13 @@ function OpenCardsContent() {
   const [oneOnOneHomeLoading, setOneOnOneHomeLoading] = useState(false);
   const [oneOnOneHomeError, setOneOnOneHomeError] = useState("");
   const [oneOnOneHomeBase, setOneOnOneHome] = useState<OneOnOneHomeState | null>(null);
+  const [oneOnOneHomeViewerId, setOneOnOneHomeViewerId] = useState<string | null>(null);
   const [oneOnOneRecommendations, setOneOnOneRecommendations] = useState<OneOnOneHomeState["recommendations"]>([]);
   const [oneOnOneRecommendationsLoading, setOneOnOneRecommendationsLoading] = useState(false);
   const [oneOnOneRecommendationsError, setOneOnOneRecommendationsError] = useState("");
-  const oneOnOneHome = useMemo(() => oneOnOneHomeBase
+  const oneOnOneHome = useMemo(() => viewerLoggedIn && draftUserId && oneOnOneHomeViewerId === draftUserId && oneOnOneHomeBase
     ? { ...oneOnOneHomeBase, recommendations: oneOnOneRecommendations } : null,
-  [oneOnOneHomeBase, oneOnOneRecommendations]);
+  [viewerLoggedIn, draftUserId, oneOnOneHomeViewerId, oneOnOneHomeBase, oneOnOneRecommendations]);
   const oneOnOneHomeRequest = useMemo(() => createLatestRequest(), []);
   const oneOnOneRecommendationsRequest = useMemo(() => createLatestRequest(), []);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
@@ -1886,6 +1890,7 @@ function OpenCardsContent() {
         oneOnOneHomeRequest.cancel();
         oneOnOneRecommendationsRequest.cancel();
         setOneOnOneHome(null);
+        setOneOnOneHomeViewerId(null);
         setOneOnOneRecommendations([]);
         setOneOnOneRecommendationsError("");
         setOneOnOneRecommendationsLoading(false);
@@ -1966,7 +1971,7 @@ function OpenCardsContent() {
   }, [reloadMyOpenCards]);
 
   useEffect(() => {
-    if (!viewerLoggedIn) {
+    if (!viewerLoggedIn || !draftUserId) {
       setSwipeSubscriptionStatus(null);
       return;
     }
@@ -1983,8 +1988,10 @@ function OpenCardsContent() {
         }
         if (cancelled) return;
         setSwipeSubscriptionStatus({
+          userId: draftUserId,
           status:
             body.status === "active" || body.status === "pending" || body.status === "none" ? body.status : "none",
+          lovePassActive: body.lovePassActive === true,
           dailyLimit: Math.max(1, Number(body.dailyLimit ?? 5)),
           baseLimit: Math.max(1, Number(body.baseLimit ?? 5)),
           premiumLimit: Math.max(1, Number(body.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT)),
@@ -1993,7 +2000,9 @@ function OpenCardsContent() {
           activeSubscription: body.activeSubscription ?? null,
           pendingSubscription: body.pendingSubscription ?? null,
         });
+        if (body.lovePassActive === true) setSwipePremiumGuideOpen(false);
       } catch (error) {
+        if (!cancelled) setSwipeSubscriptionStatus(null);
         console.error("swipe subscription status load failed", error);
       } finally {
         if (!cancelled) setSwipeSubscriptionLoading(false);
@@ -2004,13 +2013,14 @@ function OpenCardsContent() {
     return () => {
       cancelled = true;
     };
-  }, [viewerLoggedIn, homeFeatureTab]);
+  }, [viewerLoggedIn, draftUserId, homeFeatureTab]);
 
   const reloadOneOnOneHome = useCallback(async (fresh = true, requireUpdated = false) => {
-    if (!viewerLoggedIn) {
+    if (!viewerLoggedIn || !draftUserId) {
       oneOnOneHomeRequest.cancel();
       oneOnOneRecommendationsRequest.cancel();
       setOneOnOneHome(null);
+      setOneOnOneHomeViewerId(null);
       setOneOnOneRecommendations([]);
       setOneOnOneRecommendationsError("");
       setOneOnOneRecommendationsLoading(false);
@@ -2028,30 +2038,29 @@ function OpenCardsContent() {
       replace: fresh,
       start: () => { setOneOnOneHomeLoading(true); setOneOnOneHomeError(""); },
       load: async (signal) => {
-        const [statusRead, cardsRead, matchesRead] = await Promise.all([
-          fetchClientJson<NonNullable<OneOnOneHomeState["status"]> & { error?: string }>("/api/dating/1on1/write-status", { cache: "no-store", signal }, 15000),
+        const [statusRead, cardsRead, matchesRead] = await Promise.allSettled([
+          fetchClientJson<NonNullable<OneOnOneHomeState["status"]> & { loggedIn?: boolean; error?: string }>("/api/dating/1on1/write-status", { cache: "no-store", signal }, 15000),
           fetchClientJson<{ items?: OneOnOneHomeState["myCards"]; plus?: OneOnOneHomeState["plus"]; has_sent_request?: boolean | null; error?: string }>("/api/dating/1on1/my?participation=1", { cache: "no-store", signal }, 15000),
           fetchClientJson<{ items?: OneOnOneHomeState["matches"]; error?: string }>("/api/dating/1on1/matches/my", { cache: "no-store", signal }, 15000),
         ]);
-        const statusRes = statusRead.response, myCardsRes = cardsRead.response, matchesRes = matchesRead.response;
-        const statusBody = statusRead.body ?? {}, myCardsBody = cardsRead.body ?? {}, matchesBody = matchesRead.body ?? {};
-        if (!statusRes.ok) throw new Error(statusBody.error ?? "1:1 상태를 불러오지 못했습니다.");
-        if (!myCardsRes.ok) throw new Error(myCardsBody.error ?? "내 1:1 신청 내역을 불러오지 못했습니다.");
-        if (!matchesRes.ok) throw new Error(matchesBody.error ?? "1:1 매칭 상태를 불러오지 못했습니다.");
-        if (!Array.isArray(myCardsBody.items) || !Array.isArray(matchesBody.items)) {
-          throw new Error("내 프로필과 매칭 조회 응답을 확인하지 못했어요.");
-        }
+        const { profileStatus, profileCards, matches } = resolveOneOnOneHomeReads(statusRead, cardsRead, matchesRead);
         return {
-          status: statusBody,
-          myCards: Array.isArray(myCardsBody.items) ? myCardsBody.items : [],
-          hasSentRequest: typeof myCardsBody.has_sent_request === "boolean" ? myCardsBody.has_sent_request : null,
-          matches: Array.isArray(matchesBody.items) ? matchesBody.items : [],
+          status: profileStatus,
+          myCards: profileCards?.items ?? [],
+          profileCardsAvailable: profileCards !== null,
+          profileError: !profileStatus || !profileCards ? "내 1:1 프로필 정보를 불러오지 못했어요." : "",
+          hasSentRequest: typeof profileCards?.has_sent_request === "boolean" ? profileCards.has_sent_request : null,
+          matches,
           recommendations: [],
-          plus: myCardsBody.plus && typeof myCardsBody.plus === "object" ? myCardsBody.plus : null,
+          plus: profileCards?.plus && typeof profileCards.plus === "object" ? profileCards.plus : null,
         } satisfies OneOnOneHomeState;
       },
-      commit: (value) => { setOneOnOneHome(value); updated = true; },
-      fail: (error) => setOneOnOneHomeError(error instanceof Error ? error.message : "1:1 정보를 불러오지 못했습니다."),
+      commit: (value) => { setOneOnOneHome(value); setOneOnOneHomeViewerId(draftUserId); updated = true; },
+      fail: (error) => {
+        setOneOnOneHome(null);
+        setOneOnOneHomeViewerId(null);
+        setOneOnOneHomeError(error instanceof Error ? error.message : "1:1 정보를 불러오지 못했습니다.");
+      },
       finish: () => setOneOnOneHomeLoading(false),
     }), oneOnOneRecommendationsRequest.run({
       replace: fresh,
@@ -2089,7 +2098,7 @@ function OpenCardsContent() {
       finish: () => setOneOnOneRecommendationsLoading(false),
     })]);
     if (requireUpdated && (!updated || !recommendationsUpdated)) throw new Error("새 후보 명단을 불러오지 못했어요.");
-  }, [viewerLoggedIn, oneOnOneHomeRequest, oneOnOneRecommendationsRequest]);
+  }, [viewerLoggedIn, draftUserId, oneOnOneHomeRequest, oneOnOneRecommendationsRequest]);
 
   useEffect(() => {
     if (homeFeatureTab === "one_on_one") void reloadOneOnOneHome(false);
@@ -2969,6 +2978,8 @@ function OpenCardsContent() {
   // configurable banners pointing at the links set by the operator.
   const isOneOnOneWaitNotice = ONE_ON_ONE_WAIT_NOTICE.test(homeAdLink?.title ?? "");
   const showQuickMatchSection = homeFeatureTab === "quick_match";
+  const hasLovePassQuickMatch = viewerLoggedIn && (swipeState.unlimitedPass === true || swipeSubscriptionStatus?.lovePassActive === true);
+  const showSwipePlusOffer = viewerSessionReady && !hasLovePassQuickMatch && (!viewerLoggedIn || (swipeSubscriptionStatus !== null && !swipeSubscriptionLoading));
   const showOneOnOneSection = homeFeatureTab === "one_on_one";
   const showLoveFortuneSection = isAdminPreviewUser && homeFeatureTab === "love_fortune";
   const hasActiveMyOpenCard = myOpenCards.some((card) => card.status === "pending" || card.status === "public");
@@ -3266,19 +3277,26 @@ function OpenCardsContent() {
         ) : null}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setSwipePremiumGuideOpen(true)}
-            className="inline-flex min-h-[42px] items-center rounded-full border border-amber-300 bg-amber-50 px-4 text-sm font-bold text-amber-900 hover:bg-amber-100"
-          >
-            빠른매칭 플러스
-          </button>
-          <p className="text-xs text-neutral-500">
-            {swipeSubscriptionStatus?.status === "active"
-              ? "플러스 이용 중 · 노출 강화 적용"
-              : `기본 ${swipeSubscriptionStatus?.baseLimit ?? 5}회 · 플러스 ${swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회 · 노출 강화`}
-          </p>
-          {swipeState.unlimitedPass ? <Link href="/dating/love-pass" className="inline-flex min-h-11 items-center rounded-full border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-800">연애 패스 이용 중</Link> : <LovePassLink />}
+          {hasLovePassQuickMatch ? <>
+            <Link href="/dating/love-pass" className="inline-flex min-h-11 items-center rounded-full border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-800">연애 패스 이용 중</Link>
+            <p className="text-xs text-neutral-500">빠른매칭 혜택이 포함돼 있어요.</p>
+          </> : <>
+            {showSwipePlusOffer ? <>
+              <button
+                type="button"
+                onClick={() => setSwipePremiumGuideOpen(true)}
+                className="inline-flex min-h-11 items-center rounded-full border border-amber-300 bg-amber-50 px-4 text-sm font-bold text-amber-900 hover:bg-amber-100"
+              >
+                빠른매칭 플러스
+              </button>
+              <p className="text-xs text-neutral-500">
+                {swipeSubscriptionStatus?.status === "active"
+                  ? "플러스 이용 중 · 노출 강화 적용"
+                  : `기본 ${swipeSubscriptionStatus?.baseLimit ?? 5}회 · 플러스 ${swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회 · 노출 강화`}
+              </p>
+            </> : null}
+            <LovePassLink />
+          </>}
         </div>
 
         {swipeRefreshing && !swipeLoading ? <p className="mt-3 text-xs font-medium text-neutral-400">최신 후보로 업데이트 중...</p> : null}
@@ -3305,7 +3323,7 @@ function OpenCardsContent() {
         ) : !swipeState.candidate ? (
           <>
             <p className="mt-5 text-sm text-neutral-500">{swipeState.reason ?? "현재 보여줄 후보가 없습니다."}</p>
-            {swipeState.loggedIn && !swipeState.unlimitedPass && swipeState.remaining <= 0 ? (
+            {swipeState.loggedIn && showSwipePlusOffer && swipeState.remaining <= 0 ? (
               <div className="mt-4 rounded-[24px] border border-amber-200 bg-amber-50/70 p-4">
                 <p className="text-sm font-bold text-amber-900">오늘 라이크를 모두 사용했어요.</p>
                 <p className="mt-1 text-sm leading-6 text-amber-800">
@@ -3317,7 +3335,7 @@ function OpenCardsContent() {
                   <button
                     type="button"
                     onClick={() => setSwipePremiumGuideOpen(true)}
-                    className="inline-flex min-h-[42px] items-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white hover:bg-amber-600"
+                    className="inline-flex min-h-11 items-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white hover:bg-amber-600"
                   >
                     빠른매칭 플러스 보기
                   </button>
@@ -3459,7 +3477,7 @@ function OpenCardsContent() {
       </section>
       ) : null}
 
-      {swipePremiumGuideOpen ? (
+      {showQuickMatchSection && swipePremiumGuideOpen && showSwipePlusOffer ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4" role="dialog" aria-modal="true">
           <div className="w-full max-w-md rounded-[28px] bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
             <div className="flex items-start justify-between gap-3">

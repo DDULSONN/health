@@ -8,11 +8,12 @@
   "contextualOffersReview": "Home navigation is compact with quota-zero offers only for verified known users. Existing home handlers unchanged. Apply page replaces only DAILY_APPLY_LIMIT presentation, retaining checkout lock, draft, return URL and submission handlers. Covered by check-contextual-paid-offers(-browser), check-apply-credit-checkout, check-city-preview-and-card-order, check-profile-writing-browser and check-revenue-journey-browser. Existing matching, fulfillment and phone-disclosure rules are unchanged.",
   "reviewedUxBaseline": "Legacy navigation, completion and inline feedback reviewed against ac955ce. Candidate-hide controls reviewed against e45dd22: all 116 existing My Page handlers unchanged. Home hides reviewed against 91ff9fd: existing handlers unchanged; only unsent proposals are filtered. Hidden-slot notices reviewed against 0b02832: only the hide-success text changes in these pages. Covered by check-candidate-hides, check-home-candidate-hides, recommendation hide-slot tests and real-page home/mypage hide/restore/reload/refresh browser tests.",
   "contextualOpenCardReview": "Compared with 70294d53: all 118 My Page and all 4 application handlers unchanged. Home reloadMyOpenCards clears readiness before rechecking the queue; the other 17 home handlers are unchanged. Public cards link to received applications, pending cards show the free queue, and only an actual application shortage offers a credit pack. Covered by check-instant-registration, check-contextual-paid-offers and check-apply-credit-checkout.",
+  "readRecoveryReview": "Home 1:1 match visibility now survives an independent profile read outage but fails closed on permission denial. Open Card detail and application preserve access gates, with in-place retry and optional prefill. Active Love Pass hides only overlapping Quick Match Plus offers. Offline route plus responsive home tests cover these changes.",
   "files": {
     "app/mypage/page.tsx": "e237e7777e84f6f7474d3d780713315ff5e657baae1fe5abd7a3aaac03138304",
-    "app/community/dating/cards/page.tsx": "de9f773a96010ad5ef79dc7b152b7c5a8fc3f7a4166a798520366e3d09754d95",
-    "app/community/dating/cards/[id]/page.tsx": "3869e13f9080c4201b7b52d3629355ae99592c61907d034a35053f34f0d7f0d2",
-    "app/community/dating/cards/[id]/apply/page.tsx": "030ea78375e205623f2264b0393bd8cab72f403216840e7565a824f3462c623a",
+    "app/community/dating/cards/page.tsx": "0fe508a1726002b7d481c0a6da00ea60341f646c63c73653ef6988753b8695fd",
+    "app/community/dating/cards/[id]/page.tsx": "02bea0858684f44917419597bfc6406fbd53a8d08e1290dd796703df9a5d457f",
+    "app/community/dating/cards/[id]/apply/page.tsx": "6ea722815c927c098f52257257b7974d0bf568bb88f21c576e1497f9fa19d114",
     "components/dating/DatingPlusOffers.tsx": "177929a327362af7ab958d33cdd9f3404652532dc4c2d6366f64844458efe432",
     "components/dating/IncomingSwipeLikeActions.tsx": "fc594c01e84421e2c5afeabe9f21025f2ccc941a6067fb00243cdbbd9471ac3e",
     "components/DatingReportButton.tsx": "56bb0a5448350a173189faeb43857978910684627118972a8c00c38644b981ba"

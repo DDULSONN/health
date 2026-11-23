@@ -1,7 +1,12 @@
 const FORBIDDEN_IMAGE_URL_PATTERN = /(supabase\.co|\/storage\/v1\/|\/render\/image\/)/i;
 const PUBLIC_LITE_URL_VERSION = "20260221-1";
-const ONE_ON_ONE_SIGNED_URL_VERSION = "20260829-1";
+const PRIVATE_SIGNED_URL_VERSION = "20261123-1";
 const DIRECT_PUBLIC_LITE_BUCKETS = new Set(["dating-card-lite"]);
+const PRIVATE_SIGNED_BUCKETS = new Set(["dating-card-photos", "dating-apply-photos", "dating-1on1-photos", "reels-dating-application-photos"]);
+
+function signedVersionQuery(bucket: string): string {
+  return PRIVATE_SIGNED_BUCKETS.has(bucket) ? `?v=${PRIVATE_SIGNED_URL_VERSION}` : "";
+}
 
 type ImageTransformOptions = {
   width?: number;
@@ -99,7 +104,7 @@ export function buildPublicLiteImageUrl(bucket: string, objectPath: string): str
   const safeBucket = assertSafeObjectPath(bucket);
   const safePath = assertSafeObjectPath(objectPath);
   if (!safeBucket || !safePath) return "";
-  if (DIRECT_PUBLIC_LITE_BUCKETS.has(safeBucket)) {
+  if (DIRECT_PUBLIC_LITE_BUCKETS.has(safeBucket) && /^cards\/[\w-]+\/blur\/[\w.-]+\.(?:avif|jpe?g|png|webp)$/i.test(safePath)) {
     const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
     if (supabaseUrl) {
       return `${supabaseUrl}/storage/v1/object/public/${encodePath(safeBucket)}/${encodePath(safePath)}?v=${PUBLIC_LITE_URL_VERSION}`;
@@ -118,15 +123,19 @@ export function buildSignedImageUrl(bucket: string, objectPath: string): string 
     return "";
   }
 
-  const versionQuery = safeBucket === "dating-1on1-photos" ? `?v=${ONE_ON_ONE_SIGNED_URL_VERSION}` : "";
-  return `/i/signed/${encodePath(safeBucket)}/${encodePath(safePath)}${versionQuery}`;
+  return `/i/signed/${encodePath(safeBucket)}/${encodePath(safePath)}${signedVersionQuery(safeBucket)}`;
 }
 
 export function buildSignedImageUrlAllowRaw(bucket: string, objectPath: string): string {
   const safeBucket = assertSafeObjectPath(bucket);
   const safePath = assertSafeObjectPath(objectPath);
   if (!safeBucket || !safePath) return "";
-  return `/i/signed/${encodePath(safeBucket)}/${encodePath(safePath)}`;
+  return `/i/signed/${encodePath(safeBucket)}/${encodePath(safePath)}${signedVersionQuery(safeBucket)}`;
+}
+
+export function buildDatingCardPreviewUrl(rawPath: string): string {
+  const url = buildSignedImageUrlAllowRaw("dating-card-photos", rawPath);
+  return url ? `${url}&preview=1` : "";
 }
 
 export function buildAdminCardPreviewImageUrl(
@@ -138,7 +147,7 @@ export function buildAdminCardPreviewImageUrl(
 
   const width = clamp(Math.round(options?.width ?? 720), 320, 720);
   const quality = clamp(Math.round(options?.quality ?? 68), 45, 75);
-  return `/i/admin-preview/dating-card-photos/${encodePath(safePath)}?w=${width}&q=${quality}`;
+  return `/i/admin-preview/dating-card-photos/${encodePath(safePath)}?w=${width}&q=${quality}&v=${PRIVATE_SIGNED_URL_VERSION}`;
 }
 
 export function withImageTransform(raw: string | null | undefined, options?: ImageTransformOptions): string | null {

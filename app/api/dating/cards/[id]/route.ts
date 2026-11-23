@@ -1,7 +1,9 @@
 ﻿import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
+import { buildDatingCardPreviewUrl } from "@/lib/images";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
+import { isDatingCardBlurPath } from "@/lib/dating-card-photo-visibility";
 import { hasCityViewCardAccess } from "@/lib/dating-city-view";
 import { hasLovePassNearbyCardAccess } from "@/lib/dating-love-pass-access";
 import { getLovePassPhotoPaths } from "@/lib/dating-love-pass-photos";
@@ -39,10 +41,11 @@ function normalizeDatingPhotoPath(raw: unknown): string {
   if (typeof raw !== "string") return "";
   const value = raw.trim();
   if (!value) return "";
-  return (
-    extractStorageObjectPathFromBuckets(value, ["dating-card-photos", "dating-photos"]) ??
-    value
-  );
+  try {
+    return extractStorageObjectPathFromBuckets(value, ["dating-card-photos", "dating-photos"]) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 async function signPathWithCache(
@@ -74,14 +77,6 @@ async function signPathWithCache(
 
 function toBlurWebpPath(path: string): string {
   return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
-}
-
-function toThumbPath(rawPath: string): string {
-  return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
-}
-
-function toLitePath(rawPath: string): string {
-  return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
 }
 
 async function getLitePublicUrlIfAvailable(
@@ -126,6 +121,7 @@ async function getLitePublicUrlIfAvailable(
 
 async function createSignedImageUrls(
   adminClient: ReturnType<typeof createAdminClient>,
+  ownerId: string,
   photoPaths: unknown,
   blurPaths: unknown,
   blurThumbPath: unknown,
@@ -137,28 +133,12 @@ async function createSignedImageUrls(
     const rawPaths = Array.isArray(photoPaths)
       ? photoPaths.map((item) => normalizeDatingPhotoPath(item)).filter((item) => item.length > 0).slice(0, 2)
       : [];
-    const rawUrls: string[] = [];
-    for (const rawPath of rawPaths) {
-      const litePath = toLitePath(rawPath);
-      const litePublic = await getLitePublicUrlIfAvailable(adminClient, litePath);
-      if (litePublic) {
-        rawUrls.push(litePublic);
-        continue;
-      }
-      const thumbPath = toThumbPath(rawPath);
-      const thumbPublic = await getLitePublicUrlIfAvailable(adminClient, thumbPath);
-      if (thumbPublic) {
-        rawUrls.push(thumbPublic);
-        continue;
-      }
-      const rawSigned = await signPathWithCache(adminClient, rawPath, requestId, counters, true);
-      if (rawSigned) rawUrls.push(rawSigned);
-    }
+    const rawUrls = rawPaths.map(buildDatingCardPreviewUrl).filter(Boolean);
     if (rawUrls.length > 0) return rawUrls;
   }
 
   const blurPathList = Array.isArray(blurPaths)
-    ? blurPaths.map((item) => normalizeDatingPhotoPath(item)).filter((item) => item.length > 0).slice(0, 2)
+    ? blurPaths.map(normalizeDatingPhotoPath).filter(path => isDatingCardBlurPath(path, ownerId)).slice(0, 2)
     : [];
   const blurUrls: string[] = [];
   for (const originalBlurPath of blurPathList) {
@@ -174,7 +154,7 @@ async function createSignedImageUrls(
   if (blurUrls.length > 0) return blurUrls;
 
   const normalizedBlurThumbPath = normalizeDatingPhotoPath(blurThumbPath);
-  if (normalizedBlurThumbPath) {
+  if (isDatingCardBlurPath(normalizedBlurThumbPath, ownerId)) {
     const blurThumbWebpPath = toBlurWebpPath(normalizedBlurThumbPath);
     const publicThumb = await getLitePublicUrlIfAvailable(adminClient, blurThumbWebpPath);
     if (publicThumb) {
@@ -189,18 +169,10 @@ async function createSignedImageUrls(
   }
 
   // 留덉?留??덉쟾?μ튂: blur/lite ?먯궛 ?꾨씫 ??raw signed瑜??곸꽭?먯꽌留??쒗븳?곸쑝濡??덉슜
-  const emergencyRawPaths = Array.isArray(photoPaths)
-    ? photoPaths.map((item) => normalizeDatingPhotoPath(item)).filter((item) => item.length > 0).slice(0, 2)
-    : [];
-  const emergencyRawUrls: string[] = [];
-  for (const rawPath of emergencyRawPaths) {
-    const rawSigned = await signPathWithCache(adminClient, rawPath, requestId, counters, true);
-    if (rawSigned) emergencyRawUrls.push(rawSigned);
-  }
-  if (emergencyRawUrls.length > 0) return emergencyRawUrls;
-
   return [];
 }
+
+const privateCardHeaders = { "Cache-Control": "private, no-store", Vary: "Cookie, Authorization" };
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = crypto.randomUUID();
@@ -259,7 +231,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     error = legacyRes.error;
   }
 
-  if (error || !data) {
+  if (error && error.code !== "PGRST116") {
+    return NextResponse.json({ error: "카드를 잠시 불러오지 못했어요. 다시 시도해 주세요." }, { status: 503, headers: privateCardHeaders });
+  }
+  if (!data) {
     return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
   }
 
@@ -302,6 +277,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
   const imageUrls = viaLovePass ? getLovePassPhotoPaths(data).map((_, slot) => `/api/dating/love-pass/photo?cardId=${encodeURIComponent(data.id)}&slot=${slot}`) : await createSignedImageUrls(
     adminClient,
+    data.owner_user_id,
     data.photo_paths,
     data.blur_paths,
     data.blur_thumb_path,
@@ -337,7 +313,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       created_at: data.created_at,
     },
     can_apply: true,
-  }, viaLovePass ? { headers: { "Cache-Control": "private, no-store", Vary: "Cookie, Authorization" } } : undefined);
+  }, { headers: privateCardHeaders });
 }
 
 

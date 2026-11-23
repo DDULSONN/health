@@ -94,7 +94,7 @@ for (const tab of ['one_on_one', 'quick_match', 'love_fortune']) test(tab + ': i
   const f = fixture(tab); await callback('refreshSecondary', f.ctx)(); assert.equal(f.calls.length, 0);
 });
 for (const tab of ['open_cards', 'one_on_one', 'love_fortune']) test(tab + ': no quick-match candidate or subscription prefetch', () => {
-  const f = fixture(tab); Object.assign(f.ctx, { viewerLoggedIn: true, setSwipeMessage() {} });
+  const f = fixture(tab); Object.assign(f.ctx, { viewerLoggedIn: true, draftUserId: 'fixture-viewer', setSwipeMessage() {} });
   assert.equal(effect('void loadSwipe(activeSex', f.ctx), undefined);
   assert.equal(effect('const loadSwipeSubscriptionStatus', f.ctx), undefined); assert.equal(f.calls.length, 0);
 });
@@ -174,8 +174,46 @@ const movedFunctions = {
   getOneOnOneMeta: '69c12ee8d518ac7eb00811fde82b6602abad3471eda01cf664dd03233489e163',
   oneOnOneContactLabel: 'c7bcaf1620f1111c3b164ec6f71a6fb090a751162a2048cca29473e6a949d577',
 };
+// Undo only the approved partial-profile presentation before historical hashing.
+// Live view behavior, authenticated reads and quota are covered by the resilience tests.
+function withoutProfileReadRecoveryView(source) {
+  source = source.replace(/\r\n/g, '\n');
+  const changes = [
+    ['  profileCardsAvailable?: boolean;\n  profileError?: string;\n', ''],
+    ['  const contactOfferAvailable = data?.profileCardsAvailable !== false;\n  const profileError = data?.profileError ?? "";\n', ''],
+    ['            {!profileError && !hasOneOnOneCard && myCards[0]?.status === "rejected" ? (\n', '            {!hasOneOnOneCard && myCards[0]?.status === "rejected" ? (\n'],
+    ['            ) : !profileError && !hasOneOnOneCard && !profileDraftAvailable ? (\n', '            ) : !hasOneOnOneCard && !profileDraftAvailable ? (\n'],
+    ['                <OneOnOneMatchActions match={focusedMatch} contactExchangeIncluded={plusContactExchangeIncluded} contactOfferAvailable={contactOfferAvailable}\n', '                <OneOnOneMatchActions match={focusedMatch} contactExchangeIncluded={plusContactExchangeIncluded}\n'],
+    [`            {profileError ? <div role="status" className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+              <p>{profileError} 매칭 내역은 아래에서 확인할 수 있어요.</p>
+              <button type="button" onClick={onReload} className="min-h-[44px] font-semibold text-neutral-800 underline underline-offset-2">프로필 정보 다시 불러오기</button>
+            </div> : null}
+`, ''],
+    ['              <OneOnOneNextSteps matches={activeMatches} renderContact={contactOfferAvailable ? (match) => (\n', '              <OneOnOneNextSteps matches={activeMatches} renderContact={(match) => (\n'],
+    ['              ) : undefined} homePreview focusedMatchId={focusedMatch?.id} />\n', '              )} homePreview focusedMatchId={focusedMatch?.id} />\n'],
+    ['\n                  contactOfferAvailable={contactOfferAvailable}\n', '\n'],
+    ['\n                        contactOfferAvailable={contactOfferAvailable}\n', '\n'],
+    ['  contactOfferAvailable,\n', ''],
+    ['  contactOfferAvailable: boolean;\n', ''],
+    [`        {contactOfferAvailable ? <OneOnOneContactOffer matchId={match.id} name={match.counterparty_card?.name}
+          included={contactExchangeIncluded} processing={contactProcessing}
+          nudge={match.contact_nudge} nudgeProcessing={nudgeProcessing}
+          onExchange={onContactCheckout} onNudge={onContactNudge} /> : <p className="text-xs text-neutral-600">혜택을 다시 확인한 뒤 연락처 교환을 진행해 주세요.</p>}
+`, `        <OneOnOneContactOffer matchId={match.id} name={match.counterparty_card?.name}
+          included={contactExchangeIncluded} processing={contactProcessing}
+          nudge={match.contact_nudge} nudgeProcessing={nudgeProcessing}
+          onExchange={onContactCheckout} onNudge={onContactNudge} />
+`],
+  ];
+  for (const [index, [after, before]] of changes.entries()) {
+    assert.equal(source.split(after).length, 2, `Exact reviewed 1:1 read recovery view ${index + 1}`);
+    source = source.replace(after, before);
+  }
+  return source;
+}
 for (const [name, hash] of Object.entries(movedFunctions)) test('extraction preserves rendering/behavior byte-for-byte: ' + name, () => {
-  const profileView = require('./fixtures/profile-state-contract.cjs').withoutProfileStateNotice(read('components/dating/OneOnOneHomePanel.tsx'), 'components/dating/OneOnOneHomePanel.tsx');
+  const panelFile = 'components/dating/OneOnOneHomePanel.tsx';
+  const profileView = require('./fixtures/profile-state-contract.cjs').withoutProfileStateNotice(withoutProfileReadRecoveryView(read(panelFile)), panelFile);
   let code = require('./fixtures/private-contact-contract.cjs').withoutPrivateView(profileView).replaceAll('(matchId: string, offerId?: string) => void', '(matchId: string) => void');
   if (name === 'OneOnOneHomePanel') {
     // The separately tested GET-only quota check is the sole permitted addition.
