@@ -221,7 +221,7 @@ function nodes(tree) {
 function text(tree) {
   return Array.isArray(tree) ? tree.map(text).join('') : tree && typeof tree === 'object' ? text(tree.props?.children) : String(tree ?? '');
 }
-for (const remaining of [0, 1, 2]) test(`real home result markup shows ${remaining} remaining and preserves button permission`, () => {
+for (const remaining of [0, 1, 2]) for (const replacingSourceId of [null, 'fixture-card', 'other-card']) test(`real home result markup shows ${remaining} remaining and preserves button permission during ${replacingSourceId ?? 'no replacement'}`, () => {
   const source = ast('components/dating/OneOnOneHomePanel.tsx');
   const call = find(source, n => ts.isCallExpression(n) && n.expression.getText(source) === 'displayedGroups.map');
   const initialBrowseCount = find(source, n => ts.isVariableDeclaration(n) && n.name.getText(source) === 'INITIAL_BROWSE_COUNT');
@@ -230,14 +230,16 @@ for (const remaining of [0, 1, 2]) test(`real home result markup shows ${remaini
     OneOnOneRefreshControl: 'RefreshControl', refreshNotice: null, plusActive: false,
     OneOnOneExpansionPanel: 'ExpansionPanel', processingAutoKeys: [], onReported() {}, onAutoSelect() {},
     onCandidateHidden: undefined, onCandidateRestored: undefined, onFavoriteChanged: undefined, starterPreview: false, arrivedFromOnboarding: false, favoriteBusyKeys: [],
+    singleRefreshBusy: replacingSourceId ? { sourceCardId: replacingSourceId, candidateId: 'candidate' } : null,
+    singleRefreshNotice: null, waitingSingleCandidateGroup: undefined,
   }).render;
   const tree = render({ ...quota(remaining), recommendations: [], admin_recommendations: [] }, 0);
   const control = nodes(tree).find(n => n.type === 'RefreshControl');
-  assert.equal(control.props.blocked, remaining === 0);
+  assert.equal(control.props.blocked, remaining === 0 || replacingSourceId === 'fixture-card');
   assert.equal(control.props.usage.refresh_remaining, remaining);
   assert.equal(control.props.busy, false);
 });
-for (const remaining of [0, 1]) test(`real mypage refresh button preserves availability ${remaining}`, () => {
+for (const remaining of [0, 1]) for (const replacingSourceId of [null, 'fixture-card', 'other-card']) test(`real mypage refresh button preserves availability ${remaining} during ${replacingSourceId ?? 'no replacement'}`, () => {
   const source = ast(myFile);
   const node = find(source, n => ts.isJsxSelfClosingElement(n) && n.tagName.getText() === 'OneOnOneRefreshControl'
     && n.getText(source).includes('handleRefreshOneOnOneRecommendations(item.id)'));
@@ -246,8 +248,9 @@ for (const remaining of [0, 1]) test(`real mypage refresh button preserves avail
     canRefreshAutoRecommendations: remaining > 0, refreshingAutoRecommendations: false,
     oneOnOneRefreshReadError: '', priorityBoostActive: false,
     OneOnOneRefreshControl: 'RefreshControl', autoRecommendationGroup: quota(remaining), oneOnOneRefreshNotice: null,
+    singleRefreshBusy: replacingSourceId ? { sourceCardId: replacingSourceId, candidateId: 'candidate' } : null,
   }).tree;
-  assert.equal(tree.props.blocked, remaining === 0);
+  assert.equal(tree.props.blocked, remaining === 0 || replacingSourceId === 'fixture-card');
   assert.equal(tree.props.usage.refresh_remaining, remaining);
 });
 test('all affected customer copy drops ambiguous calendar-day/completion wording', () => {
