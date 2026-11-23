@@ -23,6 +23,8 @@ import { oneOnOneEndedNotice } from "@/lib/dating-1on1-notification-status";
 import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import CandidateImpression from "@/components/dating/CandidateImpression";
+import OneOnOneCandidateReplaceButton from "@/components/dating/OneOnOneCandidateReplaceButton";
+import { eligibleForSingleCandidateRefresh, type SingleCandidateRefreshFields } from "@/lib/use-one-on-one-candidate-replace";
 import CandidateFavoriteButton from "@/components/dating/CandidateFavoriteButton";
 import OneOnOneFavorites from "@/components/dating/OneOnOneFavorites";
 import { getOneOnOneStarterKeys, getOneOnOneStarterGroups } from "@/lib/dating-1on1-starter";
@@ -55,15 +57,13 @@ type OneOnOneCardPreview = {
   archived?: boolean;
 };
 
-type OneOnOneRecommendationGroup = {
+type OneOnOneRecommendationGroup = SingleCandidateRefreshFields & {
   hides_enabled?: boolean;
   hidden_candidate_ids?: string[];
   recommendation_region_widened?: boolean;
   new_candidate_notice?: import("@/lib/dating-1on1-new-candidate-notice").OneOnOneNewCandidateNotice | null;
   recommendation_availability?: import("@/lib/dating-1on1-candidate-availability").OneOnOneCandidateAvailability | null;
-  impression_ticket?: string | null;
   expansion_enabled?: boolean;
-  source_card_id?: string;
   source_card_status?: string;
   refresh_used?: boolean;
   refresh_used_at?: string | null;
@@ -179,6 +179,9 @@ export default function OneOnOneHomePanel({
   onContactNudge,
   onAutoSelect,
   onRefreshRecommendations,
+  onReplaceCandidate,
+  singleRefreshBusy,
+  singleRefreshNotice,
   onCandidateHidden,
   onCandidateRestored,
   onFavoriteChanged,
@@ -214,6 +217,9 @@ export default function OneOnOneHomePanel({
   onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
   onAutoSelect: (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => void | Promise<void>;
   onRefreshRecommendations: (sourceCardId: string) => void;
+  onReplaceCandidate?: (group: SingleCandidateRefreshFields, candidateId: string) => Promise<void>;
+  singleRefreshBusy?: { sourceCardId: string; candidateId: string } | null;
+  singleRefreshNotice?: { sourceCardId: string; message: string } | null;
   onCandidateHidden?: (candidateId: string) => void;
   onCandidateRestored?: () => Promise<void>;
   refreshNotice: OneOnOneRefreshNotice | null;
@@ -547,6 +553,7 @@ export default function OneOnOneHomePanel({
                     const recommendations = group.recommendations ?? [];
                     const adminRecommendations = group.admin_recommendations ?? [];
                     const refreshing = refreshingRecommendationIds.includes(sourceCardId);
+                     const replacing = singleRefreshBusy?.sourceCardId === sourceCardId;
                     const canRefresh = Boolean(sourceCardId && group.can_refresh);
                     const remainingCount = !arrivedFromOnboarding
                       ? Math.max(0, recommendations.length + adminRecommendations.length - INITIAL_BROWSE_COUNT)
@@ -573,7 +580,7 @@ export default function OneOnOneHomePanel({
                         >
                           <button
                             type="button"
-                            disabled={!canSelect || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
+                            disabled={!canSelect || replacing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
                             onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}
                             className="mt-2 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-sm font-semibold text-white hover:bg-[#d90037] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
@@ -582,13 +589,17 @@ export default function OneOnOneHomePanel({
                           <div className="flex flex-wrap items-start justify-between gap-x-2">
                             {onFavoriteChanged ? <CandidateFavoriteButton sourceCardId={sourceCardId} candidateId={candidateId}
                               favorite={Boolean(group.favorite_candidates?.some(card => card.id === candidateId))}
-                              disabled={!canSelect || refreshing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
+                              disabled={!canSelect || refreshing || replacing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}
                               onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}
                               onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, !group.favorite_candidates?.some(card => card.id === candidateId))} /> : null}
                             {onCandidateHidden ? <CandidateHideButton enabled={group.hides_enabled === true}
                               sourceCardId={sourceCardId} candidateId={candidateId} ticket={group.impression_ticket}
-                              disabled={!canSelect || refreshing || processingAutoKeys.length > 0}
+                              disabled={!canSelect || refreshing || replacing || processingAutoKeys.length > 0}
                               onHidden={onCandidateHidden} /> : null}
+                            {!additional && onReplaceCandidate && eligibleForSingleCandidateRefresh(group, candidateId) ?
+                              <OneOnOneCandidateReplaceButton busy={replacing && singleRefreshBusy?.candidateId === candidateId}
+                                disabled={Boolean(singleRefreshBusy) || refreshing || processingAutoKeys.length > 0 || favoriteBusyKeys.length > 0 || Boolean(error)}
+                                onClick={() => { void onReplaceCandidate(group, candidateId); }} /> : null}
                           </div>
                         </OneOnOneCandidateCard>
                       );
@@ -612,11 +623,12 @@ export default function OneOnOneHomePanel({
                             </p>
                           </div>
                         </div>
-                        {!starterPreview ? <OneOnOneRefreshControl usage={group} busy={refreshing} blocked={!canRefresh || favoriteBusyKeys.length > 0}
+                        {!starterPreview ? <OneOnOneRefreshControl usage={group} busy={refreshing} blocked={!canRefresh || replacing || favoriteBusyKeys.length > 0}
                           onCheckUsage={onReload}
                           plusOffer={{ cardId: sourceCardId, active: plusActive }}
                           notice={refreshNotice?.sourceCardId === sourceCardId ? refreshNotice : null}
                           onRequest={() => onRefreshRecommendations(sourceCardId)} /> : null}
+                        {singleRefreshNotice?.sourceCardId === sourceCardId ? <p role="status" className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-700">{singleRefreshNotice.message}</p> : null}
                         {onCandidateRestored ? <CandidateHidesPanel enabled={group.hides_enabled === true}
                           availability={group.recommendation_availability}
                           revision={group} onRestored={onCandidateRestored} /> : null}

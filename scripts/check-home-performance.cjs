@@ -216,7 +216,8 @@ for (const [name, hash] of Object.entries(movedFunctions)) test('extraction pres
   const profileView = require('./fixtures/profile-state-contract.cjs').withoutProfileStateNotice(withoutProfileReadRecoveryView(read(panelFile)), panelFile);
   let code = require('./fixtures/private-contact-contract.cjs').withoutPrivateView(profileView).replaceAll('(matchId: string, offerId?: string) => void', '(matchId: string) => void');
   if (name === 'OneOnOneHomePanel') {
-    // The separately tested GET-only quota check is the sole permitted addition.
+    // Only the reviewed replacement UI and the separately tested GET-only quota check are excluded.
+    code = require('./fixtures/love-pass-payment-contract.cjs').withoutSingleCandidatePanelChanges(code);
     const quotaCheck = '                          onCheckUsage={onReload}\n';
     assert.equal(code.split(quotaCheck).length, 2);
     code = code.replace(quotaCheck, '');

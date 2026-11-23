@@ -103,7 +103,105 @@ function withoutLovePassMypageAdditions(source) {
 ` : '';
     source = source.replace(addition, previous);
   }
+  return withoutSingleCandidateMypageChanges(source);
+}
+
+// Recommendation-only UI has its own browser coverage. Validate the exact edits
+// before hashing every remaining MyPage byte, including payment/disclosure.
+function withoutSingleCandidateMypageChanges(source) {
+  const changes = [
+    ['import OneOnOneCandidateReplaceButton from "@/components/dating/OneOnOneCandidateReplaceButton";\n', ''],
+    ['import { eligibleForSingleCandidateRefresh, useOneOnOneCandidateReplace, type SingleCandidateRefreshFields } from "@/lib/use-one-on-one-candidate-replace";\n', ''],
+    ['type MyOneOnOneAutoRecommendationGroup = SingleCandidateRefreshFields & {\n', 'type MyOneOnOneAutoRecommendationGroup = {\n'],
+    ['  source_card_id: string;\n  source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";\n', '  impression_ticket?: string | null;\n  source_card_id: string;\n  source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";\n'],
+    ['  const oneOnOneReplaceIdentityRef = useRef<string | null>(null);\n  const [oneOnOneReplaceViewerId, setOneOnOneReplaceViewerId] = useState<string | null>(null);\n', ''],
+    ['      oneOnOneReplaceIdentityRef.current = next;\n      setOneOnOneReplaceViewerId(next);\n', ''],
+    [`  const { replace: replaceOneOnOneCandidate, busy: singleRefreshBusy, notice: singleRefreshNotice } = useOneOnOneCandidateReplace({
+    identity: oneOnOneReplaceIdentityRef, viewerId: oneOnOneReplaceViewerId, locks: oneOnOneRefreshLocksRef,
+    needsReload: oneOnOneRefreshNeedsReloadRef, reload: () => reloadOneOnOneRecommendations(true, true),
+    onReadFailure: setOneOnOneRefreshReadError,
+  });
+
+`, ''],
+    ['    if (oneOnOneRefreshLocksRef.current.has(sourceCardId) || processingOneOnOneAutoKeys.includes(actionKey)) return;\n', '    if (processingOneOnOneAutoKeys.includes(actionKey)) return;\n'],
+    ['    if (oneOnOneRefreshLocksRef.current.has(sourceCardId) || processingOneOnOneFavoriteKeys.includes(actionKey)) return;\n', '    if (processingOneOnOneFavoriteKeys.includes(actionKey)) return;\n'],
+    ['blocked={!canRefreshAutoRecommendations || Boolean(oneOnOneRefreshReadError) || singleRefreshBusy?.sourceCardId === item.id}', 'blocked={!canRefreshAutoRecommendations || Boolean(oneOnOneRefreshReadError)}'],
+    [`                        {singleRefreshNotice?.sourceCardId === item.id ? <p role="status" className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-700">{singleRefreshNotice.message}</p> : null}
+`, ''],
+    ['                            const replacing = singleRefreshBusy?.sourceCardId === item.id;\n', ''],
+    ['disabled={processing || replacing}', 'disabled={processing}'],
+    ['disabled={processing || replacing || processingOneOnOneFavoriteKeys.includes(actionKey)}', 'disabled={processing || processingOneOnOneFavoriteKeys.includes(actionKey)}'],
+    ['disabled={processing || replacing || refreshingAutoRecommendations || processingOneOnOneFavoriteKeys.includes(actionKey)}', 'disabled={processing || refreshingAutoRecommendations || processingOneOnOneFavoriteKeys.includes(actionKey)}'],
+    [`                                  {!isArchivedOneOnOneCard && oneOnOneReplaceViewerId && autoRecommendationGroup && eligibleForSingleCandidateRefresh(autoRecommendationGroup, card.id) ?
+                                    <OneOnOneCandidateReplaceButton busy={replacing && singleRefreshBusy?.candidateId === card.id}
+                                      disabled={Boolean(singleRefreshBusy) || refreshingAutoRecommendations || Boolean(oneOnOneRefreshReadError) || processingOneOnOneAutoKeys.length > 0 || processingOneOnOneFavoriteKeys.length > 0}
+                                      onClick={() => { void replaceOneOnOneCandidate(autoRecommendationGroup, card.id); }} /> : null}
+`, ''],
+  ];
+  for (const [index, [next, previous]] of changes.entries()) {
+    assert.equal(source.split(next).length, 2, 'Exact reviewed single candidate MyPage edit: ' + (index + 1));
+    source = source.replace(next, previous);
+  }
   return source;
 }
 
-module.exports = { withoutLovePassPaymentAdditions, withoutLovePassMypageAdditions };
+function withoutSingleCandidateHomeChanges(source) {
+  source = source.replace(/\r\n/g, '\n');
+  const changes = [
+    ['import { useOneOnOneCandidateReplace } from "@/lib/use-one-on-one-candidate-replace";\n', ''],
+    ['  const oneOnOneReplaceIdentityRef = useRef<string | null>(null);\n', ''],
+    ['        oneOnOneReplaceIdentityRef.current = state.status === "authenticated" ? state.userId : null;\n', ''],
+    ['        oneOnOneReplaceIdentityRef.current = null;\n', ''],
+    [`  const { replace: replaceOneOnOneCandidate, busy: singleRefreshBusy, notice: singleRefreshNotice } = useOneOnOneCandidateReplace({
+    identity: oneOnOneReplaceIdentityRef, viewerId: draftUserId, locks: oneOnOneRefreshLocksRef,
+    needsReload: oneOnOneRefreshNeedsReloadRef, reload: () => reloadOneOnOneHome(true, true),
+    onReadFailure: setOneOnOneHomeError,
+  });
+
+`, ''],
+    ['      if (oneOnOneRefreshLocksRef.current.has(sourceCardId) || processingOneOnOneAutoKeys.includes(actionKey)) return;\n', '      if (processingOneOnOneAutoKeys.includes(actionKey)) return;\n'],
+    [`          onReplaceCandidate={replaceOneOnOneCandidate}
+          singleRefreshBusy={singleRefreshBusy}
+          singleRefreshNotice={singleRefreshNotice}
+`, ''],
+  ];
+  for (const [index, [next, previous]] of changes.entries()) {
+    assert.equal(source.split(next).length, 2, 'Exact reviewed single candidate Home edit: ' + (index + 1));
+    source = source.replace(next, previous);
+  }
+  return source;
+}
+
+function withoutSingleCandidatePanelChanges(source) {
+  source = source.replace(/\r\n/g, '\n');
+  const changes = [
+    ['import OneOnOneCandidateReplaceButton from "@/components/dating/OneOnOneCandidateReplaceButton";\n', ''],
+    ['import { eligibleForSingleCandidateRefresh, type SingleCandidateRefreshFields } from "@/lib/use-one-on-one-candidate-replace";\n', ''],
+    ['type OneOnOneRecommendationGroup = SingleCandidateRefreshFields & {\n', 'type OneOnOneRecommendationGroup = {\n'],
+    ['  expansion_enabled?: boolean;\n  source_card_status?: string;\n', '  impression_ticket?: string | null;\n  expansion_enabled?: boolean;\n  source_card_id?: string;\n  source_card_status?: string;\n'],
+    ['  onReplaceCandidate,\n  singleRefreshBusy,\n  singleRefreshNotice,\n', ''],
+    [`  onReplaceCandidate?: (group: SingleCandidateRefreshFields, candidateId: string) => Promise<void>;
+  singleRefreshBusy?: { sourceCardId: string; candidateId: string } | null;
+  singleRefreshNotice?: { sourceCardId: string; message: string } | null;
+`, ''],
+    ['                     const replacing = singleRefreshBusy?.sourceCardId === sourceCardId;\n', ''],
+    ['disabled={!canSelect || replacing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}', 'disabled={!canSelect || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}'],
+    ['disabled={!canSelect || refreshing || replacing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}', 'disabled={!canSelect || refreshing || processingAutoKeys.includes(actionKey) || favoriteBusyKeys.includes(actionKey)}'],
+    ['disabled={!canSelect || refreshing || replacing || processingAutoKeys.length > 0}', 'disabled={!canSelect || refreshing || processingAutoKeys.length > 0}'],
+    [`                            {!additional && onReplaceCandidate && eligibleForSingleCandidateRefresh(group, candidateId) ?
+                              <OneOnOneCandidateReplaceButton busy={replacing && singleRefreshBusy?.candidateId === candidateId}
+                                disabled={Boolean(singleRefreshBusy) || refreshing || processingAutoKeys.length > 0 || favoriteBusyKeys.length > 0 || Boolean(error)}
+                                onClick={() => { void onReplaceCandidate(group, candidateId); }} /> : null}
+`, ''],
+    ['blocked={!canRefresh || replacing || favoriteBusyKeys.length > 0}', 'blocked={!canRefresh || favoriteBusyKeys.length > 0}'],
+    [`                        {singleRefreshNotice?.sourceCardId === sourceCardId ? <p role="status" className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-700">{singleRefreshNotice.message}</p> : null}
+`, ''],
+  ];
+  for (const [index, [next, previous]] of changes.entries()) {
+    assert.equal(source.split(next).length, 2, 'Exact reviewed single candidate Home panel edit: ' + (index + 1));
+    source = source.replace(next, previous);
+  }
+  return source;
+}
+
+module.exports = { withoutLovePassPaymentAdditions, withoutLovePassMypageAdditions, withoutSingleCandidateHomeChanges, withoutSingleCandidatePanelChanges };

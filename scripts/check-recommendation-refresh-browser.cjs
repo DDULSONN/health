@@ -44,6 +44,11 @@ async function main() {
   let browser, passed = 0;
   try {
     browser = await chromium.launch({ channel: 'msedge', headless: true });
+    if (process.argv.includes('--single-candidate')) {
+      passed = await require('./test-single-candidate-refresh-browser.cjs')({ browser, origin, output });
+      console.log(JSON.stringify({ passed, output, productionRequests: 0 }));
+      return;
+    }
     if (process.argv.includes('--participation')) {
       passed = await require('./test-matching-participation-browser.cjs')({ browser, origin, output });
       console.log(JSON.stringify({ passed, output }));

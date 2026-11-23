@@ -36,7 +36,8 @@ if (require.main === module) {
     test('reviewed presentation contract: ' + file, () => {
       const raw = require('./fixtures/love-pass-view-contract.cjs').withoutLovePassCardView(fs.readFileSync(path.join(root, file), 'utf8'), file);
       const source = file === 'app/mypage/page.tsx' ? withoutNewCandidateNoticeType(raw)
-        : file === 'app/community/dating/cards/page.tsx' ? require('./fixtures/matching-participation-contract.cjs').withoutParticipationMetadata(raw) : raw;
+        : file === 'app/community/dating/cards/page.tsx' ? require('./fixtures/love-pass-payment-contract.cjs').withoutSingleCandidateHomeChanges(
+          require('./fixtures/matching-participation-contract.cjs').withoutParticipationMetadata(raw)) : raw;
       assert.equal(contract(source), hash, 'Non-style changes require behavior tests and a reviewed baseline');
       assert.equal(contract(source.replace(/\r?\n/g, '\r\n')), hash, 'Windows checkout must match');
       assert.equal(contract(source.replace(/\r\n/g, '\n')), hash, 'Linux checkout must match');

@@ -7,7 +7,7 @@ const ts = require("typescript");
 
 const root = path.resolve(__dirname, "..");
 // Load the real TypeScript modules, without adding a runtime/test dependency.
-function createLoader(overrides = {}, nowMs) {
+function createLoader(overrides = {}, nowMs, fixtureEnv) {
   const cache = new Map();
   const Clock = nowMs == null ? Date : class extends Date {
     constructor(...args) { super(...(args.length ? args : [nowMs])); }
@@ -23,7 +23,8 @@ function createLoader(overrides = {}, nowMs) {
     const output = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
     }).outputText;
-    new Function("require", "module", "exports", "Date", output)(load, loadedModule, loadedModule.exports, Clock);
+    const appProcess = fixtureEnv ? Object.create(process, { env: { value: { ...fixtureEnv } } }) : process;
+    new Function("require", "module", "exports", "Date", "process", output)(load, loadedModule, loadedModule.exports, Clock, appProcess);
     return loadedModule.exports;
   };
 }
@@ -989,6 +990,7 @@ function mockDatabase(tables, intercept) {
         in(key, value) { query.filters.push(["in", key, value]); return builder; },
         gt(key, value) { query.filters.push(["gt", key, value]); return builder; },
         gte(key, value) { query.filters.push(["gte", key, value]); return builder; },
+        lt(key, value) { query.filters.push(["lt", key, value]); return builder; },
         lte(key, value) { query.filters.push(["lte", key, value]); return builder; },
         or(value) { query.filters.push(["or", value]); return builder; },
         order(key, options) { query.orders.push([key, options.ascending]); return builder; },
@@ -1003,7 +1005,7 @@ function mockDatabase(tables, intercept) {
             calls.push(structuredClone(query));
             const override = intercept?.(query, tables);
             if (override) return override;
-            if (['dating_1on1_recommendation_pages', 'dating_1on1_recommendation_page_history'].includes(table) && !Object.hasOwn(tables, table)) {
+            if (['dating_1on1_recommendation_pages', 'dating_1on1_recommendation_page_history', 'dating_1on1_single_candidate_swaps'].includes(table) && !Object.hasOwn(tables, table)) {
               return { data: null, error: { code: '42P01', message: 'page migration not installed' } };
             }
             if (query.insert) {
@@ -1019,6 +1021,7 @@ function mockDatabase(tables, intercept) {
                 if (operation === "in") return value.includes(row[key]);
                 if (operation === "gt") return row[key] != null && row[key] > value;
                 if (operation === "gte") return row[key] != null && row[key] >= value;
+                if (operation === "lt") return row[key] != null && row[key] < value;
                 if (operation === "lte") return row[key] != null && row[key] <= value;
                 if (operation === "or") {
                   const split = (text) => {
@@ -2142,6 +2145,219 @@ test('a refresh cannot charge only for people already seen in an expansion batch
   assert.equal(result.body.changed_candidate_count, 0); assert.equal(result.rpcCalls.length, 1);
   assert.ok(tables.dating_1on1_recommendation_refresh_events.every(e => e.rotation_only && e.quota_refunded_at));
 });
+const SWAPS = 'dating_1on1_single_candidate_swaps';
+const localId = index => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+const fixtureServiceKey = 'offline-dating-test-key-not-a-real-secret';
+function singleFixture(size = 25) {
+  const tables = activeFixture(size);
+  const rows = tables.dating_1on1_cards;
+  for (const [index, row] of rows.entries()) {
+    row.id = localId(index + 1);
+    row.user_id = localId(index + 201);
+    row.photo_paths = [`${row.user_id}/photo.webp`];
+    row.birth_year = index === 0 ? 1997 : 1999;
+    tables.profiles[index].user_id = row.user_id;
+    tables.profiles[index].phone_verified = true;
+  }
+  const [own, ...cards] = rows;
+  const seed = new Date(now - 3600000).toISOString();
+  own.recommendation_refresh_used_at = seed;
+  const saved = { user_id: own.user_id, source_card_id: own.id, refreshed_at: seed,
+    source_profile_key: load('@/lib/dating-1on1-recommendation-page-store').recommendationSourceKey(own),
+    main_candidate_ids: ids(cards.slice(0, 10)), extra_candidate_ids: ids(cards.slice(10, 13)) };
+  tables.dating_1on1_recommendation_pages = [saved];
+  tables.dating_1on1_recommendation_page_history = [structuredClone(saved)];
+  tables.dating_1on1_recommendation_refresh_events = [{ user_id: own.user_id, card_id: own.id, refreshed_at: seed, quota_refunded_at: null }];
+  tables.dating_1on1_refresh_compensations = [{ user_id: own.user_id, granted_count: 3, used_count: 1 }];
+  tables.dating_1on1_candidate_favorites = [];
+  tables.dating_1on1_candidate_impressions = cards.slice(0, 4).map(c => ({ viewer_user_id: own.user_id,
+    candidate_user_id: c.user_id, first_seen_at: new Date(now - 2 * 3600000).toISOString() }));
+  tables[SWAPS] = [];
+  return { tables, own, cards, saved };
+}
+function singleReaders(fixture, { atTime = now, viewerId = fixture.own.user_id, intercept, rpc } = {}) {
+  const db = mockDatabase(fixture.tables, intercept), rpcCalls = [];
+  db.rpc = async (name, args) => {
+    rpcCalls.push({ name, args });
+    assert.equal(name, 'commit_dating_1on1_single_candidate_swap', 'never call the quota, bonus, matching, or payment RPCs');
+    assert.ok(rpc, 'unexpected commit');
+    return rpc(args);
+  };
+  const apiLoad = createLoader({
+    '@/lib/supabase/server': { createAdminClient: () => db },
+    '@/lib/supabase/request': { getRequestAuthContext: async () => ({ user: viewerId ? { id: viewerId } : null }) },
+  }, atTime, { SUPABASE_SERVICE_ROLE_KEY: fixtureServiceKey });
+  const observed = async response => ({ response, body: await response.json(), calls: db.calls, rpcCalls });
+  return {
+    auth: apiLoad('@/lib/dating-1on1-impressions'),
+    get: async () => {
+      const result = await observed(await apiLoad('@/app/api/dating/1on1/recommendations/my/route').GET(new Request('http://localhost/api/dating/1on1/recommendations/my')));
+      if (result.response.ok) assert.equal(apiLoad('@/lib/dating-1on1-refresh-response').isOneOnOneRecommendationPayload(result.body), true);
+      return result;
+    },
+    replace: async (body, origin = 'http://localhost') => observed(await apiLoad('@/app/api/dating/1on1/recommendations/replace/route').POST(new Request('http://localhost/api/dating/1on1/recommendations/replace', {
+      method: 'POST', headers: { host: 'localhost', origin }, body: JSON.stringify(body),
+    }))),
+  };
+}
+const singleQuota = group => Object.fromEntries(['refresh_remaining', 'refresh_bonus_remaining', 'refresh_used_count', 'refresh_used_at', 'refresh_limit', 'next_refresh_at', 'can_refresh'].map(key => [key, group[key]]));
+const payloadForSingle = (group, cardId) => ({ source_card_id: group.source_card_id, candidate_card_id: cardId,
+  generation_key: group.single_refresh_generation, impression_ticket: group.impression_ticket });
+const noWrites = calls => calls.every(q => !q.insert && !q.update && !q.delete);
+
+test('single-slot GET only exposes tried, visible normal candidates, not extra cards, and authors no writes', async () => {
+  const f = singleFixture();
+  const hidden = f.cards[2];
+  f.tables.dating_1on1_candidate_hides = [{ id: localId(800), user_id: f.own.user_id, candidate_user_id: hidden.user_id,
+    candidate_card_id: hidden.id, candidate_name: hidden.name, created_at: new Date(now - 1).toISOString() }];
+  const snapshot = structuredClone(f.tables), reader = singleReaders(f);
+  const actual = await reader.get();
+  assert.equal(actual.response.status, 200);
+  const [group] = actual.body.items;
+  assert.equal(typeof group.single_refresh_generation, 'string');
+  assert.deepEqual(group.single_refresh_candidate_ids, ids(f.cards.slice(0, 4).filter(card => card.id !== hidden.id)));
+  assert.ok(group.single_refresh_candidate_ids.every(id => ids(group.recommendations).includes(id) && !ids(group.admin_recommendations).includes(id)));
+  assert.ok(reader.auth.verifyImpressionTicket(group.impression_ticket, f.own.user_id, group.single_refresh_candidate_ids));
+  assert.equal(group.recommendations.length, 9, 'hiding still leaves a vacancy, not an automatic fill');
+  assert.equal(actual.rpcCalls.length, 0);
+  assert.ok(noWrites(actual.calls));
+  assert.deepEqual(f.tables, snapshot);
+});
+
+for (const code of ['42P01', 'PGRST205', '57014']) test(`single-slot missing/unavailable table ${code} leaves existing GET and quota unchanged`, async () => {
+  const f = singleFixture();
+  const [enabled] = (await singleReaders(f).get()).body.items;
+  const result = await singleReaders(f, { intercept: q => q.table === SWAPS ? { data: null, error: { code } } : null }).get();
+  assert.equal(result.response.status, 200);
+  const [old] = result.body.items;
+  assert.ok(old.single_refresh_generation == null && !(old.single_refresh_candidate_ids?.length), 'the component cannot show an unusable button');
+  assert.deepEqual(ids(old.recommendations), ids(enabled.recommendations));
+  assert.deepEqual(ids(old.admin_recommendations), ids(enabled.admin_recommendations));
+  assert.deepEqual(singleQuota(old), singleQuota(enabled));
+  assert.ok(noWrites(result.calls));
+});
+
+test('real single-slot POST commits one server-picked unheard person and GET preserves every other slot, favorite, extra, and quota', async () => {
+  const f = singleFixture(22);
+  const [blocked, hidden, seen, handled, favorite, farther, wanted] = f.cards.slice(13);
+  const recreated = { ...seen, id: localId(999), created_at: '2026-01-02T00:00:00Z' };
+  f.tables.dating_1on1_cards.push(recreated);
+  f.tables.dating_user_blocks = [{ blocker_user_id: blocked.user_id, blocked_user_id: f.own.user_id }];
+  f.tables.dating_1on1_candidate_hides = [{ id: localId(800), user_id: f.own.user_id, candidate_user_id: hidden.user_id,
+    candidate_card_id: hidden.id, candidate_name: hidden.name, created_at: new Date(now - 1).toISOString() }];
+  f.tables.dating_1on1_candidate_impressions.push({ viewer_user_id: f.own.user_id, candidate_user_id: seen.user_id,
+    first_seen_at: new Date(now - 3 * 3600000).toISOString() });
+  f.tables.dating_1on1_match_proposals = [pair({ source_card_id: f.own.id, source_user_id: f.own.user_id,
+    candidate_card_id: handled.id, candidate_user_id: handled.user_id, state: 'source_selected' })];
+  f.tables.dating_1on1_candidate_favorites = [{ user_id: f.own.user_id, source_card_id: f.own.id, candidate_card_id: favorite.id,
+    created_at: new Date(now - 2 * 3600000).toISOString() }];
+  farther.region = '부산';
+  for (const card of f.cards.slice(20)) card.region = '부산';
+  const [before] = (await singleReaders(f).get()).body.items;
+  const donor = before.recommendations[1].id;
+  const expectedAt = now + 500;
+  const snapshot = structuredClone(f.tables);
+  const write = singleReaders(f, { atTime: expectedAt, rpc: args => {
+    assert.equal(args.p_user_id, f.own.user_id);
+    assert.equal(args.p_source_card_id, f.own.id);
+    assert.equal(args.p_generation_key, before.single_refresh_generation);
+    assert.equal(args.p_from_candidate_card_id, donor);
+    assert.equal(args.p_to_candidate_card_id, wanted.id, 'blocked/hidden/seen recreated profiles, active pairs, favorites, or distant alternatives never win');
+    assert.equal(Date.parse(args.p_expected_refresh_at), Date.parse(f.saved.refreshed_at));
+    const row = { user_id: args.p_user_id, source_card_id: args.p_source_card_id, generation_key: args.p_generation_key,
+      from_candidate_card_id: args.p_from_candidate_card_id, to_candidate_card_id: args.p_to_candidate_card_id,
+      to_candidate_user_id: wanted.user_id, created_at: new Date(expectedAt).toISOString() };
+    f.tables[SWAPS].push(row);
+    return { data: { ok: true, code: 'swapped' }, error: null };
+  }});
+  const replaced = await write.replace({ ...payloadForSingle(before, donor), to_candidate_card_id: blocked.id, refresh_limit: 999 });
+  assert.equal(replaced.response.status, 200, JSON.stringify(replaced.body));
+  assert.equal(replaced.rpcCalls.length, 1);
+  assert.ok(noWrites(replaced.calls), 'all admin writes go through the single atomic RPC');
+  for (const atTime of [expectedAt + 1, expectedAt + 1500]) {
+    const [after] = (await singleReaders(f, { atTime }).get()).body.items;
+    const exact = ids(before.recommendations); exact.splice(1, 1, wanted.id);
+    assert.deepEqual(ids(after.recommendations), exact);
+    assert.deepEqual(ids(after.admin_recommendations), ids(before.admin_recommendations));
+    assert.deepEqual(ids(after.favorite_candidates), ids(before.favorite_candidates));
+    assert.deepEqual(singleQuota(after), singleQuota(before));
+  }
+  const { [SWAPS]: persisted, ...unchanged } = f.tables;
+  const { [SWAPS]: previous, ...expected } = snapshot;
+  assert.equal(previous.length, 0); assert.equal(persisted.length, 1);
+  assert.deepEqual(unchanged, expected, 'matches, cards, saved pages, hidden preferences, credits and quota were not written');
+});
+
+test('real single-slot exhausted replacement keeps all candidates and never reaches the atomic write', async () => {
+  const f = singleFixture();
+  const [before] = (await singleReaders(f).get()).body.items;
+  for (const c of f.cards.slice(13)) f.tables.dating_1on1_candidate_impressions.push({ viewer_user_id: f.own.user_id,
+    candidate_user_id: c.user_id, first_seen_at: new Date(now + 50).toISOString() });
+  const snapshot = structuredClone(f.tables);
+  const result = await singleReaders(f, { atTime: now + 100 }).replace(payloadForSingle(before, before.recommendations[0].id));
+  assert.equal(result.response.status, 409, JSON.stringify(result.body));
+  assert.equal(result.body.code, 'NO_UNSEEN_CANDIDATE');
+  assert.equal(result.rpcCalls.length, 0);
+  const [after] = (await singleReaders(f, { atTime: now + 101 }).get()).body.items;
+  assert.deepEqual(ids(after.recommendations), ids(before.recommendations));
+  assert.deepEqual(singleQuota(after), singleQuota(before));
+  assert.deepEqual(f.tables, snapshot);
+});
+
+test('real single-slot POST refuses missing session, another account, obsolete generation, and extra-only candidate receipt', async () => {
+  const f = singleFixture(), [group] = (await singleReaders(f).get()).body.items;
+  const dto = payloadForSingle(group, group.recommendations[0].id);
+  for (const [kind, viewerId, body] of [
+    ['guest', null, dto], ['different session', f.cards[0].user_id, dto],
+    ['obsolete generation', f.own.user_id, { ...dto, generation_key: '0'.repeat(64) }],
+    ['extra-only receipt', f.own.user_id, { ...dto, candidate_card_id: group.admin_recommendations[0].id }],
+  ]) {
+    const result = await singleReaders(f, { viewerId, atTime: now + 1 }).replace(body);
+    assert.ok(!result.response.ok, `${kind} should fail without write: ${JSON.stringify(result.body)}`);
+    assert.equal(result.rpcCalls.length, 0, kind);
+    assert.ok(noWrites(result.calls), kind);
+  }
+  const crossOrigin = await singleReaders(f).replace(dto, 'https://fixture.invalid');
+  assert.equal(crossOrigin.response.status, 403);
+  assert.equal(crossOrigin.rpcCalls.length, 0);
+  assert.equal(crossOrigin.calls.length, 0);
+});
+
+test('single-slot daily generation works without a previously consumed full refresh', async () => {
+  const f = singleFixture();
+  f.own.recommendation_refresh_used_at = null;
+  f.tables.dating_1on1_recommendation_pages = [];
+  f.tables.dating_1on1_recommendation_page_history = [];
+  f.tables.dating_1on1_recommendation_refresh_events = [];
+  // A daily page prioritizes all suitable older unseen people automatically.
+  // Use enough true arrivals after midnight to leave choices beyond its bounded promotion.
+  for (const c of f.cards.slice(16)) c.created_at = new Date(now - 60000).toISOString();
+  f.tables.dating_1on1_candidate_impressions = f.cards.slice(0, 16).map(c => ({ viewer_user_id: f.own.user_id,
+    candidate_user_id: c.user_id, first_seen_at: new Date(now - 2 * day).toISOString() }));
+  const [daily] = (await singleReaders(f).get()).body.items;
+  const donor = daily.single_refresh_candidate_ids?.[0];
+  assert.ok(donor, 'an exposed person remains alongside several already-promoted new arrivals');
+  const target = daily.recommendations.findIndex(c => c.id === donor);
+  assert.ok(target >= 0);
+  const afterSwap = now + 500;
+  let toCard;
+  const request = await singleReaders(f, { atTime: afterSwap, rpc: args => {
+    assert.equal(args.p_expected_refresh_at, null);
+    toCard = f.cards.find(c => c.id === args.p_to_candidate_card_id);
+    assert.ok(toCard);
+    f.tables[SWAPS].push({ user_id: args.p_user_id, source_card_id: args.p_source_card_id, generation_key: args.p_generation_key,
+      from_candidate_card_id: args.p_from_candidate_card_id, to_candidate_card_id: args.p_to_candidate_card_id,
+      to_candidate_user_id: toCard.user_id, created_at: new Date(afterSwap).toISOString() });
+    return { data: { ok: true, code: 'swapped' }, error: null };
+  }}).replace(payloadForSingle(daily, donor));
+  assert.equal(request.response.status, 200, JSON.stringify(request.body));
+  assert.equal(request.rpcCalls.length, 1);
+  const [current] = (await singleReaders(f, { atTime: afterSwap + 1 }).get()).body.items;
+  const main = ids(daily.recommendations); main[target] = toCard.id;
+  assert.deepEqual(ids(current.recommendations), main);
+  assert.deepEqual(singleQuota(current), singleQuota(daily));
+});
+
 function pair(overrides = {}) {
   return {
     id: "pair", source_card_id: "source", candidate_card_id: "c0",

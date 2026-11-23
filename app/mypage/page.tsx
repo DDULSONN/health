@@ -36,6 +36,8 @@ import { oneOnOneProfileState } from "@/lib/dating-1on1-profile-state";
 import FriendRecommendButton from "@/components/dating/sharing/FriendRecommendButton";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import CandidateImpression from "@/components/dating/CandidateImpression";
+import OneOnOneCandidateReplaceButton from "@/components/dating/OneOnOneCandidateReplaceButton";
+import { eligibleForSingleCandidateRefresh, useOneOnOneCandidateReplace, type SingleCandidateRefreshFields } from "@/lib/use-one-on-one-candidate-replace";
 import { CandidateHideButton, CandidateHidesPanel } from "@/components/dating/CandidateHides";
 import { flushCandidateImpressions } from "@/lib/dating-1on1-impressions-client";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
@@ -1066,13 +1068,12 @@ function canCancelOneOnOneMatch(match: Pick<MyOneOnOneMatch, "state" | "contact_
   return Number.isFinite(approvedMs) && Date.now() - approvedMs >= ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS;
 }
 
-type MyOneOnOneAutoRecommendationGroup = {
+type MyOneOnOneAutoRecommendationGroup = SingleCandidateRefreshFields & {
   hides_enabled?: boolean;
   hidden_candidate_ids?: string[];
   recommendation_region_widened?: boolean;
   new_candidate_notice?: import("@/lib/dating-1on1-new-candidate-notice").OneOnOneNewCandidateNotice | null;
   recommendation_availability?: import("@/lib/dating-1on1-candidate-availability").OneOnOneCandidateAvailability | null;
-  impression_ticket?: string | null;
   source_card_id: string;
   source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";
   refresh_used?: boolean;
@@ -2211,6 +2212,8 @@ export default function MyPage() {
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
   const oneOnOneRefreshLocksRef = useRef<Set<string>>(new Set());
   const oneOnOneRefreshNeedsReloadRef = useRef(false);
+  const oneOnOneReplaceIdentityRef = useRef<string | null>(null);
+  const [oneOnOneReplaceViewerId, setOneOnOneReplaceViewerId] = useState<string | null>(null);
   const [oneOnOneRefreshReadError, setOneOnOneRefreshReadError] = useState("");
   const { confirmOneOnOneRefresh, refreshConfirmationDialog } = useOneOnOneRefreshConfirmation();
   const [oneOnOneRefreshNotice, setOneOnOneRefreshNotice] = useState<OneOnOneRefreshNotice | null>(null);
@@ -4734,6 +4737,8 @@ export default function MyPage() {
     let identity: string | null | undefined;
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       const next = session?.user.id ?? null;
+      oneOnOneReplaceIdentityRef.current = next;
+      setOneOnOneReplaceViewerId(next);
       if (identity !== undefined && identity !== next) {
         oneOnOneMatchesRequest.cancel();
         oneOnOneRecommendationsRequest.cancel();
@@ -4823,6 +4828,12 @@ export default function MyPage() {
     });
     if (requireUpdated && !updated) throw new Error("새 후보 명단을 불러오지 못했어요.");
   }, [oneOnOneRecommendationsRequest]);
+
+  const { replace: replaceOneOnOneCandidate, busy: singleRefreshBusy, notice: singleRefreshNotice } = useOneOnOneCandidateReplace({
+    identity: oneOnOneReplaceIdentityRef, viewerId: oneOnOneReplaceViewerId, locks: oneOnOneRefreshLocksRef,
+    needsReload: oneOnOneRefreshNeedsReloadRef, reload: () => reloadOneOnOneRecommendations(true, true),
+    onReadFailure: setOneOnOneRefreshReadError,
+  });
 
   const reloadOneOnOneAfterAction = async () => {
     const results = await Promise.allSettled([
@@ -5584,7 +5595,7 @@ export default function MyPage() {
 
   const handleOneOnOneAutoRecommendationSelect = async (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => {
     const actionKey = `${sourceCardId}:${candidateCardId}`;
-    if (processingOneOnOneAutoKeys.includes(actionKey)) return;
+    if (oneOnOneRefreshLocksRef.current.has(sourceCardId) || processingOneOnOneAutoKeys.includes(actionKey)) return;
     setOneOnOneActionNotice("");
     setProcessingOneOnOneAutoKeys((prev) => [...prev, actionKey]);
     try {
@@ -5648,7 +5659,7 @@ export default function MyPage() {
     favorite: boolean,
   ) => {
     const actionKey = `${sourceCardId}:${candidateCardId}`;
-    if (processingOneOnOneFavoriteKeys.includes(actionKey)) return;
+    if (oneOnOneRefreshLocksRef.current.has(sourceCardId) || processingOneOnOneFavoriteKeys.includes(actionKey)) return;
     setProcessingOneOnOneFavoriteKeys((prev) => [...prev, actionKey]);
     try {
       const res = await fetch("/api/dating/1on1/favorites", {
@@ -10468,9 +10479,10 @@ export default function MyPage() {
                         <OneOnOneRefreshControl usage={autoRecommendationGroup} busy={refreshingAutoRecommendations}
                           onCheckUsage={() => { void reloadOneOnOneRecommendations(true, true).catch(() => setOneOnOneRefreshReadError("이용 횟수를 확인하지 못했어요. 잠시 후 명단을 다시 불러와 주세요. 횟수는 차감되지 않아요.")); }}
                           plusOffer={!oneOnOneRefreshReadError ? { cardId: item.id, active: priorityBoostActive } : undefined}
-                          blocked={!canRefreshAutoRecommendations || Boolean(oneOnOneRefreshReadError)}
+                          blocked={!canRefreshAutoRecommendations || Boolean(oneOnOneRefreshReadError) || singleRefreshBusy?.sourceCardId === item.id}
                           notice={oneOnOneRefreshNotice?.sourceCardId === item.id ? oneOnOneRefreshNotice : null}
                           onRequest={() => void handleRefreshOneOnOneRecommendations(item.id)} />
+                        {singleRefreshNotice?.sourceCardId === item.id ? <p role="status" className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-700">{singleRefreshNotice.message}</p> : null}
                         {!isArchivedOneOnOneCard && <CandidateHidesPanel enabled={autoRecommendationGroup?.hides_enabled === true}
                           availability={autoRecommendationGroup?.recommendation_availability}
                           revision={autoRecommendationGroup} onRestored={() => reloadOneOnOneRecommendations(true, true)} />}
@@ -10555,6 +10567,7 @@ export default function MyPage() {
                           {autoRecommendations.map((card) => {
                             const actionKey = `${item.id}:${card.id}`;
                             const processing = processingOneOnOneAutoKeys.includes(actionKey);
+                            const replacing = singleRefreshBusy?.sourceCardId === item.id;
                             return (
                               <CandidateImpression key={`${item.id}-${card.id}`} ticket={autoRecommendationGroup?.impression_ticket} candidateId={card.id} className="rounded-xl border border-neutral-200 bg-white p-3">
                                 <div className="flex items-center justify-between gap-2">
@@ -10586,7 +10599,7 @@ export default function MyPage() {
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   <button
                                     type="button"
-                                    disabled={processing}
+                                    disabled={processing || replacing}
                                     onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id, card.name)}
                                     className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                   >
@@ -10594,7 +10607,7 @@ export default function MyPage() {
                                   </button>
                                   <button
                                     type="button"
-                                    disabled={processing || processingOneOnOneFavoriteKeys.includes(actionKey)}
+                                    disabled={processing || replacing || processingOneOnOneFavoriteKeys.includes(actionKey)}
                                     onClick={() => void handleToggleOneOnOneFavorite(item.id, card.id, false)}
                                     className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                   >
@@ -10602,8 +10615,12 @@ export default function MyPage() {
                                   </button>
                                   <CandidateHideButton enabled={autoRecommendationGroup?.hides_enabled === true}
                                     sourceCardId={item.id} candidateId={card.id} ticket={autoRecommendationGroup?.impression_ticket}
-                                    disabled={processing || refreshingAutoRecommendations || processingOneOnOneFavoriteKeys.includes(actionKey)}
+                                    disabled={processing || replacing || refreshingAutoRecommendations || processingOneOnOneFavoriteKeys.includes(actionKey)}
                                     onHidden={handleHideOneOnOneCandidate} />
+                                  {!isArchivedOneOnOneCard && oneOnOneReplaceViewerId && autoRecommendationGroup && eligibleForSingleCandidateRefresh(autoRecommendationGroup, card.id) ?
+                                    <OneOnOneCandidateReplaceButton busy={replacing && singleRefreshBusy?.candidateId === card.id}
+                                      disabled={Boolean(singleRefreshBusy) || refreshingAutoRecommendations || Boolean(oneOnOneRefreshReadError) || processingOneOnOneAutoKeys.length > 0 || processingOneOnOneFavoriteKeys.length > 0}
+                                      onClick={() => { void replaceOneOnOneCandidate(autoRecommendationGroup, card.id); }} /> : null}
                                   {autoRecommendationGroup?.impression_ticket ? <FriendRecommendButton kind="one_on_one" cardId={card.id} ticket={autoRecommendationGroup.impression_ticket} label={card.name} /> : null}
                                   <SmallDatingReportButton
                                     disabled={reportingDatingTargetKeys.includes(`one_on_one_card:${card.id}`)}

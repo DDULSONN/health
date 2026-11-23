@@ -36,6 +36,7 @@ function paymentContract(code) {
   visit(fn);return hash(parts.join('\n'));
 }
 function panelContract(code) {
+  code = require('./fixtures/love-pass-payment-contract.cjs').withoutSingleCandidatePanelChanges(code);
   const ast = tree(code), fn = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === 'OneOnOneHomePanel');
   const bindings = {}, callbacks = [], disabled = [];
   function visit(n) {

@@ -26,6 +26,7 @@ import { formatRemainingToKorean } from "@/lib/dating-open";
 import { buildOneOnOneRefreshSuccess, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
 import { useOneOnOneRefreshConfirmation, type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
 import { flushCandidateImpressions } from "@/lib/dating-1on1-impressions-client";
+import { useOneOnOneCandidateReplace } from "@/lib/use-one-on-one-candidate-replace";
 import { fetchClientJson } from "@/lib/client-json-request";
 import { isOneOnOneRecommendationPayload } from "@/lib/dating-1on1-refresh-response";
 import {
@@ -1726,6 +1727,7 @@ function OpenCardsContent() {
   const [oneOnOneRefreshNotice, setOneOnOneRefreshNotice] = useState<OneOnOneRefreshNotice | null>(null);
   const oneOnOneRefreshLocksRef = useRef<Set<string>>(new Set());
   const oneOnOneRefreshNeedsReloadRef = useRef(false);
+  const oneOnOneReplaceIdentityRef = useRef<string | null>(null);
 
   useEffect(() => {
     activeSexRef.current = activeSex;
@@ -1881,12 +1883,14 @@ function OpenCardsContent() {
     const recovery = createViewerSessionRecovery({
       auth: supabase.auth,
       onState: (state) => {
+        oneOnOneReplaceIdentityRef.current = state.status === "authenticated" ? state.userId : null;
         setViewerLoggedIn(state.status === "authenticated");
         setDraftUserId(state.userId);
         setViewerSessionReady(state.status !== "checking");
         setViewerSessionError(state.status === "error");
       },
       onIdentityChange: () => {
+        oneOnOneReplaceIdentityRef.current = null;
         oneOnOneHomeRequest.cancel();
         oneOnOneRecommendationsRequest.cancel();
         setOneOnOneHome(null);
@@ -2099,6 +2103,12 @@ function OpenCardsContent() {
     })]);
     if (requireUpdated && (!updated || !recommendationsUpdated)) throw new Error("새 후보 명단을 불러오지 못했어요.");
   }, [viewerLoggedIn, draftUserId, oneOnOneHomeRequest, oneOnOneRecommendationsRequest]);
+
+  const { replace: replaceOneOnOneCandidate, busy: singleRefreshBusy, notice: singleRefreshNotice } = useOneOnOneCandidateReplace({
+    identity: oneOnOneReplaceIdentityRef, viewerId: draftUserId, locks: oneOnOneRefreshLocksRef,
+    needsReload: oneOnOneRefreshNeedsReloadRef, reload: () => reloadOneOnOneHome(true, true),
+    onReadFailure: setOneOnOneHomeError,
+  });
 
   useEffect(() => {
     if (homeFeatureTab === "one_on_one") void reloadOneOnOneHome(false);
@@ -2761,7 +2771,7 @@ function OpenCardsContent() {
   const handleOneOnOneAutoSelect = useCallback(
     async (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => {
       const actionKey = `${sourceCardId}:${candidateCardId}`;
-      if (processingOneOnOneAutoKeys.includes(actionKey)) return;
+      if (oneOnOneRefreshLocksRef.current.has(sourceCardId) || processingOneOnOneAutoKeys.includes(actionKey)) return;
       setOneOnOneActionNotice("");
       setProcessingOneOnOneAutoKeys((prev) => [...prev, actionKey]);
       try {
@@ -3615,6 +3625,9 @@ function OpenCardsContent() {
           onContactNudge={handleOneOnOneContactNudge}
           onAutoSelect={handleOneOnOneAutoSelect}
           onRefreshRecommendations={handleOneOnOneRecommendationRefresh}
+          onReplaceCandidate={replaceOneOnOneCandidate}
+          singleRefreshBusy={singleRefreshBusy}
+          singleRefreshNotice={singleRefreshNotice}
           refreshNotice={oneOnOneRefreshNotice}
         />
       ) : null}
