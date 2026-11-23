@@ -23,16 +23,29 @@ function isStatusConstraintError(error: unknown): boolean {
   return code === "23514" || message.includes("status_check") || message.includes("check constraint");
 }
 
-async function getPublicCount(
+export async function getOpenCardQueuePublicCount(
   adminClient: ReturnType<typeof createAdminClient>,
   sex: CardSex
 ) {
+  const now = new Date().toISOString();
   let { count, error } = await adminClient
     .from("dating_cards")
     .select("id", { count: "exact", head: true })
     .eq("sex", sex)
     .eq("status", "public")
-    .gt("expires_at", new Date().toISOString());
+    .gt("expires_at", now)
+    .is("love_pass_publication_id", null);
+
+  if (error && isMissingColumnError(error)) {
+    const priorSchema = await adminClient
+      .from("dating_cards")
+      .select("id", { count: "exact", head: true })
+      .eq("sex", sex)
+      .eq("status", "public")
+      .gt("expires_at", now);
+    count = priorSchema.count;
+    error = priorSchema.error;
+  }
 
   if (error && isMissingColumnError(error)) {
     const legacy = await adminClient
@@ -291,7 +304,7 @@ export async function promotePendingCardsBySex(
   sex: CardSex
 ) {
   const promotedIds: string[] = [];
-  let publicCount = await getPublicCount(adminClient, sex);
+  let publicCount = await getOpenCardQueuePublicCount(adminClient, sex);
   const slotLimit = await getOpenCardEffectiveLimitBySex(adminClient, sex);
 
   while (publicCount < slotLimit) {

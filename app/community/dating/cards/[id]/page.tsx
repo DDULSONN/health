@@ -39,11 +39,13 @@ export default function OpenCardDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromNearby = searchParams.get("from") === "nearby";
-  const listHref = fromNearby ? "/dating/nearby-view" : "/community/dating/cards";
-  const detailHref = `/community/dating/cards/${id}${fromNearby ? "?from=nearby" : ""}`;
+  const fromLovePass = searchParams.get("from") === "love-pass";
+  const listHref = fromLovePass ? "/dating/love-pass" : fromNearby ? "/dating/nearby-view" : "/community/dating/cards";
+  const sourceQuery = fromLovePass ? "?from=love-pass" : fromNearby ? "?from=nearby" : "";
+  const detailHref = `/community/dating/cards/${id}${sourceQuery}`;
   const supabase = useMemo(() => createClient(), []);
-  const [card, setCard] = useState<CardDetail | null>(() => readOpenCardDetail<CardDetail>(id));
-  const [loading, setLoading] = useState(() => !readOpenCardDetail<CardDetail>(id));
+  const [card, setCard] = useState<CardDetail | null>(() => fromLovePass ? null : readOpenCardDetail<CardDetail>(id));
+  const [loading, setLoading] = useState(() => fromLovePass || !readOpenCardDetail<CardDetail>(id));
 
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export default function OpenCardDetailPage() {
           router.replace(`/login?redirect=${encodeURIComponent(detailHref)}`);
           return;
         }
-        const res = await fetch(`/api/dating/cards/${id}`);
+        const res = await fetch(`/api/dating/cards/${id}`, fromLovePass ? { cache: "no-store" } : undefined);
         if (!res.ok) {
           if (res.status === 401) {
             router.replace(`/login?redirect=${encodeURIComponent(detailHref)}`);
@@ -76,7 +78,7 @@ export default function OpenCardDetailPage() {
       }
       setLoading(false);
     });
-  }, [detailHref, id, listHref, router, supabase]);
+  }, [detailHref, fromLovePass, id, listHref, router, supabase]);
 
   if (loading && !card) {
     return (
@@ -170,7 +172,7 @@ export default function OpenCardDetailPage() {
         <div className="mt-4">
           <div className="flex flex-wrap gap-2">
             <Link
-              href={`/community/dating/cards/${card.id}/apply${fromNearby ? "?from=nearby" : ""}`}
+              href={`/community/dating/cards/${card.id}/apply${sourceQuery}`}
               className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-4 text-sm font-medium text-white hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
             >
               지원하기

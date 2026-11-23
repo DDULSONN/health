@@ -3,6 +3,8 @@ import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { hasCityViewCardAccess } from "@/lib/dating-city-view";
+import { hasLovePassNearbyCardAccess } from "@/lib/dating-love-pass-access";
+import { getLovePassPhotoPaths } from "@/lib/dating-love-pass-photos";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -273,10 +275,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const isPublicAvailable = data.status === "public" && !!data.expires_at && new Date(data.expires_at).getTime() > Date.now();
   let canReadPending = false;
+  let viaLovePass = false;
   if (!isPublicAvailable && data.status === "pending" && user?.id) {
     const byMoreView = await hasMoreViewAccess(adminClient, user.id, data.sex);
     const byCityView = await hasCityViewCardAccess(adminClient, user.id, String(data.id ?? id), data.region ?? null);
     canReadPending = byMoreView || byCityView;
+    if (!canReadPending) {
+      viaLovePass = await hasLovePassNearbyCardAccess(adminClient, user.id, String(data.id ?? id));
+      canReadPending = viaLovePass;
+    }
   }
 
   if (!isPublicAvailable && !canReadPending) {
@@ -293,7 +300,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       .maybeSingle();
     isPhoneVerified = profileRes.data?.phone_verified === true;
   }
-  const imageUrls = await createSignedImageUrls(
+  const imageUrls = viaLovePass ? getLovePassPhotoPaths(data).map((_, slot) => `/api/dating/love-pass/photo?cardId=${encodeURIComponent(data.id)}&slot=${slot}`) : await createSignedImageUrls(
     adminClient,
     data.photo_paths,
     data.blur_paths,
@@ -330,7 +337,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       created_at: data.created_at,
     },
     can_apply: true,
-  });
+  }, viaLovePass ? { headers: { "Cache-Control": "private, no-store", Vary: "Cookie, Authorization" } } : undefined);
 }
 
 

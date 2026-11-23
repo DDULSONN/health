@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { hasCityViewCardAccess } from "@/lib/dating-city-view";
+import { hasLovePassNearbyCardAccess } from "@/lib/dating-love-pass-access";
 import { NextResponse } from "next/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
@@ -96,12 +97,16 @@ export async function POST(req: Request) {
 
   let allowedByMoreView = false;
   let allowedByCityView = false;
+  let allowedByLovePass = false;
   if (card.status === "pending") {
     allowedByMoreView = await hasMoreViewAccess(adminClient, user.id, card.sex);
     allowedByCityView = await hasCityViewCardAccess(adminClient, user.id, String(card.id ?? cardId), card.region ?? null);
+    if (!allowedByMoreView && !allowedByCityView) {
+      allowedByLovePass = await hasLovePassNearbyCardAccess(adminClient, user.id, String(card.id ?? cardId));
+    }
   }
 
-  if (card.status !== "public" && !allowedByMoreView && !allowedByCityView) {
+  if (card.status !== "public" && !allowedByMoreView && !allowedByCityView && !allowedByLovePass) {
     return NextResponse.json({ error: "지금은 지원할 수 없는 오픈카드입니다." }, { status: 400 });
   }
   if (card.status === "public" && (!card.expires_at || new Date(card.expires_at).getTime() <= Date.now())) {

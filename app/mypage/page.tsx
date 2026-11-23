@@ -777,6 +777,7 @@ function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "one_on_one_plus_7d") return "1:1 매칭 플러스 7일";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스";
   if (order.product_type === "dating_all_pass_30d") return "매칭 올패스 30일";
+  if (order.product_type === "dating_love_pass_30d") return "짐툴 연애 패스";
   if (order.product_type === "love_fortune_detail") return "연애운 상세 분석";
   if (order.product_type === "account_unban") return "계정 이용 제한 해제";
   return order.order_name ?? order.product_type;
@@ -807,6 +808,7 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "one_on_one_plus_7d") return "1:1 매칭 플러스 7일 적용 완료";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스 적용 완료";
   if (order.product_type === "dating_all_pass_30d") return "두 플러스 적용 완료";
+  if (order.product_type === "dating_love_pass_30d") return "연애 패스 혜택 적용 완료";
   if (order.product_type === "love_fortune_detail") return "연애운 상세 분석 이용권 반영 완료";
   if (order.product_type === "account_unban") return "계정 이용 제한 해제 완료";
   return "결제 완료";
@@ -2545,7 +2547,12 @@ export default function MyPage() {
         error?: string;
         checkoutUrl?: string;
         amount?: number;
+        alreadyActive?: boolean;
       };
+      if (res.ok && body.ok && order.product_type === "dating_love_pass_30d" && body.alreadyActive) {
+        window.location.href = "/dating/love-pass";
+        return;
+      }
       if (!res.ok || body.ok === false || !body.checkoutUrl) {
         throw new Error(body.message ?? body.error ?? "결제창을 다시 열지 못했습니다.");
       }
@@ -12634,6 +12641,8 @@ export default function MyPage() {
                                         ? "빠른매칭 플러스"
                                       : order.product_type === "dating_all_pass_30d"
                                         ? "매칭 올패스"
+                                      : order.product_type === "dating_love_pass_30d"
+                                        ? "짐툴 연애 패스"
                                     : order.product_type}
                               {" / "}
                               {order.amount.toLocaleString("ko-KR")}원

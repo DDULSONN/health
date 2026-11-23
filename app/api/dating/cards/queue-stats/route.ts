@@ -1,4 +1,4 @@
-import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
+import { getOpenCardQueuePublicCount, syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { countCumulativeOneOnOneApplicants, countCumulativeOneOnOneMatches } from "@/lib/dating-1on1-metrics";
 import { countCumulativeTotalDatingMatches } from "@/lib/dating-match-metrics";
 import {
@@ -15,35 +15,6 @@ import { shouldRunAtMostEvery } from "@/lib/throttled-task";
 const OPEN_CARD_STATS_SYNC_INTERVAL_SEC = 45;
 
 type RegionDistribution = { city: string; count: number };
-
-function isMissingColumnError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const code = String((error as { code?: unknown }).code ?? "");
-  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
-  return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
-}
-
-async function countPublic(adminClient: ReturnType<typeof createAdminClient>, sex: "male" | "female") {
-  let { count, error } = await adminClient
-    .from("dating_cards")
-    .select("id", { head: true, count: "exact" })
-    .eq("sex", sex)
-    .eq("status", "public")
-    .gt("expires_at", new Date().toISOString());
-
-  if (error && isMissingColumnError(error)) {
-    const legacy = await adminClient
-      .from("dating_cards")
-      .select("id", { head: true, count: "exact" })
-      .eq("sex", sex)
-      .eq("status", "public");
-    count = legacy.count;
-    error = legacy.error;
-  }
-
-  if (error) throw error;
-  return count ?? 0;
-}
 
 async function countPending(adminClient: ReturnType<typeof createAdminClient>, sex: "male" | "female") {
   const { count, error } = await adminClient
@@ -182,8 +153,8 @@ export async function GET() {
       maleSlotLimit,
       femaleSlotLimit,
     ] = await Promise.all([
-      safeCount("malePublic", () => countPublic(adminClient, "male")),
-      safeCount("femalePublic", () => countPublic(adminClient, "female")),
+      safeCount("malePublic", () => getOpenCardQueuePublicCount(adminClient, "male")),
+      safeCount("femalePublic", () => getOpenCardQueuePublicCount(adminClient, "female")),
       safeCount("malePending", () => countPending(adminClient, "male")),
       safeCount("femalePending", () => countPending(adminClient, "female")),
       pendingRegionDistribution(adminClient, "male").catch((error) => {

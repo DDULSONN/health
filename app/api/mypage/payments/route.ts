@@ -32,6 +32,7 @@ const GENERIC_RESUMABLE_PRODUCTS = new Set([
   "one_on_one_plus_30d",
   "swipe_premium_30d",
   "dating_all_pass_30d",
+  "dating_love_pass_30d",
 ]);
 
 function json(status: number, payload: Record<string, unknown>) {

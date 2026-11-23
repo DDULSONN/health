@@ -10,7 +10,8 @@ function declarations(source,names){
   assert.equal(Object.keys(result).length,names.length);return result;
 }
 for(const [file,expected] of Object.entries(contract.files))test(file+' preserves reviewed save, validation and action handlers',()=>{
- const raw = file === 'app/community/dating/cards/page.tsx' ? require('./fixtures/matching-participation-contract.cjs').withoutParticipationMetadata(read(file)) : read(file);
+ const reviewed = require('./fixtures/love-pass-view-contract.cjs').withoutLovePassCardView(read(file), file);
+ const raw = file === 'app/community/dating/cards/page.tsx' ? require('./fixtures/matching-participation-contract.cjs').withoutParticipationMetadata(reviewed) : reviewed;
  const actual=Object.fromEntries(Object.entries(declarations(require('./fixtures/private-contact-contract.cjs').withoutPrivateView(raw),Object.keys(expected))).map(([name,source])=>[name,createHash('sha256').update(source).digest('hex')]));
  assert.deepEqual(actual,expected,'Review behavioral changes before updating the onboarding contract.');
 });

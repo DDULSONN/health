@@ -18,9 +18,10 @@ function contract(source) {
   result.dispose();
   return crypto.createHash('sha256').update(canonical).digest('hex');
 }
-// One reviewed, type-only API metadata addition; keep the pre-existing action
-// contract pinned instead of rebasing matching/payment handlers with new UI.
+// Normalize reviewed additive metadata and the separate Love Pass SKU result
+// branch; keep the prior matching/payment action contract pinned.
 function withoutNewCandidateNoticeType(source) {
+  source = require('./fixtures/love-pass-payment-contract.cjs').withoutLovePassMypageAdditions(source);
   source = require('./fixtures/profile-state-contract.cjs').withoutProfileStateNotice(source, 'app/mypage/page.tsx');
   source = source.replace(/\r\n?/g, '\n');
   const line = '  new_candidate_notice?: import("@/lib/dating-1on1-new-candidate-notice").OneOnOneNewCandidateNotice | null;\n';
@@ -33,7 +34,7 @@ if (require.main === module) {
   const baseline = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/site-button-tone-contract.json'), 'utf8'));
   for (const [file, hash] of Object.entries(baseline.files)) {
     test('reviewed presentation contract: ' + file, () => {
-      const raw = fs.readFileSync(path.join(root, file), 'utf8');
+      const raw = require('./fixtures/love-pass-view-contract.cjs').withoutLovePassCardView(fs.readFileSync(path.join(root, file), 'utf8'), file);
       const source = file === 'app/mypage/page.tsx' ? withoutNewCandidateNoticeType(raw)
         : file === 'app/community/dating/cards/page.tsx' ? require('./fixtures/matching-participation-contract.cjs').withoutParticipationMetadata(raw) : raw;
       assert.equal(contract(source), hash, 'Non-style changes require behavior tests and a reviewed baseline');

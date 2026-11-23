@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const reviewed=require('./private-contact-reviewed-additions.json');
 function withoutPrivateAdditions(source,file){
   source=source.replace(/\r\n/g,'\n');
+  if(file.endsWith('/toss/create/route.ts'))source=require('./love-pass-payment-contract.cjs').withoutLovePassPaymentAdditions(source,'create');
   for(const {before,after} of reviewed[file]){
     assert.equal(source.split(after).length,2,'Exact reviewed private-contact addition: '+file);
     source=source.replace(after,before);
@@ -13,6 +14,7 @@ function withoutPrivateAdditions(source,file){
 // covered by check-private-contact.cjs. Keep the historical phone-only hashes.
 function withoutPrivateConfirmation(source){
   source=source.replace(/\r\n/g,'\n');
+  source=require('./love-pass-payment-contract.cjs').withoutLovePassPaymentAdditions(source,'confirm');
   if(!source.includes('import { fulfillPrivateContact, preflightPrivateContact }'))return source;
   const fragments=[
     'import { fulfillPrivateContact, preflightPrivateContact } from "@/lib/dating-private-contact-server";\n',

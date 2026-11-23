@@ -21,6 +21,9 @@ export function getPaymentRecoveryAction(productType: string | null, options: { 
     const query = province ? `?${new URLSearchParams({ province })}` : "";
     return { href: `/dating/nearby-view${query}`, label: "가까운 이상형 보기로 돌아가기", description: "선택한 지역을 확인하고 다른 카드로 다시 결제해 주세요." };
   }
+  if (productType === "dating_love_pass_30d") {
+    return { href: "/dating/love-pass", label: "연애 패스로 돌아가기", description: "연애 패스 화면에서 기존 주문의 상태를 확인할 수 있어요." };
+  }
   if (productType === "one_on_one_contact_exchange") {
     return { href: "/mypage?section=matching&match=one_on_one", label: "번호 교환으로 돌아가기", description: "매칭 상대를 확인하고 연락처 교환 버튼에서 다시 진행해 주세요." };
   }

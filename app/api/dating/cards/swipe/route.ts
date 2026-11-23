@@ -2,11 +2,13 @@
 import {
   getLatestSwipeCardForUser,
   getGuestSwipePreviewCandidate,
+  getLovePassSwipeStatus,
   getSwipeCandidate,
   getSwipeDailyUsage,
   getSwipeDayRangeUtc,
   getSwipeLimitInfo,
   isSwipeLikeExpiryEligible,
+  LOVE_PASS_SWIPE_LIKE_LIMIT,
   SWIPE_LIKE_EXPIRY_HOURS,
   sendDatingEmailNotification,
 } from "@/lib/dating-swipe";
@@ -119,29 +121,32 @@ export async function GET(req: Request) {
   sex = resolution.targetSex;
 
   try {
-    const limitInfo = await getSwipeLimitInfo(adminClient, user.id);
-    const dailyLimit = limitInfo.limit;
-    const recycleSeenCandidates = Boolean(limitInfo.activeSubscription);
-    const myCard = await getLatestSwipeCardForUser(adminClient, user.id);
+    const lovePass = await getLovePassSwipeStatus(adminClient, user.id);
+    const limitInfo = lovePass ? null : await getSwipeLimitInfo(adminClient, user.id);
+    const dailyLimit = limitInfo?.limit ?? LOVE_PASS_SWIPE_LIKE_LIMIT;
+    const lovePassFields = lovePass ? { unlimitedPass: true } : {};
+    const candidateOptions = {
+      recycleSeenCandidates: Boolean(lovePass || limitInfo?.activeSubscription),
+      lovePass: Boolean(lovePass),
+    };
+    const myCard = await getLatestSwipeCardForUser(adminClient, user.id, candidateOptions);
     if (!myCard) {
-      const candidate = await getSwipeCandidate(adminClient, user.id, sex, {
-        recycleSeenCandidates,
-      });
+      const candidate = await getSwipeCandidate(adminClient, user.id, sex, candidateOptions);
       return NextResponse.json({
         loggedIn: true,
         canSwipe: false,
-        remaining: dailyLimit,
+        remaining: lovePass?.remaining ?? dailyLimit,
         limit: dailyLimit,
         candidate,
+        ...lovePassFields,
         reason: candidate
           ? "후보는 미리 볼 수 있어요. 라이크나 넘기기는 오픈카드 등록 후 이용 가능합니다."
           : "후보는 미리 볼 수 있어요. 라이크나 넘기기는 오픈카드 등록 후 이용 가능합니다.",
       });
     }
 
-    const used = await getSwipeDailyUsage(adminClient, user.id);
-    const remaining = Math.max(0, dailyLimit - used);
-    if (remaining <= 0) {
+    const remaining = lovePass?.remaining ?? Math.max(0, dailyLimit - await getSwipeDailyUsage(adminClient, user.id));
+    if (!lovePass && remaining <= 0) {
       return NextResponse.json({
         loggedIn: true,
         canSwipe: false,
@@ -152,15 +157,14 @@ export async function GET(req: Request) {
       });
     }
 
-    const candidate = await getSwipeCandidate(adminClient, user.id, sex, {
-      recycleSeenCandidates,
-    });
+    const candidate = await getSwipeCandidate(adminClient, user.id, sex, candidateOptions);
     return NextResponse.json({
       loggedIn: true,
       canSwipe: true,
       remaining,
       limit: dailyLimit,
       candidate,
+      ...lovePassFields,
       reason: candidate ? null : "현재 보여줄 후보가 없습니다.",
     });
   } catch (error) {
@@ -220,9 +224,10 @@ export async function POST(req: Request) {
   sex = resolution.targetSex;
 
   try {
-    const limitInfo = await getSwipeLimitInfo(adminClient, user.id);
-    const dailyLimit = limitInfo.limit;
-    const myCard = await getLatestSwipeCardForUser(adminClient, user.id);
+    const lovePass = await getLovePassSwipeStatus(adminClient, user.id);
+    const limitInfo = lovePass ? null : await getSwipeLimitInfo(adminClient, user.id);
+    const dailyLimit = limitInfo?.limit ?? LOVE_PASS_SWIPE_LIKE_LIMIT;
+    const myCard = await getLatestSwipeCardForUser(adminClient, user.id, { lovePass: Boolean(lovePass) });
     if (!myCard) {
       return NextResponse.json({ error: "라이크나 넘기기를 하려면 먼저 오픈카드를 등록해 주세요." }, { status: 403 });
     }
@@ -239,14 +244,14 @@ export async function POST(req: Request) {
     const pairMatched = !pairMatchRes.error && Boolean(pairMatchRes.data);
     const expiryCutoffMs = Date.now() - SWIPE_LIKE_EXPIRY_HOURS * 60 * 60 * 1000;
 
-    const dupRes = await adminClient
+    const dupRes = lovePass ? null : await adminClient
       .from("dating_card_swipes")
       .select("id, action, created_at")
       .eq("actor_user_id", user.id)
       .eq("target_user_id", targetUserId)
       .eq("target_sex", sex)
       .maybeSingle();
-    if (dupRes.error) {
+    if (dupRes?.error) {
       throw dupRes.error;
     }
 
@@ -287,88 +292,121 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "대상 카드에 인스타 정보가 없어 진행할 수 없습니다." }, { status: 400 });
     }
 
-    let existingSwipe = dupRes.data;
-    if (existingSwipe?.action === "like") {
-      const createdAtMs = new Date(String(existingSwipe.created_at ?? "")).getTime();
-      if (
-        isSwipeLikeExpiryEligible(String(existingSwipe.created_at ?? "")) &&
-        Number.isFinite(createdAtMs) &&
-        createdAtMs <= expiryCutoffMs &&
-        !pairMatched
-      ) {
-        const staleDeleteRes = await adminClient
-          .from("dating_card_swipes")
-          .delete()
-          .eq("id", existingSwipe.id)
-          .eq("actor_user_id", user.id);
-        if (staleDeleteRes.error) {
-          throw staleDeleteRes.error;
-        }
-        existingSwipe = null;
+    let remaining: number;
+    if (lovePass) {
+      const { data, error } = await adminClient.rpc("record_dating_love_pass_swipe", {
+        p_user_id: user.id,
+        p_actor_card_id: myCard.id,
+        p_target_user_id: targetUserId,
+        p_target_card_id: targetCardId,
+        p_target_sex: sex,
+        p_action: action,
+      });
+      if (error) throw error;
+      if (data?.outcome === "inactive") {
+        return NextResponse.json({ error: "연애 패스 이용 기간이 끝났어요. 새로고침 후 다시 시도해 주세요." }, { status: 409 });
       }
-    }
-    const isPassToLikeRetry = existingSwipe?.action === "pass" && action === "like";
-    const existingSwipeCreatedAtMs = new Date(String(existingSwipe?.created_at ?? "")).getTime();
-    const { startUtcIso } = getSwipeDayRangeUtc();
-    const todayStartMs = new Date(startUtcIso).getTime();
-    const isRecycledPass =
-      Boolean(limitInfo.activeSubscription) &&
-      existingSwipe?.action === "pass" &&
-      action === "pass" &&
-      Number.isFinite(existingSwipeCreatedAtMs) &&
-      Number.isFinite(todayStartMs) &&
-      existingSwipeCreatedAtMs < todayStartMs;
-    const isExistingSwipeRetry = isPassToLikeRetry || isRecycledPass;
-    if (existingSwipe?.id && !isExistingSwipeRetry) {
-      return NextResponse.json({ error: "이미 처리한 상대입니다." }, { status: 409 });
-    }
-
-    const used = await getSwipeDailyUsage(adminClient, user.id);
-    const consumesDailyUsage = !existingSwipe?.id || isRecycledPass;
-    if (consumesDailyUsage && used >= dailyLimit) {
-      return NextResponse.json({ error: "오늘 사용할 수 있는 빠른 매칭 횟수를 모두 사용했습니다." }, { status: 429 });
-    }
-
-    if (existingSwipe?.id && isExistingSwipeRetry) {
-      const updateRes = await adminClient
-        .from("dating_card_swipes")
-        .update({
-          actor_card_id: myCard.id,
-          target_card_id: targetCardId,
-          target_sex: sex,
-          action,
-          ...(isRecycledPass ? { created_at: new Date().toISOString() } : {}),
-        })
-        .eq("id", existingSwipe.id)
-        .eq("created_at", existingSwipe.created_at)
-        .select("id")
-        .maybeSingle();
-
-      if (updateRes.error) {
-        console.error("[POST /api/dating/cards/swipe] update failed", updateRes.error);
-        return NextResponse.json({ error: "빠른 매칭 처리 중 저장에 실패했습니다." }, { status: 500 });
+      if (data?.outcome === "invalid") {
+        return NextResponse.json({ error: "현재 이용할 수 없는 후보예요. 다음 후보를 확인해 주세요." }, { status: 410 });
       }
-      if (!updateRes.data) {
+      if (data?.outcome === "duplicate") {
         return NextResponse.json({ error: "이미 처리된 후보입니다. 다음 후보를 확인해 주세요." }, { status: 409 });
       }
-    } else {
-      const insertRes = await adminClient
-        .from("dating_card_swipes")
-        .insert({
-          actor_user_id: user.id,
-          actor_card_id: myCard.id,
-          target_user_id: targetUserId,
-          target_card_id: targetCardId,
-          target_sex: sex,
-          action,
-        })
-        .select("id")
-        .single();
-
-      if (insertRes.error) {
-        console.error("[POST /api/dating/cards/swipe] insert failed", insertRes.error);
-        return NextResponse.json({ error: "빠른 매칭 처리 중 저장에 실패했습니다." }, { status: 500 });
+      if (data?.outcome === "limited") {
+        return NextResponse.json({
+          error: "오늘 보낼 수 있는 좋아요를 모두 사용했어요. 후보는 계속 볼 수 있어요.",
+          remaining: 0, limit: dailyLimit, unlimitedPass: true,
+        }, { status: 429 });
       }
+      if (data?.outcome !== "saved" || !Number.isInteger(data.remaining) || data.remaining < 0 || data.remaining > dailyLimit) {
+        throw new Error("Invalid Love Pass swipe result");
+      }
+      remaining = data.remaining;
+    } else {
+      let existingSwipe = dupRes?.data ?? null;
+      if (existingSwipe?.action === "like") {
+        const createdAtMs = new Date(String(existingSwipe.created_at ?? "")).getTime();
+        if (
+          isSwipeLikeExpiryEligible(String(existingSwipe.created_at ?? "")) &&
+          Number.isFinite(createdAtMs) &&
+          createdAtMs <= expiryCutoffMs &&
+          !pairMatched
+        ) {
+          const staleDeleteRes = await adminClient
+            .from("dating_card_swipes")
+            .delete()
+            .eq("id", existingSwipe.id)
+            .eq("actor_user_id", user.id);
+          if (staleDeleteRes.error) {
+            throw staleDeleteRes.error;
+          }
+          existingSwipe = null;
+        }
+      }
+      const isPassToLikeRetry = existingSwipe?.action === "pass" && action === "like";
+      const existingSwipeCreatedAtMs = new Date(String(existingSwipe?.created_at ?? "")).getTime();
+      const { startUtcIso } = getSwipeDayRangeUtc();
+      const todayStartMs = new Date(startUtcIso).getTime();
+      const isRecycledPass =
+        Boolean(limitInfo?.activeSubscription) &&
+        existingSwipe?.action === "pass" &&
+        action === "pass" &&
+        Number.isFinite(existingSwipeCreatedAtMs) &&
+        Number.isFinite(todayStartMs) &&
+        existingSwipeCreatedAtMs < todayStartMs;
+      const isExistingSwipeRetry = isPassToLikeRetry || isRecycledPass;
+      if (existingSwipe?.id && !isExistingSwipeRetry) {
+        return NextResponse.json({ error: "이미 처리한 상대입니다." }, { status: 409 });
+      }
+
+      const used = await getSwipeDailyUsage(adminClient, user.id);
+      const consumesDailyUsage = !existingSwipe?.id || isRecycledPass;
+      if (consumesDailyUsage && used >= dailyLimit) {
+        return NextResponse.json({ error: "오늘 사용할 수 있는 빠른 매칭 횟수를 모두 사용했습니다." }, { status: 429 });
+      }
+
+      if (existingSwipe?.id && isExistingSwipeRetry) {
+        const updateRes = await adminClient
+          .from("dating_card_swipes")
+          .update({
+            actor_card_id: myCard.id,
+            target_card_id: targetCardId,
+            target_sex: sex,
+            action,
+            ...(isRecycledPass ? { created_at: new Date().toISOString() } : {}),
+          })
+          .eq("id", existingSwipe.id)
+          .eq("created_at", existingSwipe.created_at)
+          .select("id")
+          .maybeSingle();
+
+        if (updateRes.error) {
+          console.error("[POST /api/dating/cards/swipe] update failed", updateRes.error);
+          return NextResponse.json({ error: "빠른 매칭 처리 중 저장에 실패했습니다." }, { status: 500 });
+        }
+        if (!updateRes.data) {
+          return NextResponse.json({ error: "이미 처리된 후보입니다. 다음 후보를 확인해 주세요." }, { status: 409 });
+        }
+      } else {
+        const insertRes = await adminClient
+          .from("dating_card_swipes")
+          .insert({
+            actor_user_id: user.id,
+            actor_card_id: myCard.id,
+            target_user_id: targetUserId,
+            target_card_id: targetCardId,
+            target_sex: sex,
+            action,
+          })
+          .select("id")
+          .single();
+
+        if (insertRes.error) {
+          console.error("[POST /api/dating/cards/swipe] insert failed", insertRes.error);
+          return NextResponse.json({ error: "빠른 매칭 처리 중 저장에 실패했습니다." }, { status: 500 });
+        }
+      }
+      remaining = Math.max(0, dailyLimit - (used + (consumesDailyUsage ? 1 : 0)));
     }
 
     let matchPayload:
@@ -546,8 +584,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      remaining: Math.max(0, dailyLimit - (used + (consumesDailyUsage ? 1 : 0))),
+      remaining,
       limit: dailyLimit,
+      ...(lovePass ? { unlimitedPass: true } : {}),
       match: matchPayload,
     });
   } catch (error) {

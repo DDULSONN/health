@@ -40,6 +40,7 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { AllPassOfferError, checkAllPassProfileOfferPayment } from "@/lib/all-pass-profile-offer-server";
 import { ALL_PASS_PROFILE_DISCOUNT_PRICE } from "@/lib/all-pass-profile-offer";
 import { getPaymentConfirmationFailureCode, getPaymentConfirmationFailureMessage, recordPaymentConfirmationFailure } from "@/lib/payment-confirmation-diagnostics";
+import { activateLovePassOrder, LovePassCheckoutError } from "@/lib/dating-love-pass-checkout";
 
 type ConfirmBody = {
   paymentKey?: unknown;
@@ -61,6 +62,7 @@ type TossOrderRow = {
     | "one_on_one_plus_30d"
     | "swipe_premium_30d"
     | "dating_all_pass_30d"
+    | "dating_love_pass_30d"
     | "love_fortune_detail"
     | "account_unban";
   product_ref_id: string | null;
@@ -164,6 +166,26 @@ async function confirmOrRecoverTossPayment(input: { paymentKey: string; orderId:
     }
     throw confirmError;
   }
+}
+
+async function finalizeLovePassConfirmation(
+  admin: ReturnType<typeof createAdminClient>,
+  order: TossOrderRow,
+  paymentKey: string,
+  requestId: string,
+  approvedPayment?: TossConfirmPaymentResponse,
+) {
+  try {
+    await activateLovePassOrder(admin, order.toss_order_id, paymentKey, approvedPayment);
+  } catch (error) {
+    if (error instanceof LovePassCheckoutError) return json(error.status, { ok: false, code: error.code, requestId, message: error.message });
+    throw error;
+  }
+  return json(200, {
+    ok: true, requestId, orderId: order.toss_order_id, orderName: order.order_name,
+    productType: order.product_type, amount: order.amount, method: approvedPayment?.method ?? null,
+    alreadyConfirmed: !approvedPayment,
+  });
 }
 
 async function ensureMoreViewFulfilled(
@@ -910,6 +932,9 @@ export async function POST(req: Request) {
     }
 
     if (order.status === "paid") {
+      if (order.product_type === "dating_love_pass_30d") {
+        return await finalizeLovePassConfirmation(admin, order, paymentKey, requestId);
+      }
       const fulfillment = await ensureOrderFulfilled(admin, order, user.id);
       return json(200, {
         ok: true,
@@ -960,6 +985,12 @@ export async function POST(req: Request) {
       console.warn("[toss-confirm] approval unresolved", { requestId, orderId: order.id, providerCode });
       return json(502, { ok: false, code: "PAYMENT_CONFIRMATION_UNRESOLVED", providerCode, requestId,
         message: getPaymentConfirmationFailureMessage(providerCode) });
+    }
+
+    if (order.product_type === "dating_love_pass_30d") {
+      // Do not use the generic paid update. The grant and paid status for this
+      // product must both commit or both roll back on duplicate/failed delivery.
+      return await finalizeLovePassConfirmation(admin, order, paymentKey, requestId, payment);
     }
 
     const updateRes = await admin

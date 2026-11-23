@@ -66,6 +66,7 @@ const PAYMENT_PRODUCT_LABELS: Record<string, string> = {
   one_on_one_plus_30d: "1:1 매칭 플러스",
   swipe_premium_30d: "빠른매칭 플러스",
   dating_all_pass_30d: "매칭 올패스",
+  dating_love_pass_30d: "짐툴 연애 패스",
   open_card_repost: "오픈카드 재등록",
   love_fortune_detail: "연애운 상세 분석",
   account_unban: "이용 제한 해제",

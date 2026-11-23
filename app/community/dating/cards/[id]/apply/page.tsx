@@ -77,9 +77,11 @@ export default function DatingCardApplyPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromNearby = searchParams.get("from") === "nearby";
-  const listHref = fromNearby ? "/dating/nearby-view" : "/community/dating/cards";
-  const detailHref = `/community/dating/cards/${id}${fromNearby ? "?from=nearby" : ""}`;
-  const applyHref = `/community/dating/cards/${id}/apply${fromNearby ? "?from=nearby" : ""}`;
+  const fromLovePass = searchParams.get("from") === "love-pass";
+  const listHref = fromLovePass ? "/dating/love-pass" : fromNearby ? "/dating/nearby-view" : "/community/dating/cards";
+  const sourceQuery = fromLovePass ? "?from=love-pass" : fromNearby ? "?from=nearby" : "";
+  const detailHref = `/community/dating/cards/${id}${sourceQuery}`;
+  const applyHref = `/community/dating/cards/${id}/apply${sourceQuery}`;
   const supabase = useMemo(() => createClient(), []);
 
   const [card, setCard] = useState<CardDetail | null>(null);

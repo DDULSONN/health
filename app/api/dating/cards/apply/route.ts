@@ -2,6 +2,8 @@ import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { getDailyBaseApplyLimit } from "@/lib/dating-apply-limits";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { hasCityViewCardAccess } from "@/lib/dating-city-view";
+import { hasLovePassNearbyCardAccess } from "@/lib/dating-love-pass-access";
+import { extractProvinceFromRegion } from "@/lib/region-city";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { buildDatingApplicationReceivedNotification } from "@/lib/dating-email-templates";
@@ -141,7 +143,7 @@ function logSupabaseError(requestId: string, stage: string, dbError: DbErrorShap
 }
 
 type ConsumeTokenResult = {
-  used: "base" | "credit" | "none";
+  used: "base" | "credit" | "pass" | "none";
   base_used: number;
   credits_remaining: number;
 };
@@ -362,131 +364,23 @@ export async function POST(req: Request) {
     }
     let allowedByMoreView = false;
     let allowedByCityView = false;
+    let allowedByLovePass = false;
+    const passRes = await adminClient.rpc("get_active_dating_love_pass", { p_user_id: userId });
+    // A missing rollout migration must not impact legacy Open Card submissions.
+    const activeLovePass = !passRes.error && typeof passRes.data === "string" && passRes.data.length > 0;
     if (card.status === "pending") {
       allowedByMoreView = await hasMoreViewAccess(adminClient, userId, card.sex);
       allowedByCityView = await hasCityViewCardAccess(adminClient, userId, String(card.id ?? cardId), card.region ?? null);
+      if (activeLovePass && !allowedByMoreView && !allowedByCityView) {
+        allowedByLovePass = await hasLovePassNearbyCardAccess(adminClient, userId, cardId);
+      }
     }
-    if (card.status !== "public" && !allowedByMoreView && !allowedByCityView) {
+    if (card.status !== "public" && !allowedByMoreView && !allowedByCityView && !allowedByLovePass) {
       return jsonResponse(403, "FORBIDDEN", requestId, "현재 공개되거나 열람 가능한 카드가 아닙니다.");
     }
     if (card.status === "public" && (!card.expires_at || new Date(card.expires_at).getTime() <= Date.now())) {
       return jsonResponse(410, "CARD_EXPIRED", requestId, "공개 기간이 끝난 카드입니다.");
     }
-    const consumeRes = await adminClient.rpc("consume_apply_token", { p_user_id: userId });
-    const consumeError = toDbErrorShape(consumeRes.error);
-    const consumeRow = (Array.isArray(consumeRes.data) ? consumeRes.data[0] : null) as
-      | { used?: string; base_used?: number; credits_remaining?: number }
-      | null;
-    let tokenUsage: ConsumeTokenResult = {
-      used:
-        consumeRow?.used === "base" || consumeRow?.used === "credit" || consumeRow?.used === "none"
-          ? consumeRow.used
-          : "none",
-      base_used: safeNumber(consumeRow?.base_used),
-      credits_remaining: safeNumber(consumeRow?.credits_remaining),
-    };
-    let usedLegacyManualCredit = false;
-
-    console.log(`[apply] ${requestId} L6 token.consume`, {
-      userId,
-      tokenUsage,
-      hasError: Boolean(consumeRes.error),
-    });
-    if (consumeRes.error && isMissingTokenRpcError(consumeError)) {
-      console.warn(`[apply] ${requestId} L6 token.consume fallback_to_legacy_daily_limit`, {
-        userId,
-        code: consumeError.code ?? null,
-        message: consumeError.message ?? null,
-      });
-
-      const { startUtcIso, endUtcIso } = getKstDayRangeUtc();
-      const todayRowsRes = await withSlowQueryLog(requestId, "daily_apply_usage_fallback", async () =>
-        supabase
-          .from("dating_card_applications")
-          .select("id")
-          .eq("applicant_user_id", userId)
-          .in("status", ["submitted", "accepted", "rejected"])
-          .gte("created_at", startUtcIso)
-          .lt("created_at", endUtcIso)
-          .limit(dailyBaseLimit)
-      );
-      const todayRowsError = toDbErrorShape(todayRowsRes.error);
-      if (todayRowsRes.error) {
-        logSupabaseError(requestId, "L6 fallback.daily.count", todayRowsError);
-        const mapped = mapDbErrorToHttp(todayRowsError.code);
-        return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, todayRowsError);
-      }
-
-      const todayCount = Array.isArray(todayRowsRes.data) ? todayRowsRes.data.length : 0;
-      const currentCredits = await getLegacyCreditBalance(adminClient, userId);
-      if (todayCount < dailyBaseLimit) {
-        tokenUsage = {
-          used: "base",
-          base_used: Math.min(dailyBaseLimit, todayCount + 1),
-          credits_remaining: currentCredits,
-        };
-      } else if (currentCredits > 0) {
-        const consumeCreditRes = await adminClient
-          .from("user_apply_credits")
-          .update({ credits: currentCredits - 1, updated_at: new Date().toISOString() })
-          .eq("user_id", userId);
-        const consumeCreditError = toDbErrorShape(consumeCreditRes.error);
-        if (consumeCreditRes.error) {
-          logSupabaseError(requestId, "L6 fallback.credit.consume", consumeCreditError);
-          const mapped = mapDbErrorToHttp(consumeCreditError.code);
-          return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, consumeCreditError);
-        }
-        usedLegacyManualCredit = true;
-        tokenUsage = {
-          used: "credit",
-          base_used: dailyBaseLimit,
-          credits_remaining: Math.max(0, currentCredits - 1),
-        };
-      } else {
-        return jsonResponse(
-          429,
-          "DAILY_APPLY_LIMIT",
-          requestId,
-          `오늘 기본 지원 ${dailyBaseLimit}회를 모두 사용했습니다. 추가 지원권이 있으면 계속 지원할 수 있습니다.`,
-          {
-            baseRemaining: 0,
-            creditsRemaining: 0,
-          }
-        );
-      }
-    } else if (consumeRes.error) {
-      logSupabaseError(requestId, "L6 token.consume", consumeError);
-      const mapped = mapDbErrorToHttp(consumeError.code);
-      return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, consumeError);
-    }
-    if (tokenUsage.used === "none") {
-      const currentCredits = await getLegacyCreditBalance(adminClient, userId);
-      if (currentCredits > 0) {
-        const consumeCreditRes = await adminClient
-          .from("user_apply_credits")
-          .update({ credits: currentCredits - 1, updated_at: new Date().toISOString() })
-          .eq("user_id", userId);
-        const consumeCreditError = toDbErrorShape(consumeCreditRes.error);
-        if (consumeCreditRes.error) {
-          logSupabaseError(requestId, "L6 token.consume.none.credit", consumeCreditError);
-          const mapped = mapDbErrorToHttp(consumeCreditError.code);
-          return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, consumeCreditError);
-        }
-        usedLegacyManualCredit = true;
-        tokenUsage = {
-          used: "credit",
-          base_used: Math.min(dailyBaseLimit, tokenUsage.base_used),
-          credits_remaining: Math.max(0, currentCredits - 1),
-        };
-      }
-    }
-    if (tokenUsage.used === "none") {
-      return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, `오늘 기본 지원 ${dailyBaseLimit}회를 모두 사용했습니다. 추가 지원권이 있으면 계속 지원할 수 있습니다.`, {
-        baseRemaining: Math.max(0, dailyBaseLimit - tokenUsage.base_used),
-        creditsRemaining: Math.max(0, tokenUsage.credits_remaining),
-      });
-    }
-
     const insertPayload = {
       card_id: cardId,
       applicant_user_id: userId,
@@ -501,132 +395,292 @@ export async function POST(req: Request) {
       photo_paths: photoPaths,
       status: "submitted" as const,
     };
-
-    const insertPayloadNoNickname = {
-      card_id: cardId,
-      applicant_user_id: userId,
-      age,
-      height_cm: heightCm,
-      region,
-      job,
-      training_years: trainingYears,
-      intro_text: introText,
-      instagram_id: instagramId,
-      photo_paths: photoPaths,
-      status: "submitted" as const,
-    };
-
-    const insertPayloadLegacyPhoto = {
-      card_id: cardId,
-      applicant_user_id: userId,
-      applicant_display_nickname: applicantDisplayNickname,
-      age,
-      height_cm: heightCm,
-      region,
-      job,
-      training_years: trainingYears,
-      intro_text: introText,
-      instagram_id: instagramId,
-      photo_urls: photoPaths,
-      status: "submitted" as const,
-    };
-
-    const insertPayloadLegacyPhotoNoNickname = {
-      card_id: cardId,
-      applicant_user_id: userId,
-      age,
-      height_cm: heightCm,
-      region,
-      job,
-      training_years: trainingYears,
-      intro_text: introText,
-      instagram_id: instagramId,
-      photo_urls: photoPaths,
-      status: "submitted" as const,
-    };
-
-    const candidates: Array<{ label: string; payload: Record<string, unknown> }> = [
-      { label: "new_with_nickname", payload: insertPayload },
-      { label: "new_no_nickname", payload: insertPayloadNoNickname },
-      { label: "legacy_photo_with_nickname", payload: insertPayloadLegacyPhoto },
-      { label: "legacy_photo_no_nickname", payload: insertPayloadLegacyPhotoNoNickname },
-    ];
-
-    const useAdminInsert = card.status === "pending" && (allowedByMoreView || allowedByCityView);
-    const applicationWriter = useAdminInsert ? adminClient : supabase;
-
+    let tokenUsage: ConsumeTokenResult = { used: "none", base_used: 0, credits_remaining: 0 };
+    let passCreditsRemaining: number | undefined;
     let insertRes: { data: { id: string } | null; error: unknown } = { data: null, error: null };
-    let insertError: DbErrorShape = {};
-
-    for (const candidate of candidates) {
-      console.log(`[apply] ${requestId} L7 insert.try`, { candidate: candidate.label });
-      const res = await applicationWriter
-        .from("dating_card_applications")
-        .insert(candidate.payload)
-        .select("id")
-        .single();
-      insertRes = { data: (res.data as { id: string } | null) ?? null, error: res.error };
-      insertError = toDbErrorShape(res.error);
-      if (!res.error) {
-        break;
+    if (activeLovePass) {
+      const passApply = await adminClient.rpc("submit_dating_love_pass_application", {
+        p_user_id: userId,
+        p_card_id: cardId,
+        p_owner_id: card.owner_user_id,
+        p_region: card.region ?? null,
+        p_pending_province: allowedByLovePass ? extractProvinceFromRegion(card.region ?? null) : null,
+        p_legacy_pending_access: allowedByMoreView || allowedByCityView,
+        p_application: insertPayload,
+      });
+      if (passApply.error) {
+        const error = toDbErrorShape(passApply.error);
+        const mapped = mapDbErrorToHttp(error.code);
+        logSupabaseError(requestId, "L6 pass.apply", error);
+        return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, error);
       }
-      logSupabaseError(requestId, `L7 insert.${candidate.label}`, insertError);
-      if (insertError.code !== "PGRST204") {
-        break;
+      const result = passApply.data as {
+        code?: string; application_id?: string; used?: string; base_used?: number;
+        credits_remaining?: number; pass_credits_remaining?: number;
+      } | null;
+      if (result?.code === "APPLIED" && typeof result.application_id === "string") {
+        insertRes = { data: { id: result.application_id }, error: null };
+        tokenUsage = {
+          used: result.used === "base" || result.used === "credit" || result.used === "pass" ? result.used : "none",
+          base_used: safeNumber(result.base_used),
+          credits_remaining: safeNumber(result.credits_remaining),
+        };
+        passCreditsRemaining = safeNumber(result.pass_credits_remaining);
+      } else if (result?.code === "DUPLICATE") {
+        return jsonResponse(409, "DUPLICATE_APPLICATION", requestId, "이미 해당 카드에 지원했습니다.");
+      } else if (result?.code === "EXPIRED") {
+        return jsonResponse(410, "CARD_EXPIRED", requestId, "공개 기간이 끝난 카드입니다.");
+      } else if (result?.code === "FORBIDDEN" || (result?.code === "NO_PASS" && allowedByLovePass)) {
+        return jsonResponse(403, "FORBIDDEN", requestId, "현재 열람할 수 없는 카드입니다.");
+      } else if (result?.code === "LIMIT") {
+        return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, "남은 지원권이 없습니다.", { baseRemaining: 0, creditsRemaining: 0, passCreditsRemaining: 0 });
+      } else if (result?.code !== "NO_PASS") {
+        // Never fall through on an ambiguous successful write: a retry can safely
+        // read the deterministic duplicate outcome from the stored application.
+        return jsonResponse(500, "DATABASE_ERROR", requestId, "지원 저장 결과를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
       }
-    }
-
-    console.log(`[apply] ${requestId} L7 insert.result`, {
-      userId,
-      cardId,
-      insertedId: insertRes.data?.id ?? null,
-      hasError: Boolean(insertRes.error),
-    });
-    if (insertRes.error) {
-      if (tokenUsage.used === "base" || tokenUsage.used === "credit") {
-        if (usedLegacyManualCredit && tokenUsage.used === "credit") {
-          try {
-            await refundLegacyCredit(adminClient, userId);
-          } catch (legacyRefundError) {
-            logSupabaseError(requestId, "L7 token.refund.legacy", toDbErrorShape(legacyRefundError));
-          }
-        } else {
-          const refundRes = await adminClient.rpc("refund_apply_token", {
-            p_user_id: userId,
-            p_used: tokenUsage.used,
-          });
-          if (refundRes.error) {
-            logSupabaseError(requestId, "L7 token.refund", toDbErrorShape(refundRes.error));
-          } else {
-            console.log(`[apply] ${requestId} L7 token.refund`, { refunded: true, used: tokenUsage.used });
-          }
-        }
-      }
-      logSupabaseError(requestId, "L7 insert.result", insertError);
-      const mapped = mapDbErrorToHttp(insertError.code);
-      return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, insertError);
     }
     if (!insertRes.data?.id) {
-      if (tokenUsage.used === "base" || tokenUsage.used === "credit") {
-        if (usedLegacyManualCredit && tokenUsage.used === "credit") {
-          try {
-            await refundLegacyCredit(adminClient, userId);
-          } catch (legacyRefundError) {
-            logSupabaseError(requestId, "L7 token.refund.legacy", toDbErrorShape(legacyRefundError));
+      const consumeRes = await adminClient.rpc("consume_apply_token", { p_user_id: userId });
+      const consumeError = toDbErrorShape(consumeRes.error);
+      const consumeRow = (Array.isArray(consumeRes.data) ? consumeRes.data[0] : null) as
+        | { used?: string; base_used?: number; credits_remaining?: number }
+        | null;
+      tokenUsage = {
+        used:
+          consumeRow?.used === "base" || consumeRow?.used === "credit" || consumeRow?.used === "none"
+            ? consumeRow.used
+            : "none",
+        base_used: safeNumber(consumeRow?.base_used),
+        credits_remaining: safeNumber(consumeRow?.credits_remaining),
+      };
+      let usedLegacyManualCredit = false;
+
+      console.log(`[apply] ${requestId} L6 token.consume`, {
+        userId,
+        tokenUsage,
+        hasError: Boolean(consumeRes.error),
+      });
+      if (consumeRes.error && isMissingTokenRpcError(consumeError)) {
+        console.warn(`[apply] ${requestId} L6 token.consume fallback_to_legacy_daily_limit`, {
+          userId,
+          code: consumeError.code ?? null,
+          message: consumeError.message ?? null,
+        });
+
+        const { startUtcIso, endUtcIso } = getKstDayRangeUtc();
+        const todayRowsRes = await withSlowQueryLog(requestId, "daily_apply_usage_fallback", async () =>
+          supabase
+            .from("dating_card_applications")
+            .select("id")
+            .eq("applicant_user_id", userId)
+            .in("status", ["submitted", "accepted", "rejected"])
+            .gte("created_at", startUtcIso)
+            .lt("created_at", endUtcIso)
+            .limit(dailyBaseLimit)
+        );
+        const todayRowsError = toDbErrorShape(todayRowsRes.error);
+        if (todayRowsRes.error) {
+          logSupabaseError(requestId, "L6 fallback.daily.count", todayRowsError);
+          const mapped = mapDbErrorToHttp(todayRowsError.code);
+          return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, todayRowsError);
+        }
+
+        const todayCount = Array.isArray(todayRowsRes.data) ? todayRowsRes.data.length : 0;
+        const currentCredits = await getLegacyCreditBalance(adminClient, userId);
+        if (todayCount < dailyBaseLimit) {
+          tokenUsage = {
+            used: "base",
+            base_used: Math.min(dailyBaseLimit, todayCount + 1),
+            credits_remaining: currentCredits,
+          };
+        } else if (currentCredits > 0) {
+          const consumeCreditRes = await adminClient
+            .from("user_apply_credits")
+            .update({ credits: currentCredits - 1, updated_at: new Date().toISOString() })
+            .eq("user_id", userId);
+          const consumeCreditError = toDbErrorShape(consumeCreditRes.error);
+          if (consumeCreditRes.error) {
+            logSupabaseError(requestId, "L6 fallback.credit.consume", consumeCreditError);
+            const mapped = mapDbErrorToHttp(consumeCreditError.code);
+            return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, consumeCreditError);
           }
+          usedLegacyManualCredit = true;
+          tokenUsage = {
+            used: "credit",
+            base_used: dailyBaseLimit,
+            credits_remaining: Math.max(0, currentCredits - 1),
+          };
         } else {
-          const refundRes = await adminClient.rpc("refund_apply_token", {
-            p_user_id: userId,
-            p_used: tokenUsage.used,
-          });
-          if (refundRes.error) {
-            logSupabaseError(requestId, "L7 token.refund", toDbErrorShape(refundRes.error));
-          } else {
-            console.log(`[apply] ${requestId} L7 token.refund`, { refunded: true, used: tokenUsage.used });
+          return jsonResponse(
+            429,
+            "DAILY_APPLY_LIMIT",
+            requestId,
+            `오늘 기본 지원 ${dailyBaseLimit}회를 모두 사용했습니다. 추가 지원권이 있으면 계속 지원할 수 있습니다.`,
+            {
+              baseRemaining: 0,
+              creditsRemaining: 0,
+            }
+          );
+        }
+      } else if (consumeRes.error) {
+        logSupabaseError(requestId, "L6 token.consume", consumeError);
+        const mapped = mapDbErrorToHttp(consumeError.code);
+        return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, consumeError);
+      }
+      if (tokenUsage.used === "none") {
+        const currentCredits = await getLegacyCreditBalance(adminClient, userId);
+        if (currentCredits > 0) {
+          const consumeCreditRes = await adminClient
+            .from("user_apply_credits")
+            .update({ credits: currentCredits - 1, updated_at: new Date().toISOString() })
+            .eq("user_id", userId);
+          const consumeCreditError = toDbErrorShape(consumeCreditRes.error);
+          if (consumeCreditRes.error) {
+            logSupabaseError(requestId, "L6 token.consume.none.credit", consumeCreditError);
+            const mapped = mapDbErrorToHttp(consumeCreditError.code);
+            return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, consumeCreditError);
           }
+          usedLegacyManualCredit = true;
+          tokenUsage = {
+            used: "credit",
+            base_used: Math.min(dailyBaseLimit, tokenUsage.base_used),
+            credits_remaining: Math.max(0, currentCredits - 1),
+          };
         }
       }
-      return jsonResponse(500, "DATABASE_ERROR", requestId, "지원 저장 결과를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
+      if (tokenUsage.used === "none") {
+        return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, `오늘 기본 지원 ${dailyBaseLimit}회를 모두 사용했습니다. 추가 지원권이 있으면 계속 지원할 수 있습니다.`, {
+          baseRemaining: Math.max(0, dailyBaseLimit - tokenUsage.base_used),
+          creditsRemaining: Math.max(0, tokenUsage.credits_remaining),
+        });
+      }
+
+      const insertPayloadNoNickname = {
+        card_id: cardId,
+        applicant_user_id: userId,
+        age,
+        height_cm: heightCm,
+        region,
+        job,
+        training_years: trainingYears,
+        intro_text: introText,
+        instagram_id: instagramId,
+        photo_paths: photoPaths,
+        status: "submitted" as const,
+      };
+
+      const insertPayloadLegacyPhoto = {
+        card_id: cardId,
+        applicant_user_id: userId,
+        applicant_display_nickname: applicantDisplayNickname,
+        age,
+        height_cm: heightCm,
+        region,
+        job,
+        training_years: trainingYears,
+        intro_text: introText,
+        instagram_id: instagramId,
+        photo_urls: photoPaths,
+        status: "submitted" as const,
+      };
+
+      const insertPayloadLegacyPhotoNoNickname = {
+        card_id: cardId,
+        applicant_user_id: userId,
+        age,
+        height_cm: heightCm,
+        region,
+        job,
+        training_years: trainingYears,
+        intro_text: introText,
+        instagram_id: instagramId,
+        photo_urls: photoPaths,
+        status: "submitted" as const,
+      };
+
+      const candidates: Array<{ label: string; payload: Record<string, unknown> }> = [
+        { label: "new_with_nickname", payload: insertPayload },
+        { label: "new_no_nickname", payload: insertPayloadNoNickname },
+        { label: "legacy_photo_with_nickname", payload: insertPayloadLegacyPhoto },
+        { label: "legacy_photo_no_nickname", payload: insertPayloadLegacyPhotoNoNickname },
+      ];
+
+      const useAdminInsert = card.status === "pending" && (allowedByMoreView || allowedByCityView);
+      const applicationWriter = useAdminInsert ? adminClient : supabase;
+
+      let insertError: DbErrorShape = {};
+
+      for (const candidate of candidates) {
+        console.log(`[apply] ${requestId} L7 insert.try`, { candidate: candidate.label });
+        const res = await applicationWriter
+          .from("dating_card_applications")
+          .insert(candidate.payload)
+          .select("id")
+          .single();
+        insertRes = { data: (res.data as { id: string } | null) ?? null, error: res.error };
+        insertError = toDbErrorShape(res.error);
+        if (!res.error) {
+          break;
+        }
+        logSupabaseError(requestId, `L7 insert.${candidate.label}`, insertError);
+        if (insertError.code !== "PGRST204") {
+          break;
+        }
+      }
+
+      console.log(`[apply] ${requestId} L7 insert.result`, {
+        userId,
+        cardId,
+        insertedId: insertRes.data?.id ?? null,
+        hasError: Boolean(insertRes.error),
+      });
+      if (insertRes.error) {
+        if (tokenUsage.used === "base" || tokenUsage.used === "credit") {
+          if (usedLegacyManualCredit && tokenUsage.used === "credit") {
+            try {
+              await refundLegacyCredit(adminClient, userId);
+            } catch (legacyRefundError) {
+              logSupabaseError(requestId, "L7 token.refund.legacy", toDbErrorShape(legacyRefundError));
+            }
+          } else {
+            const refundRes = await adminClient.rpc("refund_apply_token", {
+              p_user_id: userId,
+              p_used: tokenUsage.used,
+            });
+            if (refundRes.error) {
+              logSupabaseError(requestId, "L7 token.refund", toDbErrorShape(refundRes.error));
+            } else {
+              console.log(`[apply] ${requestId} L7 token.refund`, { refunded: true, used: tokenUsage.used });
+            }
+          }
+        }
+        logSupabaseError(requestId, "L7 insert.result", insertError);
+        const mapped = mapDbErrorToHttp(insertError.code);
+        return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, insertError);
+      }
+      if (!insertRes.data?.id) {
+        if (tokenUsage.used === "base" || tokenUsage.used === "credit") {
+          if (usedLegacyManualCredit && tokenUsage.used === "credit") {
+            try {
+              await refundLegacyCredit(adminClient, userId);
+            } catch (legacyRefundError) {
+              logSupabaseError(requestId, "L7 token.refund.legacy", toDbErrorShape(legacyRefundError));
+            }
+          } else {
+            const refundRes = await adminClient.rpc("refund_apply_token", {
+              p_user_id: userId,
+              p_used: tokenUsage.used,
+            });
+            if (refundRes.error) {
+              logSupabaseError(requestId, "L7 token.refund", toDbErrorShape(refundRes.error));
+            } else {
+              console.log(`[apply] ${requestId} L7 token.refund`, { refunded: true, used: tokenUsage.used });
+            }
+          }
+        }
+        return jsonResponse(500, "DATABASE_ERROR", requestId, "지원 저장 결과를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
+      }
     }
 
     console.log(`[apply] ${requestId} L8 before return`, {
@@ -726,6 +780,7 @@ export async function POST(req: Request) {
       usedToken: tokenUsage.used,
       baseRemaining: Math.max(0, dailyBaseLimit - tokenUsage.base_used),
       creditsRemaining: Math.max(0, tokenUsage.credits_remaining),
+      ...(passCreditsRemaining === undefined ? {} : { passCreditsRemaining }),
     });
   } catch (e) {
     const dbError = toDbErrorShape(e);

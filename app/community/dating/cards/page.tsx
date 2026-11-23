@@ -42,6 +42,7 @@ import { trackCheckoutStarted } from "@/lib/payment-analytics";
 import { readDatingJson } from "@/lib/dating-read-json";
 import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
+import LovePassLink from "@/components/dating/LovePassLink";
 import AllPassProfileOfferBanner from "@/components/dating/AllPassProfileOfferBanner";
 import ProfileStartCard from "@/components/dating/ProfileStartCard";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
@@ -190,6 +191,7 @@ type SwipeState = {
   canSwipe: boolean;
   remaining: number;
   limit: number;
+  unlimitedPass?: boolean;
   candidate: SwipeCandidate | null;
   reason: string | null;
 };
@@ -2540,6 +2542,7 @@ function OpenCardsContent() {
           canSwipe: body.canSwipe === true,
           remaining: Math.max(0, Number(body.remaining ?? 0)),
           limit: Math.max(1, Number(body.limit ?? 7)),
+          unlimitedPass: body.unlimitedPass === true,
           candidate: body.candidate ?? null,
           reason: body.reason ?? null,
         };
@@ -2584,6 +2587,7 @@ function OpenCardsContent() {
   const handleSwipe = useCallback(
     async (action: "like" | "pass") => {
       if (!swipeState.candidate || swipeSubmitting) return;
+      if (action === "like" && swipeState.unlimitedPass && swipeState.remaining <= 0) return;
       if (!swipeState.canSwipe) {
         setSwipeMessage(
           swipeState.loggedIn
@@ -2628,7 +2632,7 @@ function OpenCardsContent() {
         setSwipeSubmitting(false);
       }
     },
-    [activeSex, loadSwipe, swipeState.canSwipe, swipeState.candidate, swipeState.loggedIn, swipeSubmitting]
+    [activeSex, loadSwipe, swipeState.canSwipe, swipeState.candidate, swipeState.loggedIn, swipeState.unlimitedPass, swipeState.remaining, swipeSubmitting]
   );
 
   const handleOneOnOneMatchAction = useCallback(
@@ -3218,11 +3222,11 @@ function OpenCardsContent() {
           <div>
             <h2 className="text-[30px] font-black tracking-tight text-neutral-950">빠른 매칭</h2>
             <p className="mt-2 max-w-lg text-[15px] leading-7 text-neutral-500">
-              랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있어요.
+              {swipeState.unlimitedPass ? `후보는 계속 볼 수 있어요. 좋아요는 하루 ${swipeState.limit}번까지예요.` : <>랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있어요.</>}
             </p>
           </div>
           <div className="shrink-0 rounded-[22px] bg-rose-50 px-4 py-3 text-right">
-            <p className="text-sm font-semibold text-rose-400">오늘 남은</p>
+            <p className="text-sm font-semibold text-rose-400">{swipeState.unlimitedPass ? "오늘 남은 좋아요" : "오늘 남은"}</p>
             <p className="mt-1 text-[20px] font-black text-rose-600">
               {!swipeState.loggedIn ? "로그인" : swipeState.canSwipe ? `${swipeState.remaining}회` : "등록 필요"}
             </p>
@@ -3273,6 +3277,7 @@ function OpenCardsContent() {
               ? "플러스 이용 중 · 노출 강화 적용"
               : `기본 ${swipeSubscriptionStatus?.baseLimit ?? 5}회 · 플러스 ${swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회 · 노출 강화`}
           </p>
+          {swipeState.unlimitedPass ? <Link href="/dating/love-pass" className="inline-flex min-h-11 items-center rounded-full border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-800">연애 패스 이용 중</Link> : <LovePassLink />}
         </div>
 
         {swipeRefreshing && !swipeLoading ? <p className="mt-3 text-xs font-medium text-neutral-400">최신 후보로 업데이트 중...</p> : null}
@@ -3299,7 +3304,7 @@ function OpenCardsContent() {
         ) : !swipeState.candidate ? (
           <>
             <p className="mt-5 text-sm text-neutral-500">{swipeState.reason ?? "현재 보여줄 후보가 없습니다."}</p>
-            {swipeState.loggedIn && swipeState.remaining <= 0 ? (
+            {swipeState.loggedIn && !swipeState.unlimitedPass && swipeState.remaining <= 0 ? (
               <div className="mt-4 rounded-[24px] border border-amber-200 bg-amber-50/70 p-4">
                 <p className="text-sm font-bold text-amber-900">오늘 라이크를 모두 사용했어요.</p>
                 <p className="mt-1 text-sm leading-6 text-amber-800">
@@ -3436,7 +3441,7 @@ function OpenCardsContent() {
                     <button
                       type="button"
                       onClick={() => void handleSwipe("like")}
-                      disabled={swipeSubmitting}
+                      disabled={swipeSubmitting || (swipeState.unlimitedPass === true && swipeState.remaining <= 0)}
                       className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] bg-rose-600 px-4 text-lg font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       라이크

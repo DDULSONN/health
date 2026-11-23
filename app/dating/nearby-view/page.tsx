@@ -6,6 +6,7 @@ import DatingAdultNotice from "@/components/DatingAdultNotice";
 import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import CompactPaidOffer from "@/components/dating/CompactPaidOffer";
+import LovePassLink from "@/components/dating/LovePassLink";
 import { readNearbyPurchaseCount } from "@/lib/contextual-paid-offers";
 import { trackCheckoutStarted, trackPaidOfferSelected } from "@/lib/payment-analytics";
 
@@ -375,11 +376,12 @@ export default function NearbyViewPage() {
   return (
     <main className="min-h-screen bg-neutral-50 px-4 py-6 text-neutral-950">
       <div className="mx-auto max-w-5xl">
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <Link href="/community/dating/cards" className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
           오픈카드
         </Link>
         <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700">가까운 이상형 보기</span>
+        <LovePassLink />
       </div>
 
       <section className="rounded-[28px] border border-neutral-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">

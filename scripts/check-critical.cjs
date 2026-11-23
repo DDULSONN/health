@@ -20,6 +20,12 @@ const unitFiles = [
   'check-apply-credit-balance-events.cjs',
   'check-city-preview-and-card-order.cjs',
   'check-apply-credit-checkout.cjs',
+  'check-love-pass-db.cjs',
+  'check-love-pass-access.cjs',
+  'check-love-pass-file-access.cjs',
+  'check-love-pass-payment.cjs',
+  'check-love-pass-swipe.cjs',
+  'check-dating-open-quick-pass.cjs',
   'check-friend-recommendation.cjs',
   'check-release-db.cjs',
   'check-home-candidate-hides.cjs',
@@ -107,6 +113,7 @@ const unitFiles = [
   'check-profiles-authority-write-guard.cjs',
 ];
 const browserFiles = [
+  'check-love-pass-journey-browser.cjs',
   'check-mobile-navigation-browser.cjs',
   'check-contact-home-notice-browser.cjs',
   'check-one-on-one-conversion-browser.cjs',

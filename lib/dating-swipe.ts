@@ -9,6 +9,7 @@ import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { createAdminClient } from "@/lib/supabase/server";
 import { appendEmailUnsubscribeFooter, fetchMarketingUnsubscribedUserIds } from "@/lib/marketing-email";
+import { OPEN_QUICK_PASS } from "@/lib/dating-open-quick-pass";
 
 export const SWIPE_BASE_DAILY_LIMIT = 5;
 export const SWIPE_PREMIUM_DAILY_LIMIT = 30;
@@ -18,6 +19,7 @@ export const SWIPE_PREMIUM_EXPOSURE_RANK_MULTIPLIER = 0.35;
 export const SWIPE_DAILY_LIMIT = SWIPE_BASE_DAILY_LIMIT;
 export const SWIPE_LIKE_EXPIRY_HOURS = 30;
 export const SWIPE_LIKE_EXPIRY_ROLLOUT_AT_ISO = "2026-04-16T13:14:34.410Z";
+export const LOVE_PASS_SWIPE_LIKE_LIMIT = OPEN_QUICK_PASS.dailyLikes;
 const SWIPE_QUERY_ID_BATCH_SIZE = 300;
 
 export function getSwipeLikeExpiryCutoffIso(now = new Date()) {
@@ -66,6 +68,7 @@ type DatingCardRow = {
 type ProfileSwipeVisibilityRow = {
   user_id: string;
   swipe_profile_visible: boolean | null;
+  is_banned?: boolean | null;
 };
 
 type SwipeSubscriptionRow = {
@@ -107,6 +110,27 @@ function isMissingRelationError(error: unknown): boolean {
     message.includes("relation") ||
     message.includes("could not find the table")
   );
+}
+
+function isMissingLovePassRpc(error: unknown, functionName: string): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { code, message } = error as { code?: string; message?: string };
+  return (code === "PGRST202" || code === "42883") && String(message ?? "").includes(functionName);
+}
+
+export async function getLovePassSwipeStatus(adminClient: AdminClient, userId: string): Promise<{ remaining: number } | null> {
+  const functionName = "get_dating_love_pass_swipe_status";
+  const { data, error } = await adminClient.rpc(functionName, { p_user_id: userId });
+  if (error) {
+    if (isMissingLovePassRpc(error, functionName)) return null;
+    throw error;
+  }
+  if (data === null) return null;
+  const remaining = data?.remaining;
+  if (!Number.isInteger(remaining) || remaining < 0 || remaining > LOVE_PASS_SWIPE_LIKE_LIMIT) {
+    throw new Error("Invalid Love Pass swipe status");
+  }
+  return { remaining };
 }
 
 export type SwipeCandidate = {
@@ -228,20 +252,25 @@ async function getActiveSwipePremiumUserIds(adminClient: AdminClient, userIds: s
   const activeUserIds = new Set<string>();
   for (let start = 0; start < uniqueUserIds.length; start += SWIPE_QUERY_ID_BATCH_SIZE) {
     const chunk = uniqueUserIds.slice(start, start + SWIPE_QUERY_ID_BATCH_SIZE);
-    const res = await adminClient
-      .from("dating_swipe_subscription_requests")
-      .select("user_id")
-      .in("user_id", chunk)
-      .eq("status", "approved")
-      .gt("expires_at", now.toISOString())
-      .limit(Math.max(chunk.length * 5, 500));
+    const lovePassFunction = "get_dating_love_pass_swipe_users";
+    const [res, lovePassRes] = await Promise.all([
+      adminClient
+        .from("dating_swipe_subscription_requests")
+        .select("user_id")
+        .in("user_id", chunk)
+        .eq("status", "approved")
+        .gt("expires_at", now.toISOString())
+        .limit(Math.max(chunk.length * 5, 500)),
+      adminClient.rpc(lovePassFunction, { p_user_ids: chunk }),
+    ]);
 
-    if (res.error) {
-      if (isMissingRelationError(res.error)) return new Set();
-      throw res.error;
+    if (res.error && !isMissingRelationError(res.error)) throw res.error;
+    if (lovePassRes.error && !isMissingLovePassRpc(lovePassRes.error, lovePassFunction)) {
+      // Ranking is optional; a new entitlement-read fault must not hide ordinary candidates.
+      console.warn("[dating-swipe] Love Pass ranking unavailable", lovePassRes.error.code);
     }
 
-    for (const row of res.data ?? []) {
+    for (const row of [...(res.data ?? []), ...(lovePassRes.error || !Array.isArray(lovePassRes.data) ? [] : lovePassRes.data)]) {
       const userId = String((row as { user_id?: unknown }).user_id ?? "").trim();
       if (userId) activeUserIds.add(userId);
     }
@@ -356,16 +385,17 @@ export async function getSwipeLimitInfo(
 
 export async function getLatestSwipeCardForUser(
   adminClient: AdminClient,
-  userId: string
+  userId: string,
+  options?: { lovePass?: boolean }
 ): Promise<(DatingCardRow & { instagram_id: string }) | null> {
-  const res = await adminClient
+  let query = adminClient
     .from("dating_cards")
     .select(
       "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, total_3lift, is_3lift_verified, photo_visibility, photo_paths, blur_paths, blur_thumb_path, instagram_id, status, expires_at, created_at"
     )
-    .eq("owner_user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(30);
+    .eq("owner_user_id", userId);
+  if (options?.lovePass) query = query.in("status", ["pending", "public", "expired"]).gte("age", 19).lte("age", 99);
+  const res = await query.order("created_at", { ascending: false }).limit(30);
 
   if (res.error) {
     throw res.error;
@@ -389,6 +419,7 @@ export async function getSwipeCandidate(
   sex: "male" | "female",
   options?: {
     recycleSeenCandidates?: boolean;
+    lovePass?: boolean;
   }
 ): Promise<SwipeCandidate | null> {
   const recycleSeenCandidates = options?.recycleSeenCandidates === true;
@@ -455,13 +486,14 @@ export async function getSwipeCandidate(
 
   for (let page = 0; page < maxPages; page += 1) {
     const from = page * pageSize;
-    const cardsRes = await adminClient
+    let query = adminClient
       .from("dating_cards")
       .select(
         "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, total_3lift, is_3lift_verified, photo_visibility, photo_paths, blur_paths, blur_thumb_path, instagram_id, status, expires_at, created_at"
       )
-      .eq("sex", sex)
-      .order("created_at", { ascending: false })
+      .eq("sex", sex);
+    if (options?.lovePass) query = query.in("status", ["pending", "public", "expired"]).gte("age", 19).lte("age", 99);
+    const cardsRes = await query.order("created_at", { ascending: false })
       .order("id", { ascending: false })
       .range(from, from + pageSize - 1);
     if (cardsRes.error) throw cardsRes.error;
@@ -481,10 +513,10 @@ export async function getSwipeCandidate(
     if (ownerIds.length > 0) {
       for (let start = 0; start < ownerIds.length; start += SWIPE_QUERY_ID_BATCH_SIZE) {
         const chunk = ownerIds.slice(start, start + SWIPE_QUERY_ID_BATCH_SIZE);
-        const profilesRes = await adminClient
-          .from("profiles")
-          .select("user_id, swipe_profile_visible")
-          .in("user_id", chunk);
+        const profiles = adminClient.from("profiles");
+        const profilesRes = await (options?.lovePass
+          ? profiles.select("user_id, swipe_profile_visible, is_banned")
+          : profiles.select("user_id, swipe_profile_visible")).in("user_id", chunk);
 
         if (profilesRes.error?.message?.includes("swipe_profile_visible")) {
           break;
@@ -496,7 +528,7 @@ export async function getSwipeCandidate(
         for (const row of (profilesRes.data ?? []) as ProfileSwipeVisibilityRow[]) {
           const userId = String(row.user_id ?? "").trim();
           if (!userId) continue;
-          visibilityByUserId.set(userId, row.swipe_profile_visible !== false);
+          visibilityByUserId.set(userId, row.swipe_profile_visible !== false && (!options?.lovePass || row.is_banned !== true));
         }
       }
     }
@@ -510,7 +542,7 @@ export async function getSwipeCandidate(
       if (seenOwners.has(ownerId)) continue;
       if (excludedUserIds.has(ownerId)) continue;
       if (blockedUserIds.has(ownerId)) continue;
-      if (visibilityByUserId.get(ownerId) === false) continue;
+      if (options?.lovePass ? visibilityByUserId.get(ownerId) !== true : visibilityByUserId.get(ownerId) === false) continue;
       if (!String(row.instagram_id ?? "").trim()) continue;
       seenOwners.add(ownerId);
 

@@ -44,6 +44,7 @@ import { preflightPrivateContact, privateContactEnabled } from "@/lib/dating-pri
 
 import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
 import { getCityViewPurchasePreview } from "@/lib/dating-purchase-fulfillment";
+import { createLovePassCheckout, LovePassCheckoutError } from "@/lib/dating-love-pass-checkout";
 
 type ProductType =
   | "apply_credits"
@@ -311,6 +312,14 @@ export async function POST(req: Request) {
     }
 
     const body = ((await req.json().catch(() => null)) ?? {}) as CreateBody;
+    if (body.productType === "dating_love_pass_30d") {
+      try {
+        return json(200, { ...await createLovePassCheckout(createAdminClient(), user, getBaseUrl(req)), requestId });
+      } catch (error) {
+        if (error instanceof LovePassCheckoutError) return json(error.status, { ok: false, code: error.code, requestId, message: error.message });
+        throw error;
+      }
+    }
     const productType = parseProductType(body.productType);
 
     if (!productType) {

@@ -139,6 +139,7 @@ function formatProductType(productType?: string, orderName?: string | null) {
   if (productType === "one_on_one_plus_30d") return "1:1 매칭 플러스 30일";
   if (productType === "swipe_premium_30d") return "빠른매칭 플러스";
   if (productType === "dating_all_pass_30d") return "매칭 올패스 30일";
+  if (productType === "dating_love_pass_30d") return "짐툴 연애 패스";
   if (productType === "love_fortune_detail") return "연애운 상세 풀이";
   if (productType === "account_unban") return "계정 이용 제한 해제";
   return "-";
@@ -156,6 +157,7 @@ function getPrimaryAction(productType?: string, orderName?: string | null, provi
   if (productType === "one_on_one_plus_30d") return { href: "/mypage?section=matching", label: "1:1 매칭으로 돌아가기" };
   if (productType === "swipe_premium_30d") return { href: "/community/dating/cards", label: "빠른매칭으로 돌아가기" };
   if (productType === "dating_all_pass_30d") return { href: "/community/dating/cards", label: "매칭 시작하기" };
+  if (productType === "dating_love_pass_30d") return { href: "/dating/love-pass", label: "연애 패스 혜택 보기" };
   if (productType === "city_view") {
     const provinceQuery = province ? `?province=${encodeURIComponent(province)}` : "";
     return { href: `/dating/nearby-view${provinceQuery}#nearby-results`, label: "열린 카드 바로 확인하기" };
@@ -797,6 +799,8 @@ function PaymentSuccessContent() {
                           ? "빠른매칭 플러스 적용 완료"
                         : result.productType === "dating_all_pass_30d"
                           ? "1:1·빠른매칭 플러스 적용 완료"
+                        : result.productType === "dating_love_pass_30d"
+                          ? "연애 패스 혜택 적용 완료"
                           : result.productType === "city_view"
                             ? "가까운 후보 30명 열람권 반영 완료"
                             : result.productType === "love_fortune_detail"

@@ -43,6 +43,9 @@ function mockDatabase(initial = {}, options = {}) {
       if (options.failTable === table) {
         return { data: null, error: { code: "XX000", message: "simulated database failure" }, count: null };
       }
+      if (options.missingLovePassMarker && query.filters.some(([, key]) => key === "love_pass_publication_id")) {
+        return { data: null, error: { code: "42703", message: "column does not exist" }, count: null };
+      }
       tables[table] ??= [];
       const matches = (row) => query.filters.every(([operator, key, value]) => {
         if (operator === "eq") return row[key] === value;
@@ -103,6 +106,29 @@ const lock = () => ({ key: "open_card_queue_sync_lock", value_json: { initialize
 const card = (id, overrides = {}) => ({
   id, sex: "male", status: "pending", created_at: `2026-01-${String(Number(id.replace(/\D/g, "")) || 1).padStart(2, "0")}T00:00:00.000Z`,
   queue_priority_at: past, published_at: null, expires_at: null, auto_requeue_count: 0, ...overrides,
+});
+
+test("love pass publication does not take a regular queue slot", async () => {
+  const db = mockDatabase({
+    site_settings: [lock()],
+    dating_cards: [
+      card("1", { status: "public", expires_at: future, love_pass_publication_id: "pass-slot-1" }),
+      card("2"),
+      card("3"),
+    ],
+  });
+  const result = await loadQueue(1).syncOpenCardQueue(db);
+  assert.deepEqual(result.promoted.male, ["2"]);
+  assert.equal(db.tables.dating_cards.find((row) => row.id === "1").status, "public");
+  assert.equal(db.tables.dating_cards.find((row) => row.id === "3").status, "pending");
+});
+
+test("a staged deployment on the previous schema keeps the regular expiry filter", async () => {
+  const db = mockDatabase({
+    dating_cards: [card("1", { status: "public", expires_at: future }), card("2", { status: "public", expires_at: past })],
+  }, { missingLovePassMarker: true });
+  assert.equal(await loadQueue().getOpenCardQueuePublicCount(db, "male"), 1);
+  assert.equal(db.calls.filter((call) => call.filters.some(([, key]) => key === "expires_at")).length, 2);
 });
 
 test("a public overflow never cuts short an unexpired card", async () => {
