@@ -12,7 +12,7 @@ import { openCardWaitDescription } from "@/lib/open-card-wait-description";
 import { canOfferInstantOpenCard } from "@/lib/paid-application-prefill";
 import { usePaidRegistrationStatus } from "@/lib/use-paid-registration-status";
 import { paidRegistrationPresentation } from "@/lib/paid-registration-status";
-import { getMypageMatchingAnchorFilter } from "@/lib/mypage-matching-anchor";
+import { getMypageMatchingAnchorFilter, getMypageOpenCardAnchor } from "@/lib/mypage-matching-anchor";
 import { DatingReportDialog, type DatingReportResult } from "@/components/DatingReportButton";
 import Image from "next/image";
 import Link from "next/link";
@@ -2273,6 +2273,7 @@ export default function MyPage() {
   const [pageSectionTab, setPageSectionTab] = useState<MyPageSectionTab>("profile");
   const paidRegistration = usePaidRegistrationStatus(!loading && !accountBanStatus?.is_banned && pageSectionTab === "matching");
   const [navigationStateReady, setNavigationStateReady] = useState(false);
+  const [pendingOpenCardAnchor, setPendingOpenCardAnchor] = useState<ReturnType<typeof getMypageOpenCardAnchor>>(null);
   const [matchingDataLoaded, setMatchingDataLoaded] = useState(false);
   const [matchingDataLoading, setMatchingDataLoading] = useState(false);
   const [matchingDataError, setMatchingDataError] = useState("");
@@ -3704,19 +3705,17 @@ export default function MyPage() {
       const match = params.get("match");
       const settings = params.get("settings");
       const anchorFilter = getMypageMatchingAnchorFilter(window.location.hash);
+      const openCardAnchor = getMypageOpenCardAnchor(window.location.hash);
       const hasExplicitSection = Boolean(section && MY_PAGE_SECTION_TABS.has(section as MyPageSectionTab));
-      if (section === "matching" && window.location.hash === "#my-open-card-status") setOpenCardManagementOpen(true);
-
-      setPageSectionTab(
-        section && MY_PAGE_SECTION_TABS.has(section as MyPageSectionTab)
-          ? (section as MyPageSectionTab)
-          : anchorFilter ? "matching" : "profile",
-      );
-      setMatchingFilter(
-        match && MY_PAGE_MATCHING_FILTERS.has(match as MatchingFilter)
-          ? (match as MatchingFilter)
-          : !hasExplicitSection && anchorFilter ? anchorFilter : "all",
-      );
+      const nextSection = hasExplicitSection ? section as MyPageSectionTab : anchorFilter || openCardAnchor ? "matching" : "profile";
+      const nextFilter = match && MY_PAGE_MATCHING_FILTERS.has(match as MatchingFilter)
+        ? match as MatchingFilter
+        : (nextSection === "matching" ? openCardAnchor?.filter : null) ?? (!hasExplicitSection ? anchorFilter : null) ?? "all";
+      const target = nextSection === "matching" && openCardAnchor?.filter === nextFilter ? openCardAnchor : null;
+      setPendingOpenCardAnchor(target);
+      if (target?.id === "my-open-card-status") setOpenCardManagementOpen(true);
+      setPageSectionTab(nextSection);
+      setMatchingFilter(nextFilter);
       setActiveTab(
         settings && MY_PAGE_CERT_TABS.has(settings as MyPageTab)
           ? (settings as MyPageTab)
@@ -3733,6 +3732,29 @@ export default function MyPage() {
       window.removeEventListener("hashchange", applyNavigationFromUrl);
     };
   }, []);
+
+  useEffect(() => {
+    if (!pendingOpenCardAnchor || !navigationStateReady) return;
+    if (pageSectionTab !== "matching" || matchingFilter !== pendingOpenCardAnchor.filter) {
+      setPendingOpenCardAnchor(null);
+      return;
+    }
+    if (!matchingDataLoaded || loading) return;
+    // The browser's native fragment scroll may run before the matching tab or
+    // its card details exist. Revisit once after data and the DOM are ready.
+    const frame = window.requestAnimationFrame(() => {
+      if (window.location.hash === `#${pendingOpenCardAnchor.id}`) {
+        const anchor = document.getElementById(pendingOpenCardAnchor.id);
+        const target = anchor?.getClientRects().length ? anchor : document.getElementById("my-open-card-overview");
+        if (target) {
+          target.scrollIntoView({ block: "start" });
+          (target.querySelector<HTMLElement>("summary") ?? target).focus({ preventScroll: true });
+        }
+      }
+      setPendingOpenCardAnchor(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [loading, matchingDataLoaded, matchingFilter, navigationStateReady, pageSectionTab, pendingOpenCardAnchor]);
 
   useEffect(() => {
     if (!navigationStateReady) return;
@@ -8558,7 +8580,7 @@ export default function MyPage() {
           }} /> : null}
           <AllPassProfileOfferBanner placement="mypage_matching_profile_complete" />
           <PaidRegistrationStatus state={paidRegistration} />
-          <section className="mb-3 rounded-2xl border border-rose-100 bg-[#fffafb] p-4 shadow-[0_6px_20px_rgba(190,24,93,0.05)]">
+          <section id="my-open-card-overview" tabIndex={-1} className="scroll-mt-24 mb-3 rounded-2xl border border-rose-100 bg-[#fffafb] p-4 shadow-[0_6px_20px_rgba(190,24,93,0.05)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -9513,7 +9535,7 @@ export default function MyPage() {
                 </div>
 
                 <div className="mt-4 rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-semibold text-neutral-900">내 결제 내역</p>
                       <p className="mt-1 text-xs text-neutral-500">
@@ -9524,7 +9546,7 @@ export default function MyPage() {
                       type="button"
                       onClick={() => void loadPaymentCenter(true)}
                       disabled={paymentCenterLoading}
-                      className="h-8 rounded-md border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 shadow-sm disabled:opacity-50"
+                      className="inline-flex min-h-11 shrink-0 items-center self-start whitespace-nowrap rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:opacity-50 sm:self-auto"
                     >
                       {paymentCenterLoading ? "새로고침 중..." : "결제 내역 새로고침"}
                     </button>
@@ -11286,7 +11308,7 @@ export default function MyPage() {
         </div>
       </details>
 
-      <section id="open-card-received" className={`${showMatchingGroup(matchingFilter, "received", receivedApplications.length) ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+      <section id="open-card-received" tabIndex={-1} className={`${showMatchingGroup(matchingFilter, "received", receivedApplications.length) ? "" : "hidden"} scroll-mt-24 mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
         <h2 className="mb-3 text-base font-bold text-neutral-950">오픈카드 · 받은 지원</h2>
         {receivedApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 받은 지원서가 없습니다.</p>

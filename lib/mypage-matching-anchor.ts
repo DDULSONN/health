@@ -11,3 +11,9 @@ export function getMypageMatchingAnchorFilter(hash: string): "all" | "received" 
     default: return null;
   }
 }
+
+export function getMypageOpenCardAnchor(hash: string) {
+  if (hash === "#open-card-received") return { id: "open-card-received", filter: "received" } as const;
+  if (hash === "#my-open-card-status") return { id: "my-open-card-status", filter: "all" } as const;
+  return null;
+}

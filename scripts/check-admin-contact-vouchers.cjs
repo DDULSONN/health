@@ -8,9 +8,9 @@ test('admin panel is additive; every existing mypage action and condition is unc
  const restored=source.replace(/^const AdminContactVoucherPanel = dynamic\([^\n]*\);\n/m,'')
   .replace(/^ +\{adminUserActivityResult.user \? <AdminContactVoucherPanel userId=\{adminUserActivityResult.user.id\} \/> : null\}\n/m,'');
  assert.notEqual(restored,source);
- // Reviewed the new open-card status CTA against 70294d53. All 118 existing
- // My Page handlers, including voucher, matching and payment, are unchanged.
- assert.equal(require('./check-site-button-tone.cjs').contract(restored),'74590ea7139600b80fc0b80865520ced479409a4a87e5fe3432f4820fe69f020');
+ // Reviewed the deferred open-card fragment navigation and history-button
+ // layout against 146f9a74. The grant, matching and payment actions stay pinned.
+ assert.equal(require('./check-site-button-tone.cjs').contract(restored),'b4f1352fc487ab8b3af215c4aa2f8d97fd1b9278e1c5131fff9bfface65889f8');
 });
 test('strict grant input / Korean / no caller-selected admin',()=>{
  assert.deepEqual(logic.parseContactVoucherGrant({...input,admin:id(9)}),input);

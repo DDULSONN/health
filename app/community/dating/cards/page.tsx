@@ -233,6 +233,7 @@ type ReelsDatingListing = {
 const PAGE_SIZE = 20;
 const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v3";
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
+const ONE_ON_ONE_WAIT_NOTICE = /^(?:1\s*대\s*1|1\s*:\s*1)\s*매칭은\s*대기가\s*없어요[!！.]?$/u;
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 const DATING_REACTION_COUNT_EVENT = "dating-reaction-count";
@@ -2927,6 +2928,9 @@ function OpenCardsContent() {
   );
   const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
   const showOpenCardSection = homeFeatureTab === "open_cards";
+  // Only this existing first-party notice should open matching. Keep other
+  // configurable banners pointing at the links set by the operator.
+  const isOneOnOneWaitNotice = ONE_ON_ONE_WAIT_NOTICE.test(homeAdLink?.title ?? "");
   const showQuickMatchSection = homeFeatureTab === "quick_match";
   const showOneOnOneSection = homeFeatureTab === "one_on_one";
   const showLoveFortuneSection = isAdminPreviewUser && homeFeatureTab === "love_fortune";
@@ -3035,7 +3039,27 @@ function OpenCardsContent() {
         </div>
       ) : null}
       {showOpenCardSection ? <OpenCardExtras userId={viewerSessionReady && viewerLoggedIn && viewerPhoneVerified && !viewerSessionError ? draftUserId : null} /> : null}
-      {showOpenCardSection && homeAdLink ? (
+      {showOpenCardSection && homeAdLink && isOneOnOneWaitNotice ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1">
+          <p className="min-w-0 py-2 text-xs font-semibold text-neutral-700">1:1 매칭은 대기가 없어요</p>
+          <div className="flex flex-wrap items-center gap-x-1">
+            <Link
+              href="/community/dating/cards?tab=one_on_one"
+              className="inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold text-neutral-900 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+            >
+              1:1 매칭 보기
+            </Link>
+            <a
+              href={OPEN_KAKAO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-11 items-center rounded-lg px-2 text-xs text-neutral-600 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+            >
+              오픈카톡 문의
+            </a>
+          </div>
+        </div>
+      ) : showOpenCardSection && homeAdLink ? (
         <a
           href={homeAdLink.linkUrl}
           target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
