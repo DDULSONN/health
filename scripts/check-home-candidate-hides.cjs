@@ -39,7 +39,12 @@ test('only unsent admin proposals are filtered; incoming/sent/mutual matches sta
 test('home controls use the existing API components and restore with a strict read, never a paid refresh',()=>{
   assert.match(home,/onCandidateHidden=\{handleHideOneOnOneCandidate\}/);
   assert.match(home,/onCandidateRestored=\{\(\) => reloadOneOnOneHome\(true, true\)\}/);
-  assert.equal((panel.match(/<CandidateHideButton/g)||[]).length,3);
+  assert.equal((panel.match(/<CandidateHideButton/g)||[]).length,2);
+  // Default and additional recommendations share a renderer, including the
+  // same hide button, while the favorite-card renderer stays independent.
+  assert.match(panel,/function renderCandidate[\s\S]*?<CandidateHideButton enabled=\{group\.hides_enabled === true\}[\s\S]*?onHidden=\{onCandidateHidden\}/);
+  assert.match(panel,/renderAdditional[\s\S]*?candidates\.map\(candidate => renderCandidate\(candidate, true\)\)/);
+  assert.match(panel,/firstRecommendations\.map\(candidate => renderCandidate\(candidate\)\)/);
   assert.match(panel,/hidesEnabled=\{group\.hides_enabled === true && Boolean\(onCandidateHidden\)\}/);
   assert.match(panel,/<CandidateHidesPanel enabled=\{group\.hides_enabled === true\}/);
   assert.ok(!initializer(home,'handleHideOneOnOneCandidate').includes('fetch('));
