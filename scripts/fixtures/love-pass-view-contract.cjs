@@ -17,6 +17,7 @@ const navigation = [
 const changes = {
   'app/community/dating/cards/page.tsx': [
     ['import LovePassLink from "@/components/dating/LovePassLink";\n', ''],
+    ['      {showOpenCardSection && !viewerSessionError ? <LovePassLink placement="open-card-home" /> : null}\n', ''],
     ['  unlimitedPass?: boolean;\n', ''],
     ['          unlimitedPass: body.unlimitedPass === true,\n', ''],
     ['      if (action === "like" && swipeState.unlimitedPass && swipeState.remaining <= 0) return;\n', ''],

@@ -114,6 +114,7 @@ const unitFiles = [
 ];
 const browserFiles = [
   'check-love-pass-journey-browser.cjs',
+  'check-love-pass-placement-browser.cjs',
   'check-mobile-navigation-browser.cjs',
   'check-contact-home-notice-browser.cjs',
   'check-one-on-one-conversion-browser.cjs',

@@ -3081,6 +3081,7 @@ function OpenCardsContent() {
           </div>
         </section>
       ) : null}
+      {showOpenCardSection && !viewerSessionError ? <LovePassLink placement="open-card-home" /> : null}
       {showDraftResumeCard && profileDraft ? <DatingDraftResumeCard draft={profileDraft} href="/onboarding/dating" /> : null}
       <AllPassProfileOfferBanner placement="matching_home_profile_complete" />
       {showProfileStartCard ? (
