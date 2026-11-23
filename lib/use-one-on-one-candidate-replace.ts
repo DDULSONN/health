@@ -52,8 +52,9 @@ export function useOneOnOneCandidateReplace({ identity, viewerId, locks, needsRe
     setBusy({ userId, sourceCardId, candidateId });
     try {
       let changed = false;
+      let seenFallback = false;
       try {
-        const { response, body } = await fetchClientJson<{ ok?: boolean; changed?: boolean; code?: string; error?: string }>(
+        const { response, body } = await fetchClientJson<{ ok?: boolean; changed?: boolean; code?: string; error?: string; replacement_kind?: string }>(
           "/api/dating/1on1/recommendations/replace", {
             method: "POST", cache: "no-store", signal: controller.signal, headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ source_card_id: sourceCardId, candidate_card_id: candidateId,
@@ -61,7 +62,7 @@ export function useOneOnOneCandidateReplace({ identity, viewerId, locks, needsRe
           }, 15_000,
         );
         if (!isCurrent()) return;
-        const unchangedMessage = body?.code === "NO_UNSEEN_CANDIDATE" ? "조건에 맞는 새 후보를 아직 찾지 못했어요. 지금 후보는 그대로예요."
+        const unchangedMessage = body?.code === "NO_UNSEEN_CANDIDATE" ? "지금 보여드릴 다른 후보가 없어 현재 후보는 그대로예요."
           : body?.code === "SINGLE_REFRESH_LIMIT" ? "최근 24시간 동안 한 명씩 바꾸기를 모두 사용했어요. 현재 후보는 그대로예요."
           : body?.code === "SINGLE_REFRESH_SLOW_DOWN" ? "잠시 후 다시 눌러 주세요. 현재 후보는 그대로예요." : null;
         if (response.status < 500 && unchangedMessage) {
@@ -70,6 +71,7 @@ export function useOneOnOneCandidateReplace({ identity, viewerId, locks, needsRe
           return;
         }
         changed = response.ok && body?.ok === true && body.changed === true;
+        seenFallback = changed && body?.replacement_kind === "seen_fallback";
       } catch { /* An uncertain mutation is followed by a read, never a second POST. */ }
       if (!isCurrent()) return;
 
@@ -77,7 +79,9 @@ export function useOneOnOneCandidateReplace({ identity, viewerId, locks, needsRe
       try {
         await reload();
         if (isCurrent()) {
-          setNotice({ userId, sourceCardId, message: changed ? "이 후보 한 명을 새 후보로 바꿨어요." : "명단을 다시 불러왔어요. 현재 후보를 확인해 주세요." });
+          const message = seenFallback ? "이미 본 분 중에서 나이와 지역을 고려해 다른 후보로 바꿨어요."
+            : changed ? "이 후보 한 명을 새 후보로 바꿨어요." : "명단을 다시 불러왔어요. 현재 후보를 확인해 주세요.";
+          setNotice({ userId, sourceCardId, message });
         }
       } catch {
         if (isCurrent()) onReadFailure(changed

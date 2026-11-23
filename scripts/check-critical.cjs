@@ -61,6 +61,7 @@ const unitFiles = [
   'check-dating-contact-text-review.cjs',
   'check-dating-1on1-checked-refresh-sql.cjs',
   'check-dating-1on1-impressions.cjs',
+  'check-dating-1on1-best-fit.cjs',
   'check-single-candidate-swap-sql.cjs',
   'check-city-view-region-priority.cjs',
   'check-notification-reliability.cjs',

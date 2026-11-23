@@ -7,8 +7,10 @@ const { createHash } = require('node:crypto');
 const { PGlite } = require('@electric-sql/pglite');
 const sql = name => fs.readFileSync(path.resolve(__dirname, '../supabase/sql', name + '.sql'), 'utf8');
 const migration = sql('dating_1on1_single_candidate_swaps');
+const fallbackMigration = sql('dating_1on1_single_candidate_fallback');
 const legacySignature = 'commit_dating_1on1_single_candidate_swap(uuid,uuid,text,timestamptz,timestamptz,uuid,uuid,timestamptz)';
 const signature = 'commit_dating_1on1_single_candidate_swap(uuid,uuid,text,timestamptz,timestamptz,uuid,uuid,timestamptz,text,text)';
+const fallbackSignature = 'commit_dating_1on1_single_candidate_fallback_swap(uuid,uuid,text,timestamptz,timestamptz,uuid,uuid,timestamptz,text,text,integer,timestamptz)';
 const guardedSignature = 'commit_dating_1on1_recommendation_page_guarded(uuid,uuid,integer,timestamptz,timestamptz,uuid[],uuid[],boolean,text,integer,timestamptz)';
 const key = (sex, year = 1997, region = '서울') => createHash('md5').update(`${sex}:${year}:${region}`).digest('hex');
 const staleRefresh = {allowed: false, reason: 'stale', used_count: null, remaining_count: null, refreshed_at: null, next_refresh_at: null};
@@ -26,11 +28,15 @@ test('single candidate swap is an isolated, generation-scoped overlay', async t 
     [card, user, sex],
   );
   const stamp = () => new Date().toISOString();
-  const commit = async opts => {
+  const commit = async (opts, fallback = false) => {
     const input = { user: viewer, source, generation, pageAt, expected: pageAt, from: fromCard, to: toCard, planned: stamp(),
-      sourceKey: key('male'), toKey: key('female'), ...opts };
-    return (await rows('select commit_dating_1on1_single_candidate_swap($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) result', Object.values(input)))[0].result;
+      sourceKey: key('male'), toKey: key('female'), ...(fallback ? { swapCount: 0, latest: null } : {}), ...opts };
+    const query = fallback
+      ? 'select commit_dating_1on1_single_candidate_fallback_swap($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) result'
+      : 'select commit_dating_1on1_single_candidate_swap($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) result';
+    return (await rows(query, Object.values(input)))[0].result;
   };
+  const commitFallback = opts => commit(opts, true);
   const fullRefresh = async (opts = {}, guarded = true) => {
     const args = { source, user: viewer, limit: 1, expected: pageAt, at: stamp(), main: [altCard], extra: [],
       repeatOnly: false, sourceKey: key('male'), swapCount: 0, latest: null, ...opts };
@@ -89,10 +95,17 @@ test('single candidate swap is an isolated, generation-scoped overlay', async t 
     await db.exec(migration);
     await db.exec(migration);
 
+    const priorFunctions = () => rows('select pg_get_functiondef(to_regprocedure(s)) as body from unnest($1::text[]) as p(s)',
+      [[signature, guardedSignature, legacySignature]]);
+    const beforeFallback = await priorFunctions();
+    await db.exec(fallbackMigration);
+    await db.exec(fallbackMigration);
+    assert.deepEqual(await priorFunctions(), beforeFallback, 'the additive fallback does not redefine existing operations');
+
     await trial('member and guest receive neither table nor function permissions; service role has read+RPC only', async () => {
       for (const [role, expected] of [['anon', false], ['authenticated', false], ['service_role', true]]) {
-        const [allowed] = await rows("select has_table_privilege($1,'dating_1on1_single_candidate_swaps','select') as sel, has_table_privilege($1,'dating_1on1_single_candidate_swaps','insert,update,delete') as write, has_function_privilege($1,$2,'execute') as execute, has_function_privilege($1,$3,'execute') as guarded, has_function_privilege($1,$4,'execute') as legacy", [role, signature, guardedSignature, legacySignature]);
-        assert.deepEqual(allowed, {sel: expected, write: false, execute: expected, guarded: expected, legacy: false});
+        const [allowed] = await rows("select has_table_privilege($1,'dating_1on1_single_candidate_swaps','select') as sel, has_table_privilege($1,'dating_1on1_single_candidate_swaps','insert,update,delete') as write, has_function_privilege($1,$2,'execute') as execute, has_function_privilege($1,$3,'execute') as guarded, has_function_privilege($1,$4,'execute') as legacy, has_function_privilege($1,$5,'execute') as fallback", [role, signature, guardedSignature, legacySignature, fallbackSignature]);
+        assert.deepEqual(allowed, {sel: expected, write: false, execute: expected, guarded: expected, legacy: false, fallback: expected});
       }
     });
     await trial('service commit changes no base page, quota, match, notification, or payment data', async () => {
@@ -202,6 +215,61 @@ test('single candidate swap is an isolated, generation-scoped overlay', async t 
       const [version] = await rows('select max(created_at)::text as latest from dating_1on1_single_candidate_swaps where user_id=$1',[viewer]);
       assert.equal((await fullRefresh({swapCount:1,latest:version.latest})).reason,'consumed');
     });
+    const swapVersion = async () => (await rows('select count(*)::int as "swapCount", max(created_at)::text as latest from dating_1on1_single_candidate_swaps where user_id=$1', [viewer]))[0];
+    await trial('fallback can return a prior observed member without changing refresh allowances, matches, or payment', async () => {
+      const tables = ['dating_1on1_cards','dating_1on1_recommendation_pages','dating_1on1_recommendation_refresh_events',
+        'dating_1on1_refresh_compensations','dating_1on1_match_proposals','payments','notifications'];
+      const snapshot = () => Promise.all(tables.map(table => rows(`select * from ${table} order by 1`)));
+      await db.query("insert into dating_1on1_candidate_impressions values($1,$2,now()-interval '4 days')", [viewer, toUser]);
+      const before = await snapshot();
+      await db.exec('set local role service_role');
+      assert.deepEqual(await commit(),{ok:false,code:'already_seen'});
+      assert.deepEqual(await commitFallback(),{ok:true,code:'swapped'});
+      assert.deepEqual(await commitFallback(),{ok:true,code:'already_swapped'});
+      assert.deepEqual(await commitFallback({to:altCard}),{ok:false,code:'slot_already_swapped'});
+      await db.exec('reset role');
+      assert.deepEqual(await snapshot(), before);
+      assert.equal((await swaps()).length,1);
+      assert.equal((await rows("select count(*)::int n from pg_locks where pid=pg_backend_pid() and locktype='advisory' and granted"))[0].n,1);
+      assert.deepEqual(await fullRefresh(), staleRefresh, 'full-refresh plans stale after this fallback also cannot consume');
+    });
+    await trial('fallback can reuse a previous-generation recipient, only with exact viewer-wide overlay version', async () => {
+      await db.query("insert into dating_1on1_single_candidate_swaps values($1,$2,$3,$4,$5,$6,now()-interval '3 days')",
+        [viewer,source,'b'.repeat(64),from2Card,toCard,toUser]);
+      assert.deepEqual(await commit(),{ok:false,code:'already_seen'});
+      assert.deepEqual(await commitFallback(),{ok:false,code:'stale_generation'});
+      assert.deepEqual(await commitFallback({swapCount:1,latest:pageAt}),{ok:false,code:'stale_generation'});
+      assert.deepEqual(await commitFallback(await swapVersion()),{ok:true,code:'swapped'});
+      assert.equal((await swaps()).length,2);
+    });
+    await trial('fallback cannot chain from a replacement or repeat a current-generation donor or target even after a profile revision', async () => {
+      // A daily page can be computed without a persisted page row. This test
+      // isolates the same-generation guard instead of relying on the page check.
+      await db.query('delete from dating_1on1_recommendation_pages where user_id=$1',[viewer]);
+      await db.query("insert into dating_1on1_candidate_impressions values($1,$2,now()-interval '4 days')", [viewer, toUser]);
+      assert.deepEqual(await commitFallback(),{ok:true,code:'swapped'});
+      const v = await swapVersion();
+      assert.deepEqual(await commitFallback({...v,from:toCard,to:altCard}),{ok:false,code:'stale_generation'});
+      assert.deepEqual(await commitFallback({...v,from:from2Card,to:fromCard}),{ok:false,code:'candidate_excluded'});
+      assert.deepEqual(await commitFallback({...v,from:from2Card}),{ok:false,code:'candidate_excluded'});
+      const newOldTarget = id(79), newOldDonor = id(82);
+      await insertCard(newOldTarget,toUser);
+      await insertCard(newOldDonor,fromUser);
+      assert.deepEqual(await commitFallback({...v,from:newOldDonor,to:altCard}),{ok:false,code:'stale_generation'});
+      assert.deepEqual(await commitFallback({...v,from:from2Card,to:newOldTarget}),{ok:false,code:'candidate_excluded'});
+      assert.deepEqual(await commitFallback({...v,from:from2Card,to:newOldDonor}),{ok:false,code:'candidate_excluded'});
+      assert.equal((await swaps()).length,1);
+    });
+    await trial('fallback shares the unseen 10 per 24h swap bound and refuses malformed observation stamps', async () => {
+      assert.deepEqual(await commitFallback({swapCount:-1}),{ok:false,code:'invalid_input'});
+      assert.deepEqual(await commitFallback({swapCount:1}),{ok:false,code:'invalid_input'});
+      assert.deepEqual(await commitFallback({latest:pageAt}),{ok:false,code:'invalid_input'});
+      assert.equal((await commit()).code,'swapped');
+      for (let i=0;i<9;i++) await db.query('insert into dating_1on1_single_candidate_swaps values($1,$2,$3,$4,$5,$6,now())',
+        [viewer,source,'b'.repeat(64),id(100+i),id(200+i),toUser]);
+      assert.deepEqual(await commitFallback({...await swapVersion(),from:from2Card,to:altCard}),{ok:false,code:'swap_limit'});
+      assert.equal((await swaps()).length,10);
+    });
     for (const [label, change, code] of [
       ['latest source',`insert into dating_1on1_cards values('${id(14)}','${viewer}','male','approved',1997,null,now(),now())`,'source_unavailable'],
       ['viewer ban',`update profiles set is_banned=true where user_id='${viewer}'`,'source_unavailable'],
@@ -227,6 +295,7 @@ test('single candidate swap is an isolated, generation-scoped overlay', async t 
     ]) await trial(label, async () => {
       await db.exec(change);
       assert.deepEqual(await commit(),{ok:false,code});
+      if (code !== 'already_seen') assert.deepEqual(await commitFallback(),{ok:false,code}, 'fallback preserves this safety condition');
       assert.equal((await swaps()).length,0);
     });
   } finally { await db.close(); }

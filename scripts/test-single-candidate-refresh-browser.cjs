@@ -9,7 +9,7 @@ const availabilityWait = 180_010;
 
 module.exports = async ({ browser, origin, output }) => {
   let passed = 0;
-  for (const surface of ['home', 'mypage']) for (const scenario of ['success', 'core-outage', 'empty', 'limit', 'slow-down', 'stale', 'unknown', 'identity-change', 'access-lost', 'availability-stock', 'availability-reload', 'availability-identity', 'availability-ineligible']) {
+  for (const surface of ['home', 'mypage']) for (const scenario of ['success', 'seen-fallback', 'core-outage', 'empty', 'limit', 'slow-down', 'stale', 'unknown', 'identity-change', 'access-lost', 'availability-stock', 'availability-reload', 'availability-identity', 'availability-ineligible']) {
     if (surface === 'mypage' && scenario === 'access-lost') continue;
     const width = scenario === 'empty' ? 1280 : 360;
     const context = await browser.newContext({ viewport: { width, height: 844 } });
@@ -18,6 +18,7 @@ module.exports = async ({ browser, origin, output }) => {
     const card = (n, name) => ({ ...own, id: id(n), user_id: id(n + 50), sex: 'male', name, age: 30, photo_signed_urls: [] });
     const old = card(2, '교체 대상'), other = card(3, '유지 후보'), added = card(4, '추가 추천 회원'), favorite = card(5, '찜한 추천 회원');
     const fresh = { ...card(6, '처음 보는 회원'), recommendation_region_widened: true };
+    const fallback = card(10, '이전에 본 다른 회원');
     const matched = card(7, '연락처 유지 회원');
     const nextOwn = { ...own, id: id(8), user_id: 'another-fixture-member', name: '다른 계정' }, nextCandidate = card(9, '다른 계정 후보');
     const requests = [], errors = [];
@@ -71,7 +72,7 @@ module.exports = async ({ browser, origin, output }) => {
         if (scenario === 'identity-change') return route.fulfill({ json: { ok: true, changed: true } }).catch(() => {});
         substituted = true;
         if (scenario === 'unknown') return route.abort();
-        return route.fulfill({ json: { ok: true, changed: true } });
+        return route.fulfill({ json: { ok: true, changed: true, ...(scenario === 'seen-fallback' ? { replacement_kind: 'seen_fallback' } : {}) } });
       }
       let body = { ok: true, items: [], cards: [], applications: [], loggedIn: true };
       switch (url.pathname) {
@@ -89,7 +90,7 @@ module.exports = async ({ browser, origin, output }) => {
           if (posts && scenario === 'access-lost') return route.fulfill({ status: 403, json: { error: 'fixture permission revoked' } });
           if (posts && !online) return route.fulfill({ status: 503, json: { error: 'offline fixture' } });
           body = { items: [{ source_card_id: own.id, source_card_status: 'approved', hides_enabled: false,
-            recommendations: [substituted ? fresh : old, other], admin_recommendations: [added], favorite_candidates: [favorite],
+            recommendations: [substituted ? (scenario === 'seen-fallback' ? fallback : fresh) : old, other], admin_recommendations: [added], favorite_candidates: [favorite],
             // Extra/favorite intentionally included in the mock allowlist to verify the separate render gate.
             single_refresh_candidate_ids: substituted ? [] : [old.id, added.id, favorite.id],
             new_candidate_notice: availabilityScenario && scenario !== 'availability-ineligible' ? { state: 'waiting', new_candidate_count: 0 } : null,
@@ -210,10 +211,17 @@ module.exports = async ({ browser, origin, output }) => {
         passed++; console.log(`PASS single candidate ${surface} / ${scenario}: protected matches cleared`);
         continue;
       }
-      if (scenario === 'success' || scenario === 'core-outage') {
-        await page.getByText('이 후보 한 명을 새 후보로 바꿨어요.', { exact: true }).waitFor();
-        await name(fresh.name).waitFor();
-        await page.getByText('조금 더 넓은 지역의 후보예요.', { exact: true }).waitFor();
+      if (scenario === 'success' || scenario === 'seen-fallback' || scenario === 'core-outage') {
+        const repeat = scenario === 'seen-fallback';
+        const freshFeedback = page.getByText('이 후보 한 명을 새 후보로 바꿨어요.', { exact: true });
+        const feedback = repeat ? page.getByText('이미 본 분 중에서 나이와 지역을 고려해 다른 후보로 바꿨어요.', { exact: true }) : freshFeedback;
+        await feedback.waitFor();
+        await name((repeat ? fallback : fresh).name).waitFor();
+        if (repeat) {
+          assert.equal(await freshFeedback.count(), 0, 'a previously seen fallback must not be described as fresh');
+          assert.equal(await page.getByText('조건에 맞는 새 후보가 있어요', { exact: true }).count(), 0);
+          assert.equal(await replace.count(), 0, 'the replacement is not immediately replaceable again');
+        } else await page.getByText('조금 더 넓은 지역의 후보예요.', { exact: true }).waitFor();
         await name(old.name).waitFor({ state: 'hidden' });
         assert.ok(reads > before);
         assert.ok(!requests.slice(requests.findIndex(([method, url]) => method === 'POST' && url === replacePath) + 1)
@@ -232,7 +240,7 @@ module.exports = async ({ browser, origin, output }) => {
         assert.ok(!requests.slice(requests.findIndex(([method, url]) => method === 'POST' && url === replacePath) + 1)
           .some(([, url]) => ['/api/dating/1on1/matches/my', '/api/dating/1on1/my', '/api/dating/1on1/write-status'].includes(url)), 'read-only recovery after failure is recommendation-only');
       } else {
-        const feedback = scenario === 'empty' ? '조건에 맞는 새 후보를 아직 찾지 못했어요. 지금 후보는 그대로예요.'
+        const feedback = scenario === 'empty' ? '지금 보여드릴 다른 후보가 없어 현재 후보는 그대로예요.'
           : scenario === 'limit' ? '최근 24시간 동안 한 명씩 바꾸기를 모두 사용했어요. 현재 후보는 그대로예요.'
           : scenario === 'slow-down' ? '잠시 후 다시 눌러 주세요. 현재 후보는 그대로예요.' : '명단을 다시 불러왔어요. 현재 후보를 확인해 주세요.';
         await page.getByText(feedback, { exact: true }).waitFor(); await name(old.name).waitFor();

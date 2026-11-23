@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isSingleCandidateBestFitAllowed } from "@/lib/dating-1on1-best-fit";
 import { isCandidateInSourceAgeRange, type RecommendationCandidate } from "@/lib/dating-1on1-recommendations";
 import { recommendationSourceKey } from "@/lib/dating-1on1-recommendation-page-store";
 import type { CandidateImpression } from "@/lib/dating-1on1-impressions";
@@ -11,6 +12,7 @@ const MAX_WIDENED_DISTANCE_KM = 180;
 const MAX_RANKED_CANDIDATES = 48;
 const MAX_UNRESOLVED_HISTORY_IDS = 4096;
 export const SINGLE_REFRESH_VALIDATION_BATCH = 12;
+export const SINGLE_REFRESH_PHOTO_CHECK_BATCH = 60;
 export const SINGLE_REFRESH_TABLE = "dating_1on1_single_candidate_swaps";
 
 type Person = RecommendationCandidate & { user_id: string };
@@ -49,23 +51,23 @@ export async function readSingleCandidateSwaps(admin: ReturnType<typeof createAd
   }
 }
 
-export async function resolvePreviouslyDeliveredUsers(admin: ReturnType<typeof createAdminClient>, cardIds: Set<string>, current: Person[]) {
-  const owners = new Set<string>();
-  const knownIds = new Set<string>();
-  for (const card of current) if (cardIds.has(card.id)) {
-    knownIds.add(card.id);
-    owners.add(card.user_id);
-  }
-  const historicalIds = [...cardIds].filter(id => !knownIds.has(id));
+export async function resolvePreviouslyDeliveredUsers(admin: ReturnType<typeof createAdminClient>, cardTimes: ReadonlyMap<string, number>, current: Person[]) {
+  const owners = new Map<string, string>();
+  for (const card of current) if (cardTimes.has(card.id)) owners.set(card.id, card.user_id);
+  const historicalIds = [...cardTimes.keys()].filter(id => !owners.has(id));
   if (historicalIds.length > MAX_UNRESOLVED_HISTORY_IDS) throw new Error("Single refresh history exceeds its read bound");
   // Include archived revisions; a new profile number does not make an older
   // page delivery new. Project only stable member IDs, never profile details.
   for (let offset = 0; offset < historicalIds.length; offset += 200) {
     const { data, error } = await admin.from("dating_1on1_cards").select("id,user_id").in("id", historicalIds.slice(offset, offset + 200));
     if (error) throw error;
-    for (const row of data ?? []) if (typeof row.user_id === "string") owners.add(row.user_id);
+    for (const row of data ?? []) if (typeof row.user_id === "string") owners.set(row.id, row.user_id);
   }
-  return owners;
+  const lastExposedAt = new Map<string, number>();
+  for (const [id, userId] of owners) {
+    lastExposedAt.set(userId, Math.max(lastExposedAt.get(userId) ?? 0, cardTimes.get(id) ?? 0));
+  }
+  return { lastExposedAt, owners };
 }
 
 export function singleCandidateGenerationKey(source: { id: string; sex: string; birth_year: number; region: string }, pageAt: number, refreshAt?: string | null) {
@@ -84,10 +86,10 @@ export function applySingleCandidateSwaps<T extends Person>(
     const swap = swapsByDonor.get(card.id);
     if (!swap) return [card];
     const next = byId.get(swap.to_candidate_card_id);
-    // Revalidate the exact member before display; a now hidden/blocked/revised
-    // replacement is never shown, and no other slot is refilled.
+    // The original card already passed the current generation's safety filters.
+    // If the replacement is no longer safe or would duplicate a person, keep it.
     if (!next || next.user_id !== swap.to_candidate_user_id || occupied.has(next.user_id) ||
-      singleCandidateDistance(source, next) == null || !isCandidateInSourceAgeRange(source, next)) return [];
+      !isSingleCandidateBestFitAllowed(source, next)) return [card];
     occupied.add(next.user_id);
     return [next];
   });
@@ -100,8 +102,10 @@ export function repeatSingleCandidateIds(
     const at = Date.parse(first_seen_at);
     return at < pageAt && at >= now - HISTORY_MS;
   }).map(row => row.candidate_user_id));
-  const swapped = new Set(swaps.filter(row => row.generation_key === generationKey).map(row => row.from_candidate_card_id));
-  return main.filter(card => priorViewers.has(card.user_id) && !swapped.has(card.id)).map(card => card.id);
+  const current = swaps.filter(row => row.generation_key === generationKey);
+  const swapped = new Set(current.flatMap(row => [row.from_candidate_card_id, row.to_candidate_card_id]));
+  const replacedPeople = new Set(current.map(row => row.to_candidate_user_id));
+  return main.filter(card => priorViewers.has(card.user_id) && !swapped.has(card.id) && !replacedPeople.has(card.user_id)).map(card => card.id);
 }
 
 export function rankUnseenSingleCandidates<T extends Person>(
@@ -125,5 +129,5 @@ function singleCandidateDistance(source: Pick<Person, "region">, candidate: Pick
 }
 
 export function singleCandidateWidened(source: Pick<Person, "region">, candidate: Pick<Person, "region">) {
-  return (singleCandidateDistance(source, candidate) ?? 0) > MAX_LOCAL_DISTANCE_KM;
+  return (getRegionDistanceMeta(source.region, candidate.region).distanceKm ?? 0) > MAX_LOCAL_DISTANCE_KM;
 }

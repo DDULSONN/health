@@ -65,9 +65,11 @@ import { candidateHideUserIdsAt, readCandidateHides } from "@/lib/dating-candida
 import { getOneOnOneNewCandidateNotice } from "@/lib/dating-1on1-new-candidate-notice";
 import { getOneOnOneCandidateAvailability } from "@/lib/dating-1on1-candidate-availability";
 import { partialRecommendationPage, type PartialRefreshChange } from "@/lib/dating-1on1-partial-refresh";
+import { rankSingleCandidateAlternatives } from "@/lib/dating-1on1-best-fit";
 import {
   applySingleCandidateSwaps, rankUnseenSingleCandidates, readSingleCandidateSwaps, repeatSingleCandidateIds,
-  resolvePreviouslyDeliveredUsers, singleCandidateGenerationKey, singleCandidateWidened, SINGLE_REFRESH_VALIDATION_BATCH,
+  resolvePreviouslyDeliveredUsers, singleCandidateGenerationKey, singleCandidateWidened,
+  SINGLE_REFRESH_PHOTO_CHECK_BATCH, SINGLE_REFRESH_VALIDATION_BATCH,
   type SingleCandidateRefreshRequest,
 } from "@/lib/dating-1on1-single-refresh";
 import { createHash } from "node:crypto";
@@ -416,6 +418,8 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
   const pageGenerationTimes = new Map<string, number>();
   const singleRefreshGenerations = new Map<string, string>();
   const singleRefreshPools = new Map<string, RecommendationCard[]>();
+  const singleRefreshBaseOccupants = new Map<string, RecommendationCard[]>();
+  const singleRefreshDonors = new Map<string, Map<string, RecommendationCard>>();
   let partialResult: ReturnType<typeof partialRecommendationPage> | undefined;
   const buildItems = (simulateRefresh = false) => mySourceCards.map((sourceCard) => {
     const handledPairIds = new Set(candidateUniverse.filter((card) => handledUserIds.has(card.user_id)).map((card) => card.id));
@@ -572,8 +576,19 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       singleRefreshGenerations.set(sourceCard.id, generation);
       // Normal/expansion reads use the same single-slot overlay. A normal
       // full refresh compares against it but gets its own new page generation.
-      recommendations = applySingleCandidateSwaps(sourceCard, recommendations.filter(notHidden), [...adminRecommendations, ...favoriteCandidates],
+      const baseMain = recommendations.filter(notHidden);
+      if (singleRefresh) singleRefreshBaseOccupants.set(sourceCard.id, [...recommendations, ...adminRecommendations, ...favoriteCandidates]);
+      recommendations = applySingleCandidateSwaps(sourceCard, baseMain, [...adminRecommendations, ...favoriteCandidates],
         selectionCandidates, singleSwaps, generation);
+      const placed = new Set(recommendations.map(card => card.id));
+      const baseById = new Map(baseMain.map(card => [card.id, card]));
+      const donors = new Map<string, RecommendationCard>();
+      for (const swap of singleSwaps) {
+        if (swap.generation_key !== generation || !placed.has(swap.to_candidate_card_id)) continue;
+        const donor = baseById.get(swap.from_candidate_card_id);
+        if (donor && !placed.has(donor.id)) donors.set(swap.to_candidate_card_id, donor);
+      }
+      singleRefreshDonors.set(sourceCard.id, donors);
       if (singleRefresh) singleRefreshPools.set(sourceCard.id, selectionCandidates.filter(card => !handledUserIds.has(card.user_id)));
     }
     if (simulateRefresh && refreshPlan && sourceCard.id === refreshPlan.sourceCardId && savedPageResult?.available) {
@@ -645,6 +660,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     while (true) {
       const pending = [...new Map([
         ...mySourceCards,
+        ...[...singleRefreshDonors.values()].flatMap(donors => [...donors.values()]),
         ...[...items, ...plannedItems].flatMap((item) => [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations, ...(item.expansion_candidates ?? [])]),
       ].filter((card) => !checkedCardIds.has(card.id)).map((card) => [card.id, card])).values()];
       if (pending.length === 0) break;
@@ -657,20 +673,33 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       items = buildItems();
       plannedItems = refreshPlan ? buildItems(true) : [];
     }
-    const details = await fetchRecommendationDetails(admin, availabilityOnly ? [] : [...items, ...plannedItems].flatMap((item) =>
-      [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations, ...(item.expansion_candidates ?? [])].map((card) => card.id)));
+    const details = await fetchRecommendationDetails(admin, availabilityOnly ? [] : [
+      ...[...singleRefreshDonors.values()].flatMap(donors => [...donors.values()].map(card => card.id)),
+      ...[...items, ...plannedItems].flatMap((item) =>
+        [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations, ...(item.expansion_candidates ?? [])].map(card => card.id)),
+    ]);
     const hydrate = (cards: RecommendationCard[]) => cards.flatMap((card) => {
       const detail = details.get(card.id);
       // Status is rechecked by the detail query; also drop identities/sex changed mid-request.
       return detail && detail.user_id === card.user_id && detail.sex === card.sex ? [detail] : [];
     });
+    const hydrateCurrentMain = (cards: RecommendationCard[], sourceCardId: string) => {
+      const donors = singleRefreshDonors.get(sourceCardId);
+      if (!donors?.size) return hydrate(cards);
+      return cards.flatMap(card => {
+        const current = hydrate([card]);
+        const donor = donors.get(card.id);
+        if (!donor || current[0]?.photo_signed_urls.length) return current;
+        return !unavailableCardIds.has(donor.id) ? hydrate([donor]) : [];
+      });
+    };
     if (singleRefresh) {
       const { sourceCardId, generationKey, plannedAt } = singleRefresh;
       const item = items.find(row => row.source_card_id === sourceCardId);
       const source = mySourceCards.find(card => card.id === sourceCardId);
       const pageAt = pageGenerationTimes.get(sourceCardId);
       if (!item || !source || pageAt == null || !singleSwaps || singleRefreshGenerations.get(sourceCardId) !== generationKey) return staleSingle();
-      const main = availabilityOnly ? item.recommendations : hydrate(item.recommendations);
+      const main = availabilityOnly ? item.recommendations : hydrateCurrentMain(item.recommendations, sourceCardId);
       const donorIds = repeatSingleCandidateIds(main, impressionResult?.rows ?? [], singleSwaps, generationKey, pageAt, nowMs);
       const available = (found: boolean, refreshList = false) => NextResponse.json({
         available: found, generation_key: generationKey, ...(refreshList ? { refresh_list: true } : {}),
@@ -681,17 +710,37 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       if (!hiddenCandidates.available || favoriteRowsRes.error || recoveryRes.error) return unavailableSingle();
       const canContinue = () => !singleRefresh.signal?.aborted && Date.now() - nowMs < 10_000;
       if (!canContinue()) return unavailableSingle();
-      const alreadyDelivered = new Set((recentPages ?? []).flatMap(page => page.ids));
-      const expansions = await admin.from(EXPANSION_TABLE).select("candidate_ids").eq("user_id", user.id)
+      const deliveredCards = new Map<string, number>();
+      const registerDelivery = (id: string, at: number) => {
+        // A historical receipt with an unavailable timestamp still proves a
+        // prior delivery and must never count as a genuinely new profile.
+        deliveredCards.set(id, Math.max(deliveredCards.get(id) ?? 0, Number.isFinite(at) ? at : 0));
+      };
+      for (const page of recentPages ?? []) for (const id of page.ids) registerDelivery(id, page.at);
+      const expansions = await admin.from(EXPANSION_TABLE).select("candidate_ids,day_key").eq("user_id", user.id)
         .gte("day_key", getKstDateString(new Date(nowMs - 30 * 86400000)));
       if (expansions.error && !["42P01", "PGRST205"].includes(expansions.error.code)) return unavailableSingle();
-      for (const row of expansions.data ?? []) for (const id of row.candidate_ids ?? []) alreadyDelivered.add(id);
+      const currentExpansionCardIds = new Set<string>();
+      for (const row of expansions.data ?? []) for (const id of row.candidate_ids ?? []) {
+        registerDelivery(id, Date.parse(`${row.day_key}T00:00:00+09:00`));
+        if (row.day_key === adminRecommendationDate) currentExpansionCardIds.add(id);
+      }
+      const alreadyDelivered = new Set(deliveredCards.keys());
       const onPreviousDeck = new Set(previousDeckIds);
       const pool = singleRefreshPools.get(sourceCardId) ?? [];
-      const deliveredUsers = await resolvePreviouslyDeliveredUsers(admin, new Set([...alreadyDelivered, ...onPreviousDeck]), candidateUniverse);
+      for (const id of onPreviousDeck) registerDelivery(id, pageAt);
+      const swapsInGeneration = singleSwaps.filter(row => row.generation_key === generationKey);
+      for (const swap of swapsInGeneration) registerDelivery(swap.from_candidate_card_id, Date.parse(swap.created_at));
+      const { lastExposedAt, owners } = await resolvePreviouslyDeliveredUsers(admin, deliveredCards, candidateUniverse);
       const observed = impressionResult?.rows ?? [];
-      const alreadySwappedMembers = singleSwaps.map(row => row.to_candidate_user_id);
-      const pastMembers = new Set([...deliveredUsers, ...alreadySwappedMembers]);
+      for (const row of observed) {
+        const seenAt = Date.parse(row.first_seen_at);
+        lastExposedAt.set(row.candidate_user_id,
+          Math.max(lastExposedAt.get(row.candidate_user_id) ?? 0, Number.isFinite(seenAt) ? seenAt : 0));
+      }
+      for (const row of singleSwaps) lastExposedAt.set(row.to_candidate_user_id,
+        Math.max(lastExposedAt.get(row.to_candidate_user_id) ?? 0, Date.parse(row.created_at)));
+      const pastMembers = new Set(lastExposedAt.keys());
       const eligible = pool.filter(card => normalizePhoneForOneOnOneBlock(card.phone ?? ""));
       // The canonical daily list can quietly gain a relevant new registration.
       // Offer a read of that list if it wasn't already on this member's signed
@@ -715,60 +764,85 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         Date.parse(row.created_at) > nowMs - 24 * 60 * 60 * 1000).length >= 10)) return available(false);
       const excludedUsers = new Set([
         ...[...item.recommendations, ...item.admin_recommendations, ...item.favorite_candidates].map(card => card.user_id),
-        ...pastMembers,
+        ...(singleRefreshBaseOccupants.get(sourceCardId) ?? []).map(card => card.user_id),
       ]);
-      const choices = rankUnseenSingleCandidates(source, eligible, observed, alreadyDelivered, excludedUsers);
-      const noUnseen = () => NextResponse.json({ code: "NO_UNSEEN_CANDIDATE",
-        error: "지금 보여드릴 새 후보를 찾지 못했어요. 현재 후보는 그대로예요." }, { status: 409 });
+      for (const id of currentExpansionCardIds) {
+        const owner = owners.get(id);
+        if (owner) excludedUsers.add(owner);
+      }
+      for (const swap of swapsInGeneration) {
+        excludedUsers.add(swap.to_candidate_user_id);
+        const donorUserId = owners.get(swap.from_candidate_card_id);
+        if (donorUserId) excludedUsers.add(donorUserId);
+      }
+      const choices = rankSingleCandidateAlternatives(source,
+        availabilityOnly ? eligible.filter(card => !pastMembers.has(card.user_id)) : eligible,
+        excludedUsers, pastMembers, lastExposedAt);
+      const noAlternative = () => NextResponse.json({ code: "NO_UNSEEN_CANDIDATE",
+        error: "지금 보여드릴 다른 후보가 없어 현재 후보는 그대로예요." }, { status: 409 });
       const persisted = savedPageResult.page;
       const generationAt = persisted?.source_card_id === sourceCardId && Date.parse(persisted.refreshed_at) === pageAt &&
         persisted.source_profile_key === recommendationSourceKey(source) ? persisted.refreshed_at : new Date(pageAt).toISOString();
       let resolvedConflicts = 0;
-      for (let i = 0; i < choices.length; i += SINGLE_REFRESH_VALIDATION_BATCH) {
+      for (let i = 0; i < choices.length; i += SINGLE_REFRESH_PHOTO_CHECK_BATCH) {
         if (!canContinue()) return unavailableSingle();
-        const batch = choices.slice(i, i + SINGLE_REFRESH_VALIDATION_BATCH);
-        const current = await getCurrentOneOnOneCardIds(admin, batch, profiles);
-        const valid = batch.filter(card => current.has(card.id));
-        if (!valid.length) continue;
-        if (singleRefresh.mode === "availability") {
-          const read = await fetchRecommendationAvailabilityDetails(admin, valid.map(card => card.id));
+        // Do not stop after the first 48 records or hydrate profiles that have
+        // no usable photos. Validate the ranking in small, deadline-bound
+        // batches, then fetch details only for identities that could be shown.
+        const slice = choices.slice(i, i + SINGLE_REFRESH_PHOTO_CHECK_BATCH);
+        const lightDetails = await fetchRecommendationAvailabilityDetails(admin, slice.map(card => card.id));
+        if (!canContinue()) return unavailableSingle();
+        const withPhoto = slice.filter(card => {
+          const light = lightDetails.get(card.id);
+          return light?.hasPhoto && light.user_id === card.user_id &&
+            recommendationSourceKey(light) === recommendationSourceKey(card);
+        });
+        for (let j = 0; j < withPhoto.length; j += SINGLE_REFRESH_VALIDATION_BATCH) {
           if (!canContinue()) return unavailableSingle();
-          if (valid.some(card => {
-            const current = read.get(card.id);
-            return current?.hasPhoto && current.user_id === card.user_id &&
-              recommendationSourceKey(current) === recommendationSourceKey(card);
-          })) return available(true);
-          continue;
-        }
-        const choiceDetails = await fetchRecommendationDetails(admin, valid.map(card => card.id));
-        for (const replacement of valid) {
-          const detail = choiceDetails.get(replacement.id);
-          if (!detail || detail.user_id !== replacement.user_id || !detail.photo_signed_urls.length ||
-            recommendationSourceKey(detail) !== recommendationSourceKey(replacement)) continue;
+          const batch = withPhoto.slice(j, j + SINGLE_REFRESH_VALIDATION_BATCH);
+          const current = await getCurrentOneOnOneCardIds(admin, batch, profiles);
+          const valid = batch.filter(card => current.has(card.id));
+          if (!valid.length) continue;
+          if (singleRefresh.mode === "availability") return canContinue() ? available(true) : unavailableSingle();
           if (!canContinue()) return unavailableSingle();
-          const result = await admin.rpc("commit_dating_1on1_single_candidate_swap", {
-            p_user_id: user.id,
-            p_source_card_id: sourceCardId,
-            p_generation_key: generationKey,
-            p_generation_at: generationAt,
-            p_expected_refresh_at: source.recommendation_refresh_used_at ?? null,
-            p_from_candidate_card_id: singleRefresh.fromCandidateCardId,
-            p_to_candidate_card_id: replacement.id,
-            p_planned_at: plannedAt,
-            p_source_profile_key: recommendationSourceKey(source),
-            p_to_profile_key: recommendationSourceKey(replacement),
-          });
-          if (result.error || typeof result.data?.ok !== "boolean") return unavailableSingle();
-          if (result.data.ok) return NextResponse.json({ ok: true, changed: true });
-          if (result.data.code === "swap_limit") return NextResponse.json({ code: "SINGLE_REFRESH_LIMIT",
-            error: "최근 24시간 동안 한 명씩 바꾸기를 모두 사용했어요. 전체 새로고침 횟수는 그대로예요." }, { status: 409 });
-          // An explicit replacement-only rejection guarantees no row was
-          // written. Never try another candidate on a lost RPC response.
-          if (!["already_seen", "candidate_unavailable", "candidate_excluded"].includes(result.data.code) ||
-            ++resolvedConflicts >= 3) return staleSingle();
+          const choiceDetails = await fetchRecommendationDetails(admin, valid.map(card => card.id));
+          for (const replacement of valid) {
+            const detail = choiceDetails.get(replacement.id);
+            if (!detail || detail.user_id !== replacement.user_id || !detail.photo_signed_urls.length ||
+              recommendationSourceKey(detail) !== recommendationSourceKey(replacement)) continue;
+            if (!canContinue()) return unavailableSingle();
+            const seenFallback = pastMembers.has(replacement.user_id);
+            const result = await admin.rpc(seenFallback
+              ? "commit_dating_1on1_single_candidate_fallback_swap" : "commit_dating_1on1_single_candidate_swap", {
+                p_user_id: user.id,
+                p_source_card_id: sourceCardId,
+                p_generation_key: generationKey,
+                p_generation_at: generationAt,
+                p_expected_refresh_at: source.recommendation_refresh_used_at ?? null,
+                p_from_candidate_card_id: singleRefresh.fromCandidateCardId,
+                p_to_candidate_card_id: replacement.id,
+                p_planned_at: plannedAt,
+                p_source_profile_key: recommendationSourceKey(source),
+                p_to_profile_key: recommendationSourceKey(replacement),
+                ...(seenFallback ? { p_expected_swap_count: singleSwaps.length,
+                  p_expected_swap_latest_at: singleSwapRead?.kind === "ready" ? singleSwapRead.latestAt : null } : {}),
+              });
+            // An old schema has no repeat fallback. No write occurred, and
+            // newer code must never bypass the old RPC's exclusion checks.
+            if (seenFallback && result.error && ["PGRST202", "42883"].includes(result.error.code)) return noAlternative();
+            if (result.error || typeof result.data?.ok !== "boolean") return unavailableSingle();
+            if (result.data.ok) return NextResponse.json({ ok: true, changed: true,
+              ...(seenFallback ? { replacement_kind: "seen_fallback" } : {}) });
+            if (result.data.code === "swap_limit") return NextResponse.json({ code: "SINGLE_REFRESH_LIMIT",
+              error: "최근 24시간 동안 한 명씩 바꾸기를 모두 사용했어요. 전체 새로고침 횟수는 그대로예요." }, { status: 409 });
+            // An explicit replacement-only rejection guarantees no row was
+            // written. Never try another candidate on a lost RPC response.
+            if (!["already_seen", "candidate_unavailable", "candidate_excluded"].includes(result.data.code) ||
+              ++resolvedConflicts >= 3) return staleSingle();
+          }
         }
       }
-      return canContinue() ? availabilityOnly ? available(false) : noUnseen() : unavailableSingle();
+      return canContinue() ? availabilityOnly ? available(false) : noAlternative() : unavailableSingle();
     }
     if (expansion) {
       const item = items[0];
@@ -782,7 +856,8 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       if (!before || !after) return NextResponse.json({ error: "현재 사용 중인 1:1 프로필을 다시 확인해 주세요." }, { status: 409 });
       // Compare people across main + extras, not positions. Moving the same person
       // between the two sections is NOT a new candidate and must not consume quota.
-      const oldIds = new Set(hydrate([...before.recommendations, ...before.admin_recommendations]).map((card) => card.user_id));
+      const beforeCards = [...hydrateCurrentMain(before.recommendations, before.source_card_id), ...hydrate(before.admin_recommendations)];
+      const oldIds = new Set(beforeCards.map((card) => card.user_id));
       const visibleBeforeIds = new Set(oldIds);
       // A successful one-slot swap is a delivery receipt even if the browser
       // did not stay long enough to acknowledge an impression.
@@ -812,7 +887,6 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       }
       const newIds = new Set(hydrate([...after.recommendations, ...after.admin_recommendations]).map((card) => card.user_id));
       const source = mySourceCards.find(card => card.id === before.source_card_id)!;
-      const beforeCards = hydrate([...before.recommendations, ...before.admin_recommendations]);
       const afterCards = hydrate([...after.recommendations, ...after.admin_recommendations]);
       // Monitoring is server-only. A background recovery must not widen a
       // member's region just to manufacture a different page.
@@ -877,14 +951,12 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       const swappedIn = new Set(singleSwaps?.filter(row => row.generation_key === generationKey).map(row => row.to_candidate_card_id));
       // Add presentation metadata only after the final status/identity check.
       // No extra queries or client-side region database, and no exact locations.
-      const withRegionNotice = (cards: RecommendationCard[]) => hydrate(cards)
-        .filter(card => !swappedIn.has(card.id) || card.photo_signed_urls.length > 0)
-        .map(card => ({
+      const withRegionNotice = (cards: ReturnType<typeof hydrate>) => cards.map(card => ({
         ...card, recommendation_region_widened: source
           ? isWiderRecommendationRegion(source, card) || (swappedIn.has(card.id) && singleCandidateWidened(source, card)) : false,
         }));
-      const recommendations = withRegionNotice(item.recommendations);
-      const adminRecommendations = withRegionNotice(item.admin_recommendations);
+      const recommendations = withRegionNotice(hydrateCurrentMain(item.recommendations, item.source_card_id));
+      const adminRecommendations = withRegionNotice(hydrate(item.admin_recommendations));
       const visibleCandidates = [...recommendations, ...adminRecommendations];
       const singleCandidateIds = generationKey && singleSwaps && impressionResult?.available && hiddenCandidates.available && !favoriteRowsRes.error && !recoveryRes.error
         ? repeatSingleCandidateIds(recommendations, impressionResult.rows, singleSwaps, generationKey,

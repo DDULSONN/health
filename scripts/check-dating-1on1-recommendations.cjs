@@ -2146,6 +2146,8 @@ test('a refresh cannot charge only for people already seen in an expansion batch
   assert.ok(tables.dating_1on1_recommendation_refresh_events.every(e => e.rotation_only && e.quota_refunded_at));
 });
 const SWAPS = 'dating_1on1_single_candidate_swaps';
+const FRESH_SWAP_RPC = 'commit_dating_1on1_single_candidate_swap';
+const FALLBACK_SWAP_RPC = 'commit_dating_1on1_single_candidate_fallback_swap';
 const localId = index => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
 const fixtureServiceKey = 'offline-dating-test-key-not-a-real-secret';
 function singleFixture(size = 25) {
@@ -2179,9 +2181,9 @@ function singleReaders(fixture, { atTime = now, viewerId = fixture.own.user_id, 
   const db = mockDatabase(fixture.tables, intercept), rpcCalls = [];
   db.rpc = async (name, args) => {
     rpcCalls.push({ name, args });
-    assert.equal(name, 'commit_dating_1on1_single_candidate_swap', 'never call the quota, bonus, matching, or payment RPCs');
+    assert.ok([FRESH_SWAP_RPC, FALLBACK_SWAP_RPC].includes(name), 'never call the quota, bonus, matching, or payment RPCs');
     assert.ok(rpc, 'unexpected commit');
-    return rpc(args);
+    return rpc(args, name);
   };
   const apiLoad = createLoader({
     '@/lib/supabase/server': { createAdminClient: () => db },
@@ -2274,7 +2276,7 @@ test('single-slot availability honors active revisions, hides, and blocks rather
   const f = singleFixture(17);
   const [hidden, blocked, olderRevision, held] = f.cards.slice(13);
   held.status = 'rejected';
-  const latestRevision = { ...olderRevision, id: localId(885), region: '부산', created_at: '2026-01-02T00:00:00Z' };
+  const latestRevision = { ...olderRevision, id: localId(885), region: '부산', photo_paths: [], created_at: '2026-01-02T00:00:00Z' };
   f.tables.dating_1on1_cards.push(latestRevision);
   f.tables.dating_1on1_candidate_hides = [{ id: localId(886), user_id: f.own.user_id, candidate_user_id: hidden.user_id,
     candidate_card_id: hidden.id, candidate_name: hidden.name, created_at: new Date(now - 10).toISOString() }];
@@ -2282,7 +2284,7 @@ test('single-slot availability honors active revisions, hides, and blocks rather
   const [group] = (await singleReaders(f).get()).body.items;
   for (const [at, available, makeChange] of [
     [now, false, () => {}],
-    [now + 100, true, () => { olderRevision.status = 'rejected'; latestRevision.region = '대전'; }],
+    [now + 100, true, () => { olderRevision.status = 'rejected'; latestRevision.photo_paths = olderRevision.photo_paths; }],
     [now + 200, false, () => { latestRevision.status = 'rejected'; }],
   ]) {
     makeChange();
@@ -2415,19 +2417,122 @@ test('real single-slot POST commits one server-picked unheard person and GET pre
 });
 
 test('real single-slot exhausted replacement keeps all candidates and never reaches the atomic write', async () => {
-  const f = singleFixture();
+  const f = singleFixture(13);
   const [before] = (await singleReaders(f).get()).body.items;
-  for (const c of f.cards.slice(13)) f.tables.dating_1on1_candidate_impressions.push({ viewer_user_id: f.own.user_id,
-    candidate_user_id: c.user_id, first_seen_at: new Date(now + 50).toISOString() });
+  assert.equal(before.recommendations.length + before.admin_recommendations.length, f.cards.length, 'every eligible person is already on the screen');
   const snapshot = structuredClone(f.tables);
   const result = await singleReaders(f, { atTime: now + 100 }).replace(payloadForSingle(before, before.recommendations[0].id));
   assert.equal(result.response.status, 409, JSON.stringify(result.body));
   assert.equal(result.body.code, 'NO_UNSEEN_CANDIDATE');
   assert.equal(result.rpcCalls.length, 0);
+  assert.ok(noWrites(result.calls));
   const [after] = (await singleReaders(f, { atTime: now + 101 }).get()).body.items;
   assert.deepEqual(ids(after.recommendations), ids(before.recommendations));
   assert.deepEqual(singleQuota(after), singleQuota(before));
   assert.deepEqual(f.tables, snapshot);
+});
+
+test('single-slot shows the best off-list prior view with no quota change, without reporting it as new availability', async () => {
+  const f = singleFixture(18);
+  const [recentlySeen, leastRecentlySeen, distant, favorite, blocked] = f.cards.slice(13);
+  recentlySeen.region = leastRecentlySeen.region = '경기 수원시';
+  distant.region = '부산';
+  favorite.region = blocked.region = f.own.region;
+  f.tables.dating_1on1_candidate_favorites = [{ user_id: f.own.user_id, source_card_id: f.own.id, candidate_card_id: favorite.id,
+    created_at: new Date(now - day).toISOString() }];
+  f.tables.dating_user_blocks = [{ blocker_user_id: blocked.user_id, blocked_user_id: f.own.user_id }];
+  for (const [member, daysAgo] of [[recentlySeen, 2], [leastRecentlySeen, 5], [distant, 12], [favorite, 14], [blocked, 15]]) {
+    f.tables.dating_1on1_candidate_impressions.push({ viewer_user_id: f.own.user_id, candidate_user_id: member.user_id,
+      first_seen_at: new Date(now - daysAgo * day).toISOString() });
+  }
+  const [before] = (await singleReaders(f).get()).body.items;
+  const donorId = before.single_refresh_candidate_ids[1];
+  assert.ok(donorId);
+  assert.ok(!ids(before.recommendations).includes(leastRecentlySeen.id));
+  const snapshot = structuredClone(f.tables);
+  const requestArgs = payloadForSingle(before, donorId);
+  const atTime = now + 500;
+  expectSingleAvailability(await singleReaders(f, { atTime }).availability(before, { probe_candidate_id: donorId }, before.impression_ticket),
+    before, false, f, snapshot);
+
+  const legacy = await singleReaders(f, { atTime, rpc: (args, name) => {
+    assert.equal(name, FALLBACK_SWAP_RPC);
+    assert.equal(args.p_to_candidate_card_id, leastRecentlySeen.id);
+    return { data: null, error: { code: 'PGRST202' } };
+  }}).replace(requestArgs);
+  assert.equal(legacy.response.status, 409, JSON.stringify(legacy.body));
+  assert.equal(legacy.body.code, 'NO_UNSEEN_CANDIDATE');
+  assert.equal(legacy.rpcCalls.length, 1);
+  assert.ok(noWrites(legacy.calls));
+  assert.deepEqual(f.tables, snapshot, 'a pre-fallback DB preserves the list and never retries via the old RPC');
+
+  const result = await singleReaders(f, { atTime, rpc: (args, name) => {
+    assert.equal(name, FALLBACK_SWAP_RPC);
+    assert.equal(args.p_from_candidate_card_id, donorId);
+    assert.equal(args.p_to_candidate_card_id, leastRecentlySeen.id, 'comparable profiles prefer the one least recently seen, not a farther or blocked older view');
+    assert.equal(args.p_expected_swap_count, 0);
+    assert.equal(args.p_expected_swap_latest_at, null);
+    f.tables[SWAPS].push({ user_id: args.p_user_id, source_card_id: args.p_source_card_id, generation_key: args.p_generation_key,
+      from_candidate_card_id: donorId, to_candidate_card_id: leastRecentlySeen.id,
+      to_candidate_user_id: leastRecentlySeen.user_id, created_at: new Date(atTime).toISOString() });
+    return { data: { ok: true, code: 'swapped' }, error: null };
+  }}).replace(requestArgs);
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.deepEqual(result.body, { ok: true, changed: true, replacement_kind: 'seen_fallback' });
+  assert.equal(result.rpcCalls.length, 1);
+  assert.ok(noWrites(result.calls));
+  const [after] = (await singleReaders(f, { atTime: atTime + 1 }).get()).body.items;
+  assert.deepEqual(ids(after.recommendations), ids(before.recommendations).map(id => id === donorId ? leastRecentlySeen.id : id));
+  assert.deepEqual(ids(after.admin_recommendations), ids(before.admin_recommendations));
+  assert.deepEqual(ids(after.favorite_candidates), ids(before.favorite_candidates));
+  assert.deepEqual(after.single_refresh_candidate_ids, before.single_refresh_candidate_ids.filter(id => id !== donorId),
+    'a prior-view replacement cannot be swapped again in the same generation, but other eligible slots still can');
+  assert.deepEqual(singleQuota(after), singleQuota(before));
+  assert.deepEqual({ ...f.tables, [SWAPS]: [] }, snapshot, 'the guarded overlay is the only write');
+
+  const replacementPhotos = leastRecentlySeen.photo_paths;
+  leastRecentlySeen.photo_paths = [];
+  const [afterPhotoRemoved] = (await singleReaders(f, { atTime: atTime + 2 }).get()).body.items;
+  assert.deepEqual(ids(afterPhotoRemoved.recommendations), ids(before.recommendations),
+    'the same slot keeps the eligible original when the replacement loses all photos');
+  assert.deepEqual(singleQuota(afterPhotoRemoved), singleQuota(before));
+  leastRecentlySeen.photo_paths = replacementPhotos;
+
+  f.tables.dating_user_blocks.push({ blocker_user_id: leastRecentlySeen.user_id, blocked_user_id: f.own.user_id });
+  const [afterBlock] = (await singleReaders(f, { atTime: atTime + 3 }).get()).body.items;
+  assert.deepEqual(ids(afterBlock.recommendations), ids(before.recommendations),
+    'if the replacement later blocks the viewer, reuse the safe original instead of leaving a vacancy');
+  assert.deepEqual(singleQuota(afterBlock), singleQuota(before));
+
+  const donor = f.cards.find(card => card.id === donorId);
+  f.tables.dating_1on1_candidate_hides = [{ user_id: f.own.user_id, candidate_user_id: donor.user_id,
+    candidate_card_id: donorId, created_at: new Date(atTime + 4).toISOString() }];
+  const [afterHide] = (await singleReaders(f, { atTime: atTime + 5 }).get()).body.items;
+  assert.deepEqual(ids(afterHide.recommendations), ids(before.recommendations).filter(id => id !== donorId),
+    'never restore a hidden original');
+  assert.deepEqual(singleQuota(afterHide), singleQuota(before));
+});
+
+test('single-slot does not take a candidate from today’s open expansion batch', async () => {
+  const f = singleFixture(15);
+  const [alreadyOnScreen, olderView] = f.cards.slice(13);
+  alreadyOnScreen.region = f.own.region;
+  olderView.region = '대전';
+  const { getKstDateString } = load('@/lib/weekly');
+  f.tables.dating_1on1_expansion_batches = [
+    { user_id: f.own.user_id, day_key: getKstDateString(new Date(now)), candidate_ids: [alreadyOnScreen.id] },
+    { user_id: f.own.user_id, day_key: getKstDateString(new Date(now - 2 * day)), candidate_ids: [olderView.id] },
+  ];
+  const [group] = (await singleReaders(f).get()).body.items;
+  const before = structuredClone(f.tables);
+  const response = await singleReaders(f, { atTime: now + 30, rpc: (args, name) => {
+    assert.equal(name, FALLBACK_SWAP_RPC);
+    assert.equal(args.p_to_candidate_card_id, olderView.id, 'an older batch may rotate back in; today’s open batch stays independent');
+    return { data: { ok: true, code: 'swapped' }, error: null };
+  } }).replace(payloadForSingle(group, group.single_refresh_candidate_ids[0]));
+  assert.deepEqual(response.body, { ok: true, changed: true, replacement_kind: 'seen_fallback' });
+  assert.equal(response.rpcCalls.length, 1);
+  assert.deepEqual(f.tables, before);
 });
 
 for (const nearestAvailable of [true, false]) test(`single-slot radius expands only after closer usable candidates are exhausted (${nearestAvailable})`, async () => {
@@ -2455,19 +2560,21 @@ for (const nearestAvailable of [true, false]) test(`single-slot radius expands o
   assert.deepEqual(f.tables, snapshot, 'the only operation that could change state is the simulated atomic swap');
 });
 
-function detailQueryIds(q) {
-  return q.table === 'dating_1on1_cards' && q.fields.includes('photo_paths')
+function detailQueryIds(q, kind = 'any') {
+  const light = q.fields === 'id,user_id,sex,birth_year,region,photo_paths';
+  return q.table === 'dating_1on1_cards' && q.fields.includes('photo_paths') &&
+    (kind === 'any' || (kind === 'light') === light)
     ? q.filters.find(([op, field]) => op === 'in' && field === 'id')?.[2] ?? [] : [];
 }
 
 test('single-slot selection continues after a whole batch with missing rows, phone or photos', async () => {
-  const f = singleFixture(36);
+  const f = singleFixture(85);
   const alternatives = f.cards.slice(13);
   const alternativeIds = new Set(ids(alternatives));
-  // Even if missing phones are filtered before hydration, at least the entire
-  // first validation batch of 12 has missing details or unusable photos.
-  const invalid = alternatives.slice(0, 16);
-  const wanted = alternatives[16];
+  // One full photo-check batch is unusable, even after filtering out the
+  // candidates with no phone before the query begins.
+  const invalid = alternatives.slice(0, 68);
+  const wanted = alternatives[68];
   const droppedDetail = new Set(ids(invalid.slice(0, 4)));
   for (const c of invalid.slice(4, 8)) {
     c.phone = null;
@@ -2487,26 +2594,35 @@ test('single-slot selection continues after a whole batch with missing rows, pho
   assert.equal(result.response.status, 200, JSON.stringify(result.body));
   assert.equal(result.rpcCalls.length, 1);
   assert.equal(result.rpcCalls[0].args.p_to_candidate_card_id, wanted.id);
-  const batches = result.calls.map(detailQueryIds).map(batch => batch.filter(id => alternativeIds.has(id))).filter(batch => batch.length);
-  assert.ok(batches.findIndex(batch => batch.includes(wanted.id)) >= 1, 'the replacement was reached after a failed hydration batch');
+  const batches = result.calls.map(q => detailQueryIds(q, 'light')).map(batch => batch.filter(id => alternativeIds.has(id))).filter(batch => batch.length);
+  assert.equal(batches[0].length, 60);
+  assert.ok(batches.findIndex(batch => batch.includes(wanted.id)) >= 1, 'the replacement was reached after a failed photo-check batch');
   assert.ok(noWrites(result.calls));
   assert.deepEqual(f.tables, snapshot);
 });
 
-test('single-slot validation stops at 48 candidates and leaves quota and page intact without a usable result', async () => {
+test('single-slot finds the usable 49th candidate without hydrating unusable profiles or changing quota', async () => {
   const f = singleFixture(63);
   const alternatives = f.cards.slice(13);
   const alternativeIds = new Set(ids(alternatives));
   for (const c of alternatives.slice(0, 48)) c.photo_paths = [];
+  const wanted = alternatives[48];
   const [group] = (await singleReaders(f).get()).body.items;
   const snapshot = structuredClone(f.tables);
-  const result = await singleReaders(f, { atTime: now + 100 }).replace(payloadForSingle(group, group.recommendations[0].id));
-  assert.equal(result.response.status, 409, JSON.stringify(result.body));
-  assert.equal(result.body.code, 'NO_UNSEEN_CANDIDATE');
-  assert.equal(result.rpcCalls.length, 0);
-  const batches = result.calls.map(detailQueryIds).map(batch => batch.filter(id => alternativeIds.has(id))).filter(batch => batch.length);
-  assert.ok(batches.length > 1 && batches.every(batch => batch.length <= 12));
-  assert.deepEqual(batches.flat(), ids(alternatives.slice(0, 48)), 'the valid 49th candidate is not hydrated in this bounded request');
+  const result = await singleReaders(f, { atTime: now + 100, rpc: (args, name) => {
+    assert.equal(name, FRESH_SWAP_RPC);
+    assert.equal(args.p_to_candidate_card_id, wanted.id);
+    return { data: { ok: true, code: 'swapped' }, error: null };
+  }}).replace(payloadForSingle(group, group.recommendations[0].id));
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.deepEqual(result.body, { ok: true, changed: true });
+  assert.equal(result.rpcCalls.length, 1);
+  const checks = result.calls.flatMap(q => detailQueryIds(q, 'light')).filter(id => alternativeIds.has(id));
+  assert.deepEqual(checks.slice(0, 49), ids(alternatives.slice(0, 49)), 'check candidates beyond the old 48-person cap');
+  const hydrated = result.calls.flatMap(q => detailQueryIds(q, 'full')).filter(id => alternativeIds.has(id));
+  assert.ok(hydrated.includes(wanted.id));
+  assert.ok(hydrated.length <= 12 && hydrated.every(id => ids(alternatives.slice(48)).includes(id)),
+    'invalid early alternatives require no detail hydration');
   assert.ok(noWrites(result.calls));
   assert.deepEqual(f.tables, snapshot);
   const [after] = (await singleReaders(f, { atTime: now + 101 }).get()).body.items;
@@ -2514,33 +2630,48 @@ test('single-slot validation stops at 48 candidates and leaves quota and page in
   assert.deepEqual(singleQuota(after), singleQuota(group));
 });
 
-test('single-slot does not broaden beyond known 180km or override age, hide, block and visited exclusions', async () => {
-  const f = singleFixture(19);
-  const [outside, unknown, ageMismatch, hidden, blocked, seen] = f.cards.slice(13);
-  outside.region = '부산';
-  unknown.region = '알 수 없는 지역';
-  ageMismatch.birth_year = 1968;
-  hidden.region = blocked.region = seen.region = '대전';
-  const { getRegionDistanceMeta } = load('@/lib/region-distance');
-  assert.ok(getRegionDistanceMeta(f.own.region, outside.region).distanceKm > 180);
-  assert.equal(getRegionDistanceMeta(f.own.region, unknown.region).distanceKm, null);
-  f.tables.dating_1on1_candidate_hides = [{ id: localId(801), user_id: f.own.user_id, candidate_user_id: hidden.user_id,
-    candidate_card_id: hidden.id, candidate_name: hidden.name, created_at: new Date(now - 1).toISOString() }];
-  f.tables.dating_user_blocks = [{ blocker_user_id: blocked.user_id, blocked_user_id: f.own.user_id }];
-  f.tables.dating_1on1_candidate_impressions.push({ viewer_user_id: f.own.user_id, candidate_user_id: seen.user_id,
-    first_seen_at: new Date(now - 1).toISOString() });
-  const [group] = (await singleReaders(f).get()).body.items;
-  const snapshot = structuredClone(f.tables);
-  const result = await singleReaders(f, { atTime: now + 100 }).replace(payloadForSingle(group, group.recommendations[0].id));
-  assert.equal(result.response.status, 409, JSON.stringify(result.body));
-  assert.equal(result.body.code, 'NO_UNSEEN_CANDIDATE');
-  assert.equal(result.rpcCalls.length, 0);
-  assert.ok(noWrites(result.calls));
-  assert.deepEqual(f.tables, snapshot);
-  const [after] = (await singleReaders(f, { atTime: now + 101 }).get()).body.items;
-  assert.deepEqual(ids(after.recommendations), ids(group.recommendations));
-  assert.deepEqual(singleQuota(after), singleQuota(group));
-});
+for (const widenBy of ['age', 'distance', 'unknown-distance', 'blocked-only']) {
+  test(`single-slot picks the best eligible alternative across age and distance without reviving exclusions: ${widenBy}`, async () => {
+    const f = singleFixture(18);
+    const [outside, unknown, adjacentAge, hidden, blocked] = f.cards.slice(13);
+    outside.region = '부산';
+    unknown.region = '알 수 없는 지역';
+    adjacentAge.region = hidden.region = blocked.region = f.own.region;
+    // Male source is 29; 31 is one year outside the usual range but safe.
+    adjacentAge.birth_year = f.own.birth_year - 2;
+    const { getRegionDistanceMeta } = load('@/lib/region-distance');
+    assert.ok(getRegionDistanceMeta(f.own.region, outside.region).distanceKm > 180);
+    assert.equal(getRegionDistanceMeta(f.own.region, unknown.region).distanceKm, null);
+    f.tables.dating_1on1_candidate_hides = [{ id: localId(801), user_id: f.own.user_id, candidate_user_id: hidden.user_id,
+      candidate_card_id: hidden.id, candidate_name: hidden.name, created_at: new Date(now - 1).toISOString() }];
+    f.tables.dating_user_blocks = [{ blocker_user_id: blocked.user_id, blocked_user_id: f.own.user_id }];
+    if (widenBy !== 'age') adjacentAge.status = 'rejected';
+    if (widenBy === 'unknown-distance' || widenBy === 'blocked-only') outside.status = 'rejected';
+    if (widenBy === 'blocked-only') unknown.status = 'rejected';
+    const [group] = (await singleReaders(f).get()).body.items;
+    const donorId = group.recommendations[0].id;
+    const expected = { age: adjacentAge, distance: outside, 'unknown-distance': unknown }[widenBy];
+    const snapshot = structuredClone(f.tables);
+    const atTime = now + 100;
+    const result = await singleReaders(f, { atTime, rpc: expected ? (args, name) => {
+      assert.equal(name, FRESH_SWAP_RPC);
+      assert.equal(args.p_to_candidate_card_id, expected.id);
+      f.tables[SWAPS].push({ user_id: args.p_user_id, source_card_id: args.p_source_card_id, generation_key: args.p_generation_key,
+        from_candidate_card_id: donorId, to_candidate_card_id: expected.id,
+        to_candidate_user_id: expected.user_id, created_at: new Date(atTime).toISOString() });
+      return { data: { ok: true, code: 'swapped' }, error: null };
+    } : undefined }).replace(payloadForSingle(group, donorId));
+    assert.equal(result.response.status, expected ? 200 : 409, JSON.stringify(result.body));
+    assert.equal(result.body.code, expected ? undefined : 'NO_UNSEEN_CANDIDATE');
+    assert.equal(result.rpcCalls.length, expected ? 1 : 0);
+    assert.ok(noWrites(result.calls));
+    assert.deepEqual({ ...f.tables, [SWAPS]: [] }, snapshot);
+    const [after] = (await singleReaders(f, { atTime: atTime + 1 }).get()).body.items;
+    assert.deepEqual(ids(after.recommendations), ids(group.recommendations).map(id => expected && id === donorId ? expected.id : id));
+    assert.ok(![...ids(after.recommendations), ...ids(after.admin_recommendations)].includes(blocked.id));
+    assert.deepEqual(singleQuota(after), singleQuota(group));
+  });
+}
 
 test('single-slot skips owners of archived delivered cards and receipts from a prior source, not another member’s receipts', async () => {
   const f = singleFixture(16);
