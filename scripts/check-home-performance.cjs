@@ -165,7 +165,9 @@ const movedFunctions = {
   // No handler changed; actual page tests preserve requests, contact and quota.
   // Reviewed first-request aside/eligibility; separate action/payment contracts
   // stay pinned. Actual-page tests cover navigation without refresh or submission.
-  OneOnOneHomePanel: '608617e73bab26a6511d95089089697ac87dbf5c5e919b3885c1cbdd49007c32',
+  // Reviewed mobile shortcut, shared preview clock, and verified local-area badge.
+  // Moved matching and payment helpers below retain their existing pins.
+  OneOnOneHomePanel: 'ae5ff7b3bf60340270d6b02e7f3d164623ba34b2febe04f50ca38c9a7c2a229f',
   OneOnOneCandidateCard: '45ce8332663f7e34260930d3b65955518c552f8dbe04d5eb858e9fbccf59d841',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',
@@ -190,7 +192,7 @@ function withoutProfileReadRecoveryView(source) {
             </div> : null}
 `, ''],
     ['              <OneOnOneNextSteps matches={activeMatches} renderContact={contactOfferAvailable ? (match) => (\n', '              <OneOnOneNextSteps matches={activeMatches} renderContact={(match) => (\n'],
-    ['              ) : undefined} homePreview focusedMatchId={focusedMatch?.id} />\n', '              )} homePreview focusedMatchId={focusedMatch?.id} />\n'],
+    ['              ) : undefined} homePreview focusedMatchId={focusedMatch?.id} presentationNow={actionNow} />\n', '              )} homePreview focusedMatchId={focusedMatch?.id} presentationNow={actionNow} />\n'],
     ['\n                  contactOfferAvailable={contactOfferAvailable}\n', '\n'],
     ['\n                        contactOfferAvailable={contactOfferAvailable}\n', '\n'],
     ['  contactOfferAvailable,\n', ''],
