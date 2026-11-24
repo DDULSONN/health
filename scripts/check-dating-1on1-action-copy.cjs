@@ -16,6 +16,52 @@ function evaluate(source, bindings = {}) {
   return mod.exports;
 }
 const copy = evaluate(read('lib/dating-1on1-action-copy.ts'));
+const mobileModules = new Map();
+function loadDisplayModule(name) {
+  const file = name.startsWith('@/') ? name.slice(2) : `lib/${name.replace(/^\.\//, '')}`;
+  if (!mobileModules.has(file)) mobileModules.set(file, evaluate(read(file + '.ts'), { require: loadDisplayModule }));
+  return mobileModules.get(file);
+}
+const { getOneOnOneMobileAction, getSharedCandidateMunicipality } = loadDisplayModule('@/lib/dating-1on1-mobile-action');
+const mobileNow = Date.parse('2026-11-24T09:00:00Z');
+const mutual = { id: 'mutual', role: 'candidate', state: 'mutual_accepted', counterparty_card: { name: '가상 상대' },
+  contact_exchange_status: 'awaiting_applicant_payment', source_final_responded_at: '2026-11-23T09:00:00Z' };
+test('mobile next action prefers incoming, then final accept, then ordinary mutual exchange', () => {
+  const final = { ...mutual, id: 'final', role: 'source', state: 'candidate_accepted', contact_exchange_status: 'none' };
+  assert.deepEqual(getOneOnOneMobileAction(2, [mutual, final], true, mobileNow),
+    { kind: 'incoming', label: '받은 요청 2건', cta: '요청 보기' });
+  assert.equal(getOneOnOneMobileAction(0, [mutual, final], true, mobileNow).cta, '수락 여부 확인');
+  assert.equal(getOneOnOneMobileAction(0, [mutual], true, mobileNow).cta, '교환 안내 보기');
+});
+test('mobile next action describes a visible preview row, not a final-accept item behind more', () => {
+  const final = { ...mutual, id: 'final', role: 'source', state: 'candidate_accepted', contact_exchange_status: 'none' };
+  const exchanges = [1, 2, 3].map(index => ({ ...mutual, id: 'exchange-' + index }));
+  assert.equal(getOneOnOneMobileAction(0, [final, ...exchanges.slice(0, 2)], true, mobileNow).cta, '수락 여부 확인');
+  assert.equal(getOneOnOneMobileAction(0, [final, ...exchanges], true, mobileNow).cta, '교환 안내 보기');
+  assert.equal(getOneOnOneMobileAction(0, [final, ...exchanges], false, mobileNow), null);
+  const declines = exchanges.map(match => ({ ...match, contact_nudge: { sent_by_me: { reply: { preset_key: 'not_right_now' } } } }));
+  assert.equal(getOneOnOneMobileAction(0, [final, ...declines], true, mobileNow), null);
+  assert.equal(getOneOnOneMobileAction(0, [final, ...declines, { ...mutual, id: 'featured-exchange' }], true, mobileNow).cta, '교환 안내 보기');
+});
+test('preguards for review, stale matches, pause replies, profile suppression and no false contact claim', () => {
+  const stopReply = { sent_by_me: { reply: { preset_key: 'not_right_now' } } };
+  for (const fields of [
+    { state: 'source_selected' }, { state: 'admin_canceled' }, { contact_exchange_status: 'paid' },
+    { contact_exchange_status: 'payment_pending_admin' }, { contact_exchange_status: 'approved' },
+    { contact_exchange_status: 'approved', counterparty_phone: '  ' },
+    { counterparty_card: null }, { source_final_responded_at: '2026-11-16T09:00:00Z' }, { contact_nudge: stopReply },
+  ]) assert.equal(getOneOnOneMobileAction(0, [{ ...mutual, ...fields }], true, mobileNow), null);
+  assert.equal(getOneOnOneMobileAction(0, [mutual], false, mobileNow), null);
+  assert.equal(getOneOnOneMobileAction(0, [{ ...mutual, contact_exchange_status: 'approved', counterparty_instagram: 'fixture' }], false, mobileNow).matchId, mutual.id);
+});
+test('mobile recommendation reason never infers a district from broad or ambiguous regions', () => {
+  assert.equal(getSharedCandidateMunicipality('서울 마포구', '서울특별시 마포구'), '같은 구');
+  assert.equal(getSharedCandidateMunicipality('경기도 수원시', '경기 수원'), '같은 시');
+  for (const [source, candidate] of [
+    ['서울', '서울'], ['서울 마포구', '서울 영등포구'], ['서울 강서구', '부산 강서구'],
+    ['경남 고성군', '강원 고성군'], ['수도권', '서울 마포구'], ['서울 마포구/부산 해운대구', '서울 마포구'],
+  ]) assert.equal(getSharedCandidateMunicipality(source, candidate), undefined);
+});
 test('received request shortcut only includes requests awaiting this candidate, never sent, closed or mutually accepted matches', () => {
   for (const role of ['source', 'candidate', undefined]) for (const state of ['proposed', 'source_selected', 'candidate_accepted', 'mutual_accepted', 'candidate_rejected', 'source_declined', 'source_skipped', 'admin_canceled', undefined]) {
     assert.equal(copy.isIncomingOneOnOneRequest({ role, state }), role === 'candidate' && state === 'source_selected');

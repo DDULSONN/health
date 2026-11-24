@@ -118,7 +118,8 @@ if (require.main === module) {
       'disabled={processingMatchIds.includes(match.id) || refreshingRecommendationIds.length > 0}',
     ].sort() };
     assert.deepEqual(panelContract(read(files.OneOnOneCandidateCard)), expected);
-    assert.match(read(files.OneOnOneCandidateCard), /initialVisibleCount=\{8\} pageSize=\{8\}/);
+    assert.match(read(files.OneOnOneCandidateCard), /initialVisibleCount=\{ONE_ON_ONE_HOME_VISIBLE_MATCHES\} pageSize=\{8\}/);
+    assert.match(read('lib/dating-1on1-mobile-action.ts'), /ONE_ON_ONE_HOME_VISIBLE_MATCHES = 8/);
   });
   test('candidate section is before profile/plus/sent history, after incoming requests', () => {
     const source = read(files.OneOnOneCandidateCard);

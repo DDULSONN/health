@@ -2,13 +2,17 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchClientJson } from "@/lib/client-json-request";
 import type { ContactCareClaim } from "@/lib/contact-care";
+import AdminCheckoutSupportPanel from "@/components/admin/AdminCheckoutSupportPanel";
 
 type Item = ContactCareClaim & { nickname: string; counterparty_name?: string; exchanged_at?: string | null };
 type Decision = "approved" | "rejected" | "needs_info";
 const button = "min-h-[44px] rounded-lg border border-neutral-300 px-3 text-xs font-medium disabled:opacity-50";
 
 export default function AdminContactCarePanel({ userId }: { userId?: string }) {
-  return <Panel key={userId || "queue"} userId={userId} />;
+  return <>
+    {userId ? null : <AdminCheckoutSupportPanel />}
+    <Panel key={userId || "queue"} userId={userId} />
+  </>;
 }
 function Panel({ userId }: { userId?: string }) {
   const [items, setItems] = useState<Item[]>([]);

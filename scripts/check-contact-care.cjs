@@ -107,17 +107,19 @@ async function careCheckoutFixture(f, { manual = false, provider, user = id(1) }
 async function careUnchangedSnapshot(f) {
   return Promise.all(['contact_care_claims','contact_care_manual_vouchers','dating_1on1_match_proposals'].map(table=>f.q(`select * from ${table} order by id`)));
 }
+const checkoutBody = checkoutStatus => ({ok:true,checkoutCleared:checkoutStatus==='cleared',checkoutStatus,supportEligible:checkoutStatus!=='cleared'});
 for (const manual of [false,true]) test(`checkout status recheck never redeems or reveals contacts (${manual?'manual':'claim'})`,()=>withDb(async f=>{
   let state='READY';const api=await careCheckoutFixture(f,{manual,provider:async orderId=>({orderId,status:state,totalAmount:20000,approvedAt:null})});
-  assert.equal((await api.post()).status,409);
+  const held=await api.post();assert.equal(held.status,409);
+  const holdBody=await held.json();assert.equal(holdBody.code,'CARE_CHECKOUT');assert.equal(holdBody.checkoutStatus,'in_progress');assert.equal(holdBody.supportEligible,true);
   const before=await careUnchangedSnapshot(f),beforeOrder=await api.order(),rpcCalls=api.rpcCalls();
   const check=()=>api.post({action:'check_checkout',confirmed:false});
-  assert.deepEqual(await (await check()).json(),{ok:true,checkoutCleared:false});
+  assert.deepEqual(await (await check()).json(),checkoutBody('in_progress'));
   assert.deepEqual(await api.order(),beforeOrder);
-  state='EXPIRED';assert.deepEqual(await (await check()).json(),{ok:true,checkoutCleared:true});
+  state='EXPIRED';assert.deepEqual(await (await check()).json(),checkoutBody('cleared'));
   assert.equal((await api.order()).status,'canceled');
   assert.deepEqual(await careUnchangedSnapshot(f),before);assert.equal(api.rpcCalls(),rpcCalls);
-  const providerCalls=api.calls();assert.deepEqual(await (await check()).json(),{ok:true,checkoutCleared:true});
+  const providerCalls=api.calls();assert.deepEqual(await (await check()).json(),checkoutBody('cleared'));
   assert.equal(api.calls(),providerCalls,'already retired checkout needs no provider read');
   assert.equal((await api.get()).status,200);assert.equal(api.calls(),providerCalls,'ordinary GET is read-only');
   assert.equal((await api.post()).status,200,'explicit consent still required to spend/reveal');
@@ -142,7 +144,7 @@ for (const state of ['candidate_rejected','paid']) test('changed '+state+' match
   const api=await careCheckoutFixture(f);
   await f.q(state==='paid'?"update dating_1on1_match_proposals set contact_exchange_status='approved',contact_exchange_paid_at=now(),contact_exchange_approved_at=now() where id=$1":"update dating_1on1_match_proposals set state='candidate_rejected' where id=$1",[id(20)]);
   const before=await careUnchangedSnapshot(f),beforeOrder=await api.order();
-  assert.deepEqual(await (await api.post({action:'check_checkout'})).json(),{ok:true,checkoutCleared:true});
+  assert.deepEqual(await (await api.post({action:'check_checkout'})).json(),checkoutBody('cleared'));
   assert.equal(api.calls(),0);assert.equal(api.rpcCalls(),0);
   assert.deepEqual(await careUnchangedSnapshot(f),before);assert.deepEqual(await api.order(),beforeOrder);
 }));
@@ -168,7 +170,8 @@ for (const variant of careProviderUnsafe) test('checkout stays blocked for provi
   const api = await careCheckoutFixture(f,{provider:async orderId=>({orderId,status:'EXPIRED',totalAmount:20000,approvedAt:null,...variant})});
   assert.equal((await api.post()).status,409);assert.equal((await api.order()).status,'ready');
   assert.equal((await f.status()).used_at,null);assert.equal(api.rpcCalls(),1);
-  assert.deepEqual(await (await api.post({action:'check_checkout'})).json(),{ok:true,checkoutCleared:false});
+  const expected=['READY','IN_PROGRESS','WAITING_FOR_DEPOSIT'].includes(variant.status)?'in_progress':'unverified';
+  assert.deepEqual(await (await api.post({action:'check_checkout'})).json(),checkoutBody(expected));
   assert.equal((await api.order()).status,'ready');assert.equal((await f.status()).used_at,null);assert.equal(api.rpcCalls(),1);
 }));
 
@@ -179,7 +182,135 @@ for (const status of ['ABORTED','EXPIRED']) test('unapproved terminal provider s
 
 for (const message of ['timeout','404 NOT_FOUND_PAYMENT','503 provider unavailable']) test('provider lookup '+message+' cannot spend voucher', () => withDb(async f => {
   const api=await careCheckoutFixture(f,{provider:async()=>{throw Error(message);}});
-  assert.equal((await api.post()).status,409);assert.equal((await api.order()).status,'ready');assert.equal((await f.status()).used_at,null);
+  const response=await api.post();assert.equal(response.status,409);const body=await response.json();
+  assert.equal(body.checkoutStatus,'unverified');assert.equal(body.checkoutCleared,false);assert.equal(body.supportEligible,true);
+  assert(!JSON.stringify(body).includes(message));assert.equal((await api.order()).status,'ready');assert.equal((await f.status()).used_at,null);
+}));
+
+const checkoutSupportSql = 'supabase/sql/contact_care_checkout_support.sql';
+const installCheckoutSupport = f => f.db.exec(read(checkoutSupportSql));
+const checkoutSupportAction = {action:'request_checkout_support'};
+
+for (const manual of [false,true]) test(`checkout support is durable, private and idempotent (${manual?'manual':'claim'})`,()=>withDb(async f=>{
+  await installCheckoutSupport(f);
+  const api=await careCheckoutFixture(f,{manual,provider:async()=>{throw Error('provider should not be contacted');}});
+  const before=await careUnchangedSnapshot(f),order=await api.order();
+  const post=()=>api.post({...checkoutSupportAction,userId:id(3),orderId:id(100)});
+  const first=await post();assert.equal(first.status,200);assert.equal(first.headers.get('cache-control'),'private, no-store');
+  const issued=await first.json();assert.match(issued.supportReference,/^[\da-f-]{36}$/);assert.deepEqual(issued,{ok:true,supportReference:issued.supportReference,alreadyRequested:false,alreadyResolved:false});
+  assert.deepEqual(await (await post()).json(),{...issued,alreadyRequested:true});
+  const rows=(await f.q('select id,user_id,match_id,reason,resolved_at from contact_care_checkout_support')).rows;
+  assert.deepEqual(rows,[{id:issued.supportReference,user_id:id(1),match_id:id(20),reason:'checkout_pending',resolved_at:null}]);
+  assert.equal(api.calls(),0);assert.deepEqual(await careUnchangedSnapshot(f),before);assert.deepEqual(await api.order(),order);
+  await f.q("update toss_test_payment_orders set status='canceled' where id=$1",[id(101)]);
+  assert.deepEqual(await (await post()).json(),{...issued,alreadyRequested:true},'response lost around clearance is still safe to retry');
+  await installCheckoutSupport(f);
+  assert.equal((await f.q('select id from contact_care_checkout_support')).rows[0].id,issued.supportReference);
+}));
+
+test('checkout support missing migration is isolated; existing checkout redemption still works',()=>withDb(async f=>{
+  const api=await careCheckoutFixture(f);
+  const response=await api.post(checkoutSupportAction);
+  assert.equal(response.status,503);assert.equal((await response.json()).code,'CARE_SUPPORT_UNAVAILABLE');
+  assert.equal(api.calls(),0);assert.equal((await api.post()).status,200);
+}));
+
+for (const user of [null,id(4)]) test('checkout support rejects unauthenticated/nonparticipant '+user,()=>withDb(async f=>{
+  await installCheckoutSupport(f);const api=await careCheckoutFixture(f,{user});
+  const response=await api.post(checkoutSupportAction);assert.equal(response.status,user?404:401);
+  assert.equal((await f.q('select id from contact_care_checkout_support')).rows.length,0);assert.equal(api.calls(),0);
+}));
+
+test('checkout support requires active verified participant, unused applicable voucher and actual blocking checkout',()=>withDb(async f=>{
+  await installCheckoutSupport(f);const api=await careCheckoutFixture(f);
+  const post=()=>api.post(checkoutSupportAction);
+  assert.equal((await api.post(checkoutSupportAction,'https://foreign.invalid')).status,403);
+  assert.equal((await api.post({...checkoutSupportAction,matchId:'bad'})).status,400);
+  await f.q('update profiles set phone_verified=false where user_id=$1',[id(1)]);assert.equal((await post()).status,404);
+  await f.q('update profiles set phone_verified=true where user_id=$1',[id(1)]);
+  await f.q("update contact_care_claims set status='rejected' where user_id=$1",[id(1)]);assert.equal((await post()).status,409);
+  await f.q("update contact_care_claims set status='approved' where user_id=$1",[id(1)]);
+  await f.q("update toss_test_payment_orders set status='canceled' where id=$1",[id(101)]);assert.equal((await post()).status,409);
+  await f.q("update toss_test_payment_orders set status='ready' where id=$1",[id(101)]);
+  await f.q("update dating_1on1_match_proposals set state='candidate_rejected' where id=$1",[id(20)]);
+  assert.equal((await post()).status,409);
+  assert.equal((await f.q('select id from contact_care_checkout_support')).rows.length,0);assert.equal(api.calls(),0);
+}));
+
+test('checkout support bounds new requests and records ambiguous/excess history without any provider call',()=>withDb(async f=>{
+  await installCheckoutSupport(f);const api=await careCheckoutFixture(f,{manual:true});
+  await f.q("update toss_test_payment_orders set status='paid',payment_key='withheld' where id=$1",[id(101)]);
+  assert.equal((await api.post(checkoutSupportAction)).status,200);
+  for(let n=21;n<=25;n++) {
+    await f.q('insert into dating_1on1_match_proposals(id,source_user_id,candidate_user_id,source_card_id,candidate_card_id) values($1,$2,$3,$2,$3)',[id(n),id(1),id(3)]);
+    for(let j=0;j<(n===21?9:1);j++) await f.q("insert into toss_test_payment_orders(id,user_id,product_ref_id,status,approved_at,toss_order_id) values($1,$2,$3,'ready',null,$4)",[id(300+n*10+j),id(3),id(n),`checkout_${n}_${j}`]);
+    const res=await api.post({...checkoutSupportAction,matchId:id(n)});assert.equal(res.status,n<25?200:429);
+    if(n===25) assert.equal((await res.json()).code,'CARE_SUPPORT_LIMIT');
+  }
+  const reasons=(await f.q('select reason from contact_care_checkout_support order by match_id')).rows.map(row=>row.reason);
+  assert.deepEqual(reasons,['payment_history','multiple_orders','checkout_pending','checkout_pending','checkout_pending']);
+  assert.equal((await (await api.post(checkoutSupportAction)).json()).alreadyRequested,true);
+  assert.equal(api.calls(),0);assert.equal(await manualRemaining(f),3);
+}));
+
+test('checkout support admin list has private filters, stable paging and audited idempotent resolve',()=>withDb(async f=>{
+  await installCheckoutSupport(f);const member=await careCheckoutFixture(f);
+  const ticket=(await (await member.post(checkoutSupportAction)).json()).supportReference;
+  for(let i=0;i<10;i++) await f.q(`insert into toss_test_payment_orders(id,user_id,product_ref_id,status,approved_at,toss_order_id,created_at)
+    values($1,$2,$3,'canceled',null,$4,now()+make_interval(secs=>$5))`,[id(200+i),id(3),id(20),i===9?'bad identifier!':`closed_${i}`,i+1]);
+  for(let i=21;i<=23;i++) {
+    await f.q('insert into dating_1on1_match_proposals(id,source_user_id,candidate_user_id) values($1,$2,$3)',[id(i),id(1),id(3)]);
+    await f.q("insert into contact_care_checkout_support(id,user_id,match_id,reason) values($1,$2,$3,'payment_history')",[id(i+110),id(1),id(i)]);
+  }
+  await f.q("update contact_care_checkout_support set created_at='2026-01-01T00:00:00.123456Z'");
+  const db=client(f);let adminId=null;
+  const api=load('app/api/admin/contact-care/checkout-support/route.ts',{
+    'next/server':{NextResponse:{json:(body,init)=>Response.json(body,init)}},
+    '@/lib/admin-route':{requireAdminRoute:async()=>adminId?{ok:true,admin:db,user:{id:adminId}}:{ok:false,response:new Response(null,{status:401})}}
+  });
+  const url='https://local.invalid/api',get=(qs='')=>api.GET(new Request(url+qs)),patch=(origin='https://local.invalid')=>api.PATCH(new Request(url,{
+    method:'PATCH',headers:{host:'local.invalid',origin,'content-type':'application/json'},body:JSON.stringify({action:'resolve',reference:ticket})
+  }));
+  assert.equal((await get()).status,401);adminId=id(1);assert.equal((await get()).status,403);assert.equal((await patch()).status,403);
+  adminId=id(4);assert.equal((await patch('https://foreign.invalid')).status,403);assert.equal((await get('?limit=51')).status,400);
+  assert.equal((await get('?before=invalid,or(id.gt.x)')).status,400);
+  const first=await get('?limit=2');assert.equal(first.headers.get('cache-control'),'private, no-store');
+  const page=await first.json();assert.equal(page.requests.length,2);assert.match(page.nextCursor,/\.123456Z\|/);assert.equal(page.orders,null);
+  const later=await (await get('?limit=2&before='+encodeURIComponent(page.nextCursor))).json();assert.equal(later.requests.length,2);assert.equal(later.nextCursor,null);
+  assert.equal(new Set([...page.requests,...later.requests].map(r=>r.reference)).size,4);
+  const filtered=await (await get('?reason=payment_history')).json();assert.equal(filtered.requests.length,3);
+  const initial=await careUnchangedSnapshot(f),order=await member.order();
+  const resolved=await (await patch()).json();assert(resolved.resolvedAt);assert.equal(resolved.resolvedBy,id(4));assert.equal(resolved.alreadyResolved,false);
+  assert.deepEqual(await (await patch()).json(),{...resolved,alreadyResolved:true});
+  assert.deepEqual(await (await member.post(checkoutSupportAction)).json(),{ok:true,supportReference:ticket,alreadyRequested:true,alreadyResolved:true});
+  const exact=await (await get('?reference='+ticket)).json();assert.deepEqual(exact.requests,[{reference:ticket,memberId:id(1),matchId:id(20),reason:'checkout_pending',createdAt:'2026-01-01T00:00:00.123456Z',resolvedAt:exact.requests[0].resolvedAt,resolvedBy:id(4)}]);
+  assert.deepEqual(exact.orders,[{orderNumber:order.toss_order_id,status:order.status,createdAt:order.created_at.toISOString(),approvedAt:null}]);
+  assert.deepEqual(await (await get('?reference='+id(555))).json(),{requests:[],nextCursor:null,orders:[]});
+  assert.equal((await (await get('?state=resolved')).json()).requests.length,1);assert.equal((await (await get()).json()).requests.length,3);
+  assert.deepEqual(await careUnchangedSnapshot(f),initial);assert.deepEqual(await member.order(),order);assert.equal(member.calls(),0);
+  await f.q("update toss_test_payment_orders set status='canceled' where id=$1",[id(101)]);
+  const fallback=await (await get('?reference='+ticket)).json();assert.equal(fallback.orders.length,9);
+  assert.equal(fallback.orders[0].orderNumber,null);assert.equal(fallback.orders[1].orderNumber,'closed_8');
+  assert.equal(member.calls(),0);
+}));
+
+test('checkout support storage and RPC privileges are service-only; service cannot directly write',()=>withDb(async f=>{
+  await installCheckoutSupport(f);
+  for(const role of ['anon','authenticated']) {
+    await f.db.exec('set role '+role);
+    try {
+      await assert.rejects(f.q('select * from contact_care_checkout_support'),/permission denied/);
+      await assert.rejects(f.rpc('request_contact_care_checkout_support',[id(1),id(20)]),/permission denied/);
+      await assert.rejects(f.rpc('resolve_contact_care_checkout_support',[id(4),id(555)]),/permission denied/);
+    } finally {await f.db.exec('reset role');}
+  }
+  await f.db.exec('set role service_role');
+  try {
+    await f.q('select * from contact_care_checkout_support');
+    await assert.rejects(f.q('delete from contact_care_checkout_support'),/permission denied/);
+    await assert.rejects(f.rpc('resolve_contact_care_checkout_support',[id(1),id(555)]),/CARE_SUPPORT_ADMIN/);
+    await assert.rejects(f.rpc('resolve_contact_care_checkout_support',[id(4),id(555)]),/CARE_SUPPORT_MISSING/);
+  } finally {await f.db.exec('reset role');}
 }));
 
 test('failed initial RPC never cleans orders on no credit, changed match or foreign target', () => withDb(async f => {
@@ -483,7 +614,7 @@ test('API guards: login, origin, malformed body, admin permissions; no DB before
 
 // Small PostgREST adapter for this feature: real handlers -> real PostgreSQL SQL.
 function client(f) {
-  const tables=new Set(['contact_care_policy','contact_care_claims','contact_care_uploads','contact_care_manual_vouchers','profiles','toss_test_payment_orders','dating_1on1_match_proposals','dating_1on1_cards','dating_user_blocks','dating_1on1_admin_user_blocks','dating_contact_blocks','dating_1on1_phone_blocks','dating_cards']);
+  const tables=new Set(['contact_care_policy','contact_care_claims','contact_care_uploads','contact_care_manual_vouchers','contact_care_checkout_support','profiles','toss_test_payment_orders','dating_1on1_match_proposals','dating_1on1_cards','dating_user_blocks','dating_1on1_admin_user_blocks','dating_contact_blocks','dating_1on1_phone_blocks','dating_cards']);
   return {
     storage:{from(bucket){assert.equal(bucket,'contact-care-evidence');return {
       upload:async(name,bytes)=>{assert(Buffer.isBuffer(bytes));await f.q('insert into storage.objects values($1,$2)',[bucket,name]);return {error:null};},
@@ -497,7 +628,7 @@ function client(f) {
       const bind=v=>{values.push(v);return '$'+values.length;};
       const b={
         update(v){updates=Object.entries(v).map(([k,val])=>`${column(k)}=${bind(val)}`).join(',');return b;},
-        select(v,options){fields=v.split(',').map(column).map(c=>table==='dating_1on1_match_proposals'&&c==='created_at'?`to_char(created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at`:c).join(',');head=options?.head===true;if(head)assert.equal(options.count,'exact');return b;},
+        select(v,options){fields=v.split(',').map(column).map(c=>['dating_1on1_match_proposals','contact_care_checkout_support'].includes(table)&&c==='created_at'?`to_char(created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at`:c).join(',');head=options?.head===true;if(head)assert.equal(options.count,'exact');return b;},
         eq(k,v){filters.push(`${column(k)}=${bind(v)}`);return b;},
         neq(k,v){filters.push(`${column(k)}<>${bind(v)}`);return b;},
         gt(k,v){filters.push(`${column(k)}>${bind(v)}`);return b;},

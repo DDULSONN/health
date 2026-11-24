@@ -18,12 +18,13 @@ async function main(){
   let browser;const passed=[];
   try{
     browser=await chromium.launch({headless:true});
-    for(const scenario of ['manual-expired','claim-expired','still-active','network','timeout','invalid-response','collapsed','hidden','other-target','credit-used-elsewhere']){
+    for(const scenario of ['manual-expired','claim-expired','still-active','unverified','previously-resolved','bounded','network','timeout','invalid-response','collapsed','hidden','other-target','credit-used-elsewhere']){
       console.log('Checking checkout recovery:',scenario);
       const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage(),errors=[];
       page.on('pageerror',e=>errors.push(e.message));await page.clock.install();await page.clock.pauseAt(new Date(Date.now()+1000));
-      let checks=0,redeems=0,reads=0,cleared=false,used=false,failed=false;
+      let checks=0,redeems=0,reads=0,supports=0,cleared=false,used=false,failed=false;
       const claimMode=scenario==='claim-expired';
+      const unverified=['unverified','previously-resolved'].includes(scenario);
       await context.route('**/api/**',async route=>{
         const req=route.request(),url=new URL(req.url());assert.equal(url.origin,origin);
         assert.equal(url.pathname,'/api/dating/1on1/contact-care','no payment/phone API');
@@ -38,10 +39,18 @@ async function main(){
               return route.fulfill({json:{ok:true}});
             }
             if(scenario==='credit-used-elsewhere')return route.fulfill({status:409,json:{code:'CARE_NO_CREDIT',error:'사용 가능한 교환권이 없어요. 사용 내역을 확인해 주세요.'}});
-            cleared=scenario!=='still-active';return route.fulfill({json:{ok:true,checkoutCleared:cleared}});
+            cleared=!['still-active','bounded'].includes(scenario);
+            return route.fulfill({json:{ok:true,checkoutCleared:cleared,checkoutStatus:cleared?'cleared':'in_progress',supportEligible:!cleared}});
+          }
+          if(body.action==='request_checkout_support'){
+            assert.ok(unverified||scenario==='bounded');assert.equal(body.confirmed,undefined);
+            supports++;return route.fulfill({json:{ok:true,supportReference:id(699),alreadyRequested:scenario==='previously-resolved',alreadyResolved:scenario==='previously-resolved'}});
           }
           assert.equal(body.action,claimMode?'redeem':'redeem_manual');assert.equal(body.confirmed,true);redeems++;
-          if(!cleared)return route.fulfill({status:409,json:{code:'CARE_CHECKOUT',error:'진행 중인 결제'}});
+          if(!cleared)return route.fulfill({status:409,json:{code:'CARE_CHECKOUT',error:'진행 중인 결제',
+            ...(unverified||['bounded','still-active'].includes(scenario)?{
+              checkoutStatus:unverified?'unverified':'in_progress',supportEligible:true,
+            }:{})}});
           used=true;return route.fulfill({json:{ok:true}});
         }
         if(url.searchParams.get('summary')==='1')return route.fulfill({json:{remaining:1}});
@@ -63,7 +72,38 @@ async function main(){
       const select=member.getByLabel(claimMode?'교환할 상대':'추가 지급 교환권으로 교환할 상대',{exact:true});
       await select.selectOption(id(20));page.on('dialog',d=>d.accept());
       await button.evaluate(b=>{b.click();b.click();});
-      await member.getByText(/1분 간격으로 다시 확인/).waitFor();
+      if(unverified)await member.getByText('결제 상태를 바로 확인할 수 없어요').waitFor();
+      else await member.getByText(/1분 간격으로 최대 3번 확인/).waitFor();
+      if(unverified||scenario==='bounded'){
+        const help=member.getByRole('button',{name:'지원 요청',exact:true});
+        if(scenario==='bounded'){
+          await until(()=>page.evaluate(()=>window.careTestTimers.size===1));
+          assert.equal(await help.count(),0);
+          for(let round=1;round<=3;round++){
+            await page.clock.runFor(60001);
+            await until(()=>checks===round && reads===1+round);
+          }
+        }
+        await help.waitFor();
+        await until(()=>page.evaluate(()=>window.careTestTimers.size===0));
+        const done=checks;
+        await page.clock.runFor(180001);assert.equal(checks,done,'resolved diagnostic or check limit stops auto polling');
+        assert.equal(await button.isEnabled(),false);
+        assert.equal(used,false);assert.equal(redeems,1);
+        if(scenario==='unverified'){
+          for(const width of [320,390,768]){
+            await page.setViewportSize({width,height:950});
+            assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+            await page.screenshot({path:path.join(output,`checkout-support-${width}.png`),fullPage:true});
+          }
+        }
+        await help.evaluate(b=>{b.click();b.click();});
+        const supportText=scenario==='previously-resolved'?'이전 문의는 확인이 끝났어요':'지원 요청이 접수됐어요';
+        await member.getByText(supportText,{exact:true}).waitFor();
+        assert.equal(await member.getByText('문의 번호: '+id(699)).count(),1);
+        assert.equal(supports,1);assert.equal(redeems,1);assert.equal(await button.isEnabled(),false);
+        assert.deepEqual(errors,[]);passed.push(scenario);await context.close();continue;
+      }
       await until(()=>page.evaluate(()=>window.careTestTimers.size===1));
       assert.equal(redeems,1);assert.equal(checks,0);assert.equal(await button.isEnabled(),false);assert.equal(await select.isEnabled(),true);
       if(scenario==='collapsed'){
@@ -114,6 +154,40 @@ async function main(){
         const done=checks;await page.clock.runFor(180001);assert.equal(checks,done,'resolved checkout stops polling');
       }
       assert.deepEqual(errors,[]);passed.push(scenario);await context.close();
+    }
+    {
+      const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage(),errors=[];
+      const reference=id(699),memberId=id(400),matchId=id(20),stamp='2026-11-24T02:00:00Z';
+      let listCalls=0,resolveCalls=0,resolved=false;
+      page.on('pageerror',e=>errors.push(e.message));
+      await context.route('**/api/**',async route=>{
+        const req=route.request(),url=new URL(req.url());assert.equal(url.origin,origin);
+        if(url.pathname==='/api/dating/1on1/contact-care'&&url.searchParams.get('summary')==='1')
+          return route.fulfill({json:{remaining:1}});
+        assert.equal(url.pathname,'/api/admin/contact-care/checkout-support','admin support only; no payment/phone API');
+        if(req.method()==='PATCH'){
+          assert.deepEqual(req.postDataJSON(),{reference,action:'resolve'});resolveCalls++;resolved=true;
+          return route.fulfill({json:{ok:true,reference,resolvedAt:stamp,resolvedBy:id(600),alreadyResolved:false}});
+        }
+        listCalls++;assert.equal(req.method(),'GET');
+        if(listCalls===1)assert.equal(url.searchParams.get('state'),'open');
+        else {assert.equal(url.searchParams.get('reference'),reference);assert.equal(url.searchParams.get('state'),'all');}
+        return route.fulfill({json:{requests:[{reference,memberId,matchId,reason:'checkout_pending',createdAt:stamp,resolvedAt:resolved?stamp:null}],nextCursor:null,
+          orders:listCalls===1?null:[{orderNumber:'test_order_001',status:'ready',createdAt:stamp,approvedAt:null}]}});
+      });
+      await page.goto(origin);
+      const admin=page.getByRole('region',{name:'관리자 화면'});
+      assert.equal(listCalls,0,'admin queue is lazy');
+      await admin.getByText('교환권 사용이 막힌 문의',{exact:true}).click();
+      await admin.getByText('매칭 '+matchId,{exact:true}).waitFor();
+      await admin.getByRole('button',{name:'이 문의 주문 보기'}).click();
+      await admin.getByRole('region',{name:'관련 1:1 주문'}).getByText('test_order_001 · 대기',{exact:true}).waitFor();
+      await admin.getByRole('button',{name:'확인 완료로 표시'}).click();
+      await admin.getByText(/결제나 교환권은 변경되지 않았어요/).waitFor();
+      assert.equal(await admin.getByRole('button',{name:'확인 완료로 표시'}).count(),0);
+      await admin.getByText(/결제 대기 기록 · 확인 완료/).waitFor();
+      assert.equal(listCalls,2);assert.equal(resolveCalls,1);assert.deepEqual(errors,[]);
+      passed.push('admin-support-lookup');await context.close();
     }
     console.log(JSON.stringify({ok:true,scenarios:passed,paymentRequests:0,productionWrites:0,screenshots:output}));
   }finally{await browser?.close();await new Promise(r=>server.close(r));}

@@ -32,6 +32,7 @@ import { getOneOnOneStarterKeys, getOneOnOneStarterGroups } from "@/lib/dating-1
 import { shouldShowFirstOneOnOneRequest } from "@/lib/dating-1on1-participation";
 import { CandidateHideButton, CandidateHidesPanel } from "@/components/dating/CandidateHides";
 import { getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
+import { getOneOnOneMobileAction, getSharedCandidateMunicipality, ONE_ON_ONE_HOME_VISIBLE_MATCHES } from "@/lib/dating-1on1-mobile-action";
 import { VIEWER_SESSION_ERROR } from "@/lib/viewer-session-recovery";
 import { ONE_ON_ONE_HOME_HREF } from "@/lib/dating-navigation";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
@@ -269,6 +270,7 @@ export default function OneOnOneHomePanel({
   const [matchGuideOpen, setMatchGuideOpen] = useState(false);
   const [allCandidatesVisible, setAllCandidatesVisible] = useState(false);
   const [favoriteBusyKeys, setFavoriteBusyKeys] = useState<string[]>([]);
+  const [actionNow] = useState(() => Date.now());
   const incomingFocused = useRef(false);
   const focusedMatchRef = useRef<HTMLDivElement>(null);
   const scrolledMatchId = useRef<string | null>(null);
@@ -277,6 +279,7 @@ export default function OneOnOneHomePanel({
   const incomingSectionRef = useRef<HTMLDivElement>(null);
   const nextStepsSectionRef = useRef<HTMLDivElement>(null);
   const matchesSectionRef = useRef<HTMLDivElement>(null);
+  const exchangedMatchRef = useRef<HTMLDivElement>(null);
   const targetMatchId = normalizeOneOnOneMatchId(focusedMatchId);
   const myCards = data?.myCards ?? [];
   const matches = data?.matches ?? [];
@@ -310,6 +313,10 @@ export default function OneOnOneHomePanel({
   const actionSummary = getOneOnOneActionSummary(activeMatches);
   const incomingRequests = activeMatches.filter((match) => match.id !== focusedMatch?.id && isIncomingOneOnOneRequest(match));
   const ongoingMatches = activeMatches.filter((match) => match.id !== focusedMatch?.id && !isIncomingOneOnOneRequest(match));
+  const shortcutsDisabled = loading || sessionError || Boolean(error);
+  const mobileAction = viewerLoggedIn && hasOneOnOneCard && !shortcutsDisabled &&
+    !arrivedFromOnboarding && !targetMatchId && !focusIncomingRequests
+    ? getOneOnOneMobileAction(incomingRequests.length, ongoingMatches, contactOfferAvailable, actionNow) : null;
   const starterKeys = getOneOnOneStarterKeys(recommendationGroups);
   const starterPreview = arrivedFromOnboarding && !allCandidatesVisible && !targetMatchId && !focusIncomingRequests && starterKeys.size > 0;
   const displayedGroups = starterPreview ? getOneOnOneStarterGroups(recommendationGroups) : recommendationGroups;
@@ -334,7 +341,17 @@ export default function OneOnOneHomePanel({
     if (profileSectionRef.current) profileSectionRef.current.open = true;
     jumpToSection(profileSectionRef.current);
   }
-  function jumpToMatchSummary() {
+  function jumpToMatchSummary(showMobileAction: boolean) {
+    if (showMobileAction && mobileAction) {
+      if (mobileAction.kind === "next") {
+        jumpToSection(nextStepsSectionRef.current);
+        return;
+      }
+      if (mobileAction.kind === "exchanged") {
+        jumpToSection(exchangedMatchRef.current);
+        return;
+      }
+    }
     if (actionSummary.primary.label === "받은 요청" && actionSummary.primary.count > 0) {
       // Open only the inbox header, never a profile or match-action button.
       if (incomingRequests.length > 0) {
@@ -347,7 +364,6 @@ export default function OneOnOneHomePanel({
       jumpToSection(matchesSectionRef.current);
     }
   }
-  const shortcutsDisabled = loading || sessionError || Boolean(error);
   const showFirstRequest = viewerLoggedIn && !shortcutsDisabled && !recommendationsLoading && !recommendationsError &&
     !arrivedFromOnboarding && !targetMatchId && !focusIncomingRequests && shouldShowFirstOneOnOneRequest({
       hasSentRequest: data?.hasSentRequest, phoneVerified: data?.status?.phoneVerified,
@@ -360,6 +376,20 @@ export default function OneOnOneHomePanel({
   function favoriteBusy(sourceId: string, candidateId: string, busy: boolean) {
     const key = `${sourceId}:${candidateId}`;
     setFavoriteBusyKeys(keys => busy ? [...new Set([...keys, key])] : keys.filter(value => value !== key));
+  }
+  function renderMatchSummaryShortcut(showMobileAction: boolean) {
+    return <button type="button" disabled={shortcutsDisabled} onClick={() => jumpToMatchSummary(showMobileAction)}
+      className={`rounded-lg px-2 py-2 focus-visible:outline-2 focus-visible:outline-rose-500 disabled:opacity-50 ${showMobileAction
+        ? "col-span-2 min-h-[48px] bg-rose-50 text-left hover:bg-rose-100 md:hidden"
+        : `min-h-[64px] border-l border-neutral-100 text-center hover:bg-neutral-50 ${mobileAction ? "hidden md:block" : ""}`}`}>
+      {showMobileAction && mobileAction ? <span data-one-on-one-mobile-action={mobileAction.kind} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-2">
+        <span className="text-sm font-semibold text-neutral-900">{mobileAction.label}</span>
+        <span className="text-xs font-semibold text-rose-700">{mobileAction.cta} <span aria-hidden="true">›</span></span>
+      </span> : <>
+        <span className="block text-[11px] font-medium text-neutral-600">{actionSummary.primary.label} <span aria-hidden="true">›</span></span>
+        <span className="mt-1 block text-base font-semibold tabular-nums text-neutral-900">{actionSummary.primary.count}건</span>
+      </>}
+    </button>;
   }
   return (
     <section id="one-on-one-candidates" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-4 shadow-none md:p-6">
@@ -415,25 +445,22 @@ export default function OneOnOneHomePanel({
       ) : null}
 
       {viewerLoggedIn && hasOneOnOneCard ? (
-        <nav aria-label="1대1 바로가기" className="mt-4 grid grid-cols-3 divide-x divide-neutral-100 border-y border-neutral-100 py-1">
+        <nav aria-label="1대1 바로가기" className={`mt-4 grid border-y border-neutral-100 py-1 ${mobileAction ? "grid-cols-2 md:grid-cols-3" : "grid-cols-3"}`}>
+          {mobileAction ? renderMatchSummaryShortcut(true) : null}
           <button type="button" disabled={shortcutsDisabled} onClick={jumpToProfile}
             className="min-h-[64px] rounded-lg px-2 py-2 text-center hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-rose-500 disabled:opacity-50">
             <span className="block text-[11px] font-medium text-neutral-600">내 프로필 <span aria-hidden="true">›</span></span>
             <span className="mt-1 block text-base font-semibold tabular-nums text-neutral-900">{activeCards.length}개</span>
           </button>
           <button type="button" disabled={shortcutsDisabled} onClick={() => jumpToSection(recommendationSectionRef.current)}
-            className="min-h-[64px] rounded-lg px-2 py-2 text-center hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-rose-500 disabled:opacity-50">
+            className="min-h-[64px] rounded-lg border-l border-neutral-100 px-2 py-2 text-center hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-rose-500 disabled:opacity-50">
             <span className="block text-[11px] font-medium text-neutral-600">추천 후보 <span aria-hidden="true">›</span></span>
             <span className="mt-1 block text-base font-semibold tabular-nums text-neutral-900">{recommendationCount}명</span>
           </button>
-          <button type="button" disabled={shortcutsDisabled} onClick={jumpToMatchSummary}
-            className="min-h-[64px] rounded-lg px-2 py-2 text-center hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-rose-500 disabled:opacity-50">
-            <span className="block text-[11px] font-medium text-neutral-600">{actionSummary.primary.label} <span aria-hidden="true">›</span></span>
-            <span className="mt-1 block text-base font-semibold tabular-nums text-neutral-900">{actionSummary.primary.count}건</span>
-          </button>
+          {renderMatchSummaryShortcut(false)}
         </nav>
       ) : null}
-      {viewerLoggedIn && hasOneOnOneCard && actionSummary.otherDetail ? <p className="mt-2 break-words text-[11px] leading-5 text-neutral-500">{actionSummary.otherDetail}</p> : null}
+      {viewerLoggedIn && hasOneOnOneCard && actionSummary.otherDetail ? <p className={`mt-2 break-words text-[11px] leading-5 text-neutral-500 ${mobileAction ? "hidden md:block" : ""}`}>{actionSummary.otherDetail}</p> : null}
       {showFirstRequest ? <aside aria-label="첫 매칭 요청 안내" className="mt-3 flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/40 px-3 py-2">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold leading-5 text-neutral-800">프로필 준비 끝!</p>
@@ -519,7 +546,7 @@ export default function OneOnOneHomePanel({
                   included={plusContactExchangeIncluded} processing={processingContactIds.includes(match.id)}
                   nudge={match.contact_nudge} nudgeProcessing={processingNudgeIds.includes(match.id)}
                   onExchange={onContactCheckout} onNudge={onContactNudge} />
-              ) : undefined} homePreview focusedMatchId={focusedMatch?.id} />
+              ) : undefined} homePreview focusedMatchId={focusedMatch?.id} presentationNow={actionNow} />
             </div>
             <div id="one-on-one-incoming" ref={incomingSectionRef} tabIndex={-1} data-one-on-one-section="incoming" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
             {focusIncomingRequests && incomingRequests.length === 0 ? <p role="status" className="mb-3 rounded-xl bg-neutral-50 p-3 text-sm leading-6 text-neutral-600">현재 응답할 요청이 없어요. 이미 응답했거나 상대가 요청을 취소한 경우 목록이 달라질 수 있어요.</p> : null}
@@ -622,7 +649,7 @@ export default function OneOnOneHomePanel({
                           card={candidate}
                           reportTarget={{ type: "one_on_one_card", id: candidateId }}
                           onReported={onReported}
-                          badge={additional ? "추가 후보" : undefined}
+                          badge={additional ? "추가 후보" : candidate.recommendation_region_widened ? undefined : getSharedCandidateMunicipality(sourceCard?.region, candidate.region)}
                           badgeClassName="bg-neutral-100 text-neutral-600"
                         >
                           <button
@@ -787,9 +814,10 @@ export default function OneOnOneHomePanel({
                 <p className="mt-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">보낸 요청과 서로 수락한 매칭은 여기에 표시돼요.</p>
               ) : (
                 <div className="mt-3 space-y-3">
-                  <OneOnOneContactList matches={ongoingMatches} initialVisibleCount={8} pageSize={8}
-                    moreLabel="진행 중 매칭 더보기" listClassName="space-y-3" renderMatch={(match) => (
-                    <OneOnOneCandidateCard
+                  <OneOnOneContactList matches={ongoingMatches} initialVisibleCount={ONE_ON_ONE_HOME_VISIBLE_MATCHES} pageSize={8}
+                    presentationNow={actionNow}
+                    moreLabel="진행 중 매칭 더보기" listClassName="space-y-3" renderMatch={(match) => {
+                    const card = <OneOnOneCandidateCard
                       key={match.id}
                       compact={match.state === "proposed"}
                       card={match.counterparty_card}
@@ -816,8 +844,12 @@ export default function OneOnOneHomePanel({
                           sourceCardId={match.source_card_id} candidateId={match.counterparty_card.id}
                           disabled={processingMatchIds.includes(match.id) || refreshingRecommendationIds.length > 0}
                           onHidden={onCandidateHidden} /> : null}
-                    </OneOnOneCandidateCard>
-                  )} />
+                    </OneOnOneCandidateCard>;
+                    return mobileAction?.kind === "exchanged" && mobileAction.matchId === match.id
+                      ? <div ref={exchangedMatchRef} tabIndex={-1} data-one-on-one-exchanged-target
+                          className="scroll-mt-40 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-rose-300">{card}</div>
+                      : card;
+                  }} />
                 </div>
               )}
             </div>

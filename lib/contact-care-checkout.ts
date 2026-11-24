@@ -2,40 +2,55 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONTACT_CARE_UUID } from "@/lib/contact-care";
 import { getTossPaymentByOrderId } from "@/lib/toss-payments";
 
+export type CareCheckoutStatus = "cleared" | "in_progress" | "unverified";
+
+export function describeCareCheckout(checkoutStatus: CareCheckoutStatus, supportEligible = false) {
+  return { checkoutCleared: checkoutStatus === "cleared", checkoutStatus, supportEligible };
+}
+
 // Called after CARE_CHECKOUT, or by a participant with an unused voucher asking
 // to recheck that checkout. A status check never invokes the redemption RPC.
 // Never infer expiry from elapsed time, cancel a provider payment, or grant a
 // voucher here. The unchanged RPC rechecks every condition under its row locks.
 export async function reconcileExpiredCareCheckout(
   admin: SupabaseClient, matchId: string, participants: string[],
-): Promise<boolean> {
+) {
   if (!CONTACT_CARE_UUID.test(matchId) || participants.length !== 2 ||
-    new Set(participants).size !== 2 || participants.some(id => !CONTACT_CARE_UUID.test(id))) return false;
+    new Set(participants).size !== 2 || participants.some(id => !CONTACT_CARE_UUID.test(id))) return describeCareCheckout("unverified");
   const history = await admin.from("toss_test_payment_orders")
     .select("id,user_id,toss_order_id,amount,status,payment_key,approved_at,canceled_at,cancel_amount")
     .eq("product_type", "one_on_one_contact_exchange").eq("product_ref_id", matchId)
     .or("status.eq.ready,status.eq.paid,payment_key.not.is.null,approved_at.not.is.null")
     .order("created_at", { ascending: false }).limit(9);
-  if (history.error) throw history.error;
+  if (history.error) {
+    console.error("[contact-care-checkout] history unavailable", history.error.code ?? "unknown");
+    return describeCareCheckout("unverified");
+  }
   const rows = history.data ?? [];
+  if (!rows.length) return describeCareCheckout("cleared");
+  const unverified = describeCareCheckout("unverified", true);
   // Bound provider traffic. Paid/refunded/ambiguous histories need manual review.
   if (rows.length > 8 || rows.some(row => row.status !== "ready" || row.payment_key != null ||
     row.approved_at != null || row.canceled_at != null || (row.cancel_amount != null && row.cancel_amount !== 0) ||
     !participants.includes(row.user_id) || !CONTACT_CARE_UUID.test(row.id) ||
     typeof row.toss_order_id !== "string" || !/^[a-zA-Z0-9_-]{6,64}$/.test(row.toss_order_id) ||
-    !Number.isSafeInteger(row.amount) || row.amount <= 0)) return false;
+    !Number.isSafeInteger(row.amount) || row.amount <= 0)) return unverified;
 
   let payments;
   try {
     payments = await Promise.all(rows.map(row => getTossPaymentByOrderId(row.toss_order_id)));
   } catch {
     // Includes timeout, 404, credentials and provider outages. None prove expiry.
-    return false;
+    return unverified;
   }
   if (payments.some((payment, i) => !payment || payment.orderId !== rows[i].toss_order_id ||
-    payment.totalAmount !== rows[i].amount || !["EXPIRED", "ABORTED"].includes(payment.status ?? "") ||
+    payment.totalAmount !== rows[i].amount ||
+    !["EXPIRED", "ABORTED", "READY", "IN_PROGRESS", "WAITING_FOR_DEPOSIT"].includes(payment.status ?? "") ||
     payment.approvedAt != null || (payment.cancels != null &&
-      (!Array.isArray(payment.cancels) || payment.cancels.length > 0)))) return false;
+      (!Array.isArray(payment.cancels) || payment.cancels.length > 0)))) return unverified;
+  if (payments.some(payment => !["EXPIRED", "ABORTED"].includes(payment.status ?? ""))) {
+    return describeCareCheckout("in_progress", true);
+  }
 
   for (const row of rows) {
     // Compare-and-set: never overwrite an approval or a concurrent state change.
@@ -47,8 +62,8 @@ export async function reconcileExpiredCareCheckout(
       .eq("amount", row.amount).eq("status", "ready").is("payment_key", null)
       .is("approved_at", null).is("canceled_at", null)
       .or("cancel_amount.is.null,cancel_amount.eq.0").select("id").maybeSingle();
-    if (retired.error) throw retired.error;
-    if (!retired.data) return false;
+    if (retired.error) console.error("[contact-care-checkout] status update unavailable", retired.error.code ?? "unknown");
+    if (retired.error || !retired.data) return unverified;
   }
-  return true;
+  return describeCareCheckout("cleared");
 }

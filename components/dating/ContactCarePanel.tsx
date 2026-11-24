@@ -2,13 +2,28 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { fetchClientJson } from "@/lib/client-json-request";
-import { CONTACT_CARE_MESSAGES, contactCareApplicationIssue, type ContactCareStatus } from "@/lib/contact-care";
+import { CONTACT_CARE_UUID, contactCareApplicationIssue, type ContactCareStatus } from "@/lib/contact-care";
 import { oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import { contactCareMatchLabel } from "@/lib/contact-care-presentation";
 import { CareTransportError, careAttemptRecorded, careClientError, fetchCareJson, snapshotCareEvidence, type CareAttempt } from "@/lib/contact-care-client";
 
 const inputClass = "mt-1 w-full min-w-0 rounded-lg border border-neutral-300 bg-white p-2 text-sm text-neutral-900";
 const buttonClass = "min-h-[44px] rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-800 disabled:opacity-50";
+const MAX_CHECKOUT_RECHECKS = 3;
+type CheckoutWaitingStatus = "checking" | "in_progress" | "unverified";
+type CheckoutResponse = { checkoutCleared?: boolean; checkoutStatus?: unknown; supportEligible?: unknown };
+type CheckoutWait = {
+  matchId: string;
+  status: CheckoutWaitingStatus;
+  checks: number;
+  supportEligible: boolean;
+  supportReference?: string;
+  supportAlreadyResolved?: boolean;
+};
+
+function checkoutWaitingStatus(value: unknown): CheckoutWaitingStatus {
+  return value === "in_progress" || value === "unverified" ? value : "checking";
+}
 
 export default function ContactCarePanel({ matchId, guideOnly = false }: { matchId?: string; guideOnly?: boolean }) {
   const [expanded, setExpanded] = useState(false);
@@ -18,7 +33,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
   const [stale, setStale] = useState(false);
-  const [checkoutMatch, setCheckoutMatch] = useState<string | null>(null);
+  const [checkout, setCheckout] = useState<CheckoutWait | null>(null);
   const [payment, setPayment] = useState("");
   const [first, setFirst] = useState("");
   const [explanation, setExplanation] = useState("");
@@ -37,6 +52,10 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   const controller = useRef<AbortController | null>(null);
   const details = useRef<HTMLDetailsElement | null>(null);
   const recheck = useRef<() => void>(() => {});
+  const activeCheckout = checkout?.matchId === target ? checkout : null;
+  const checkoutMatch = activeCheckout?.matchId;
+  const canRecheckCheckout = Boolean(activeCheckout && activeCheckout.status !== "unverified"
+    && activeCheckout.checks < MAX_CHECKOUT_RECHECKS && !activeCheckout.supportReference);
   useEffect(() => { alive.current = true; return () => { alive.current = false; controller.current?.abort(); }; }, []);
   useEffect(() => {
     if (matchId || guideOnly) return;
@@ -67,22 +86,36 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
     return () => window.removeEventListener("hashchange", reveal);
   }, [matchId]);
 
-  const load = async () => {
+  const load = async (automatic = false) => {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(""); setPageNote("");
     controller.current = new AbortController();
     try {
       let checkoutCleared = false;
-      if (checkoutMatch && checkoutMatch === target) {
-        const check = await fetchCareJson<{ ok?: boolean; checkoutCleared?: boolean; error?: string }>({
+      if (checkoutMatch) {
+        if (automatic) setCheckout(previous => previous?.matchId === checkoutMatch ? { ...previous, checks: previous.checks + 1 } : previous);
+        const check = await fetchCareJson<CheckoutResponse & { ok?: boolean; code?: string; error?: string }>({
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "check_checkout", matchId: checkoutMatch }), signal: controller.current.signal,
         }, 12000);
-        if (!check.response.ok || check.body?.ok !== true || typeof check.body.checkoutCleared !== "boolean") {
-          if (alive.current && check.response.status >= 400 && check.response.status < 500) setCheckoutMatch(null);
+        const status = check.body?.checkoutStatus;
+        if (!check.response.ok || check.body?.ok !== true || typeof check.body.checkoutCleared !== "boolean" ||
+          (status !== undefined && (!["cleared", "in_progress", "unverified"].some(value => value === status) ||
+            (status === "cleared") !== check.body.checkoutCleared))) {
+          if (alive.current && (check.body?.code === "CARE_NO_CREDIT" || check.response.status === 404)) {
+            setCheckout(previous => previous?.matchId === checkoutMatch ? null : previous);
+          }
           throw Error(check.body?.error || "결제 상태를 확인하지 못했어요. 잠시 후 내역을 다시 확인해 주세요.");
         }
         checkoutCleared = check.body.checkoutCleared;
+        if (alive.current && !checkoutCleared) {
+          const supportEligible = check.body.supportEligible === true;
+          setCheckout(previous => previous?.matchId === checkoutMatch ? {
+            ...previous,
+            status: checkoutWaitingStatus(status),
+            supportEligible,
+          } : previous);
+        }
       }
       const { response, body } = await fetchCareJson<ContactCareStatus & { error?: string }>({ cache: "no-store", signal: controller.current.signal }, 12000, target ? { selected: target } : undefined);
       if (!response.ok || !body || !Array.isArray(body.payments) || !Array.isArray(body.matches)) throw Error(body?.error || "교환권 내역을 확인하지 못했어요.");
@@ -93,7 +126,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
           : eligible.find(p => p.id === matchId || p.id === body.claim?.match_id)?.order_id ?? "");
         setTarget(previous => body.matches.some(m => m.id === previous) ? previous : "");
         if (checkoutMatch && (checkoutCleared || !body.matches.some(m => m.id === checkoutMatch))) {
-          setCheckoutMatch(null);
+          setCheckout(previous => previous?.matchId === checkoutMatch ? null : previous);
           setInfo(body.matches.some(m => m.id === checkoutMatch)
             ? "결제 대기가 해소됐어요. 상대를 확인한 뒤 ‘이 매칭에 교환권 사용’을 눌러 주세요. 아직 교환권은 사용하지 않았어요."
             : "매칭 상태가 바뀌었어요. 새로 불러온 내역을 확인해 주세요.");
@@ -108,7 +141,10 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
           unresolved.current = null;
         }
       }
-    } catch (e) { if (alive.current) { setStale(true); setInfo(""); setError(`${careClientError(e)} ‘내역 다시 확인’을 눌러 주세요. 작성한 내용은 유지돼요.`); } }
+    } catch (e) { if (alive.current) {
+      if (checkoutMatch) setCheckout(previous => previous?.matchId === checkoutMatch ? { ...previous, status: "unverified" } : previous);
+      setStale(true); setInfo(""); setError(`${careClientError(e)} ‘내역 다시 확인’을 눌러 주세요. 작성한 내용은 유지돼요.`);
+    } }
     finally { pending.current = false; if (alive.current) setBusy(false); }
   };
   const loadOlder = async () => {
@@ -133,16 +169,39 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
       if (alive.current) setPageNote(e instanceof CareTransportError ? "이전 매칭을 불러오지 못했어요. 다시 눌러 주세요." : careClientError(e));
     } finally { pending.current = false; if (alive.current) setBusy(false); }
   };
-  useEffect(() => { recheck.current = () => { void load(); }; });
+  useEffect(() => { recheck.current = () => { void load(true); }; });
   useEffect(() => {
-    if (!expanded || !checkoutMatch || checkoutMatch !== target) return;
-    // Only a known blocked checkout is checked, at most once a minute while
-    // visible. No background/whole-site polling, redemption or payment call.
+    if (!expanded || !checkoutMatch || !canRecheckCheckout) return;
+    // At most three visible rechecks for this match. An unverified result
+    // stops polling rather than promising that more waiting will fix it.
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible" && !pending.current) recheck.current();
     }, 60000);
     return () => window.clearInterval(timer);
-  }, [expanded, checkoutMatch, target]);
+  }, [expanded, checkoutMatch, canRecheckCheckout]);
+  const requestCheckoutSupport = async () => {
+    if (pending.current || !activeCheckout?.supportEligible || activeCheckout.supportReference ||
+      canRecheckCheckout || !checkoutMatch) return;
+    pending.current = true; setBusy(true); setError("");
+    controller.current = new AbortController();
+    try {
+      const { response, body } = await fetchCareJson<{ ok?: boolean; supportReference?: string; alreadyResolved?: boolean; error?: string }>({
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "request_checkout_support", matchId: checkoutMatch }), signal: controller.current.signal,
+      }, 12000);
+      if (!response.ok || body?.ok !== true || typeof body.supportReference !== "string" || !CONTACT_CARE_UUID.test(body.supportReference)
+        || typeof body.alreadyResolved !== "boolean") {
+        throw Error(body?.error || "문의가 접수됐는지 확인하지 못했어요. 같은 매칭에서 다시 시도해 주세요.");
+      }
+      if (alive.current) setCheckout(previous => previous?.matchId === checkoutMatch ? {
+        ...previous, supportReference: body.supportReference, supportAlreadyResolved: body.alreadyResolved,
+      } : previous);
+    } catch (e) {
+      if (alive.current) setError(e instanceof CareTransportError
+        ? "문의가 접수됐는지 확인하지 못했어요. 같은 매칭에서 다시 요청해도 중복 접수되지 않아요."
+        : careClientError(e));
+    } finally { pending.current = false; if (alive.current) setBusy(false); }
+  };
   const send = async (action: "apply" | "redeem" | "redeem_manual") => {
     if (pending.current || preparingFiles || stale || !data) return;
     if (action !== "apply" && target === checkoutMatch) return;
@@ -162,13 +221,17 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
         : { action, matchId: target, confirmed: true };
       const form = new FormData();
       if (action === "apply") { form.set("payload", JSON.stringify(payload)); files.forEach(file => form.append("evidence", file)); }
-      const { response, body } = await fetchCareJson<{ ok?: boolean; error?: string; code?: string }>({
+      const { response, body } = await fetchCareJson<CheckoutResponse & { ok?: boolean; error?: string; code?: string }>({
         method: "POST", headers: action !== "apply" ? { "Content-Type": "application/json" } : undefined,
         body: action === "apply" ? form : JSON.stringify(payload), signal: controller.current.signal,
       }, action === "apply" ? 45000 : 15000);
       if (response.status >= 500 || !body || (response.ok && body.ok !== true)) throw new CareTransportError("response");
       if (response.status === 409 && body.code === "CARE_CHECKOUT" && action !== "apply") {
-        if (alive.current) { setCheckoutMatch(attempt.matchId); setStale(false); }
+        if (alive.current) {
+          setCheckout({ matchId: attempt.matchId, status: checkoutWaitingStatus(body.checkoutStatus), checks: 0,
+            supportEligible: body.supportEligible === true });
+          setStale(false);
+        }
         return;
       }
       if (!response.ok) throw Error(body.error || "처리 결과를 확인하지 못했어요. 내역을 다시 조회해 주세요.");
@@ -220,9 +283,23 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
       {busy ? <p role="status">확인 중...</p> : null}
       {error ? <p role="alert" className="text-red-700">{error}</p> : null}
       {info ? <p role="status" className="text-emerald-700">{info}</p> : null}
-      {checkoutMatch && checkoutMatch === target ? <div role="status" className="space-y-2 rounded-lg bg-neutral-50 p-3">
-        <p>{CONTACT_CARE_MESSAGES.CARE_CHECKOUT}</p>
-        <p className="text-[11px]">이 화면을 열어두면 1분 간격으로 다시 확인해요. 별도 결제는 하지 마세요.</p>
+      {activeCheckout ? <div className="space-y-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+        <div role="status" className="space-y-1">
+          <p className="font-semibold text-neutral-900">{activeCheckout.supportAlreadyResolved ? "이전 문의는 확인이 끝났어요"
+            : activeCheckout.supportReference ? "지원 요청이 접수됐어요"
+            : activeCheckout.status === "unverified" ? "결제 상태를 바로 확인할 수 없어요"
+            : activeCheckout.status === "in_progress" ? "진행 중인 결제가 있어요" : "이전에 연 결제창을 확인하고 있어요"}</p>
+          {activeCheckout.supportReference ? <p className="break-all">문의 번호: {activeCheckout.supportReference}</p> : null}
+          <p>{canRecheckCheckout ? "열려 있는 결제창이 있다면 닫아 주세요. 이 화면에서 1분 간격으로 최대 3번 확인해요."
+            : activeCheckout.supportAlreadyResolved ? "다시 확인해도 교환권을 쓸 수 없다면, 표시된 문의 번호를 고객센터에 알려 주세요."
+            : activeCheckout.supportReference ? "운영팀에서 이 매칭의 결제 상태를 확인할 수 있어요."
+            : activeCheckout.supportEligible ? "더 기다리지 않아도 돼요. 지원을 요청하면 운영팀에서 확인할 수 있어요."
+            : "‘내역 다시 확인’을 눌러 주세요. 계속 같은 안내가 뜨면 고객센터로 문의해 주세요."}</p>
+          <p className="text-[11px]">교환권은 그대로예요. 새로 결제하지 마세요.</p>
+        </div>
+        {activeCheckout.supportEligible && !canRecheckCheckout && !activeCheckout.supportReference
+          ? <button type="button" className={buttonClass} disabled={busy} onClick={() => void requestCheckoutSupport()}>지원 요청</button>
+          : null}
       </div> : null}
       {!guideOnly && !matchId && data && (manualRemaining > 0 || !!data.manual_history?.length) ? <div data-care-vouchers className="space-y-2 rounded-lg bg-neutral-50 p-3">
         <p className="font-semibold text-neutral-900">추가 지급 교환권 {manualRemaining}장 · 사용 전까지 유지</p>

@@ -19,6 +19,20 @@ export type ContactPresentationMatch = {
 };
 
 const OLDER_UNEXCHANGED_MS = 7 * 24 * 60 * 60 * 1000;
+export const ONE_ON_ONE_NEXT_STEPS_PREVIEW_COUNT = 3;
+
+export function hasOneOnOneDecliningReply(match: ContactPresentationMatch) {
+  return match.contact_nudge?.sent_by_me?.reply?.preset_key === "not_right_now";
+}
+
+export function canFeatureOneOnOneExchange(match: ContactPresentationMatch) {
+  return canOfferOneOnOneContact(match) && !hasOneOnOneDecliningReply(match);
+}
+
+export function prioritizeFeaturedContact<T extends ContactPresentationMatch>(current: T[], feature?: (match: T) => boolean) {
+  const featured = feature ? current.find(feature) : undefined;
+  return { featured, ordered: featured ? [featured, ...current.filter(match => match.id !== featured.id)] : current };
+}
 
 function timestamp(value: string | null | undefined): number | null {
   const parsed = value ? Date.parse(value) : NaN;

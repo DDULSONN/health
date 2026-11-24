@@ -4,19 +4,11 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { canOfferOneOnOneContact, oneOnOneMatchHref, oneOnOneNextStep } from "@/lib/dating-1on1-match-navigation";
 import OneOnOneContactList from "@/components/dating/OneOnOneContactList";
-import type { ContactPresentationMatch } from "@/lib/dating-1on1-contact-presentation";
+import { canFeatureOneOnOneExchange, hasOneOnOneDecliningReply, ONE_ON_ONE_NEXT_STEPS_PREVIEW_COUNT, type ContactPresentationMatch } from "@/lib/dating-1on1-contact-presentation";
 
 type Match = ContactPresentationMatch & {
   counterparty_card?: { name?: string | null; display_nickname?: string | null; nickname?: string | null; photo_signed_urls?: string[] } | null;
 };
-
-function hasDecliningReply(match: Match) {
-  return match.contact_nudge?.sent_by_me?.reply?.preset_key === "not_right_now";
-}
-
-function canFeatureExchange(match: Match) {
-  return canOfferOneOnOneContact(match) && !hasDecliningReply(match);
-}
 
 function CounterpartyPhoto({ src }: { src?: string }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
@@ -27,24 +19,25 @@ function CounterpartyPhoto({ src }: { src?: string }) {
   ) : <span aria-hidden="true" className="flex h-12 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-xs text-neutral-400">1:1</span>;
 }
 
-export default function OneOnOneNextSteps<T extends Match>({ matches, renderContact, homePreview = false, focusedMatchId }: {
+export default function OneOnOneNextSteps<T extends Match>({ matches, renderContact, homePreview = false, focusedMatchId, presentationNow }: {
   matches: readonly T[];
   renderContact?: (match: T) => ReactNode;
   homePreview?: boolean;
   focusedMatchId?: string;
+  presentationNow?: number;
 }) {
   const items = matches.filter((match) => match.counterparty_card && oneOnOneNextStep(match));
   if (!items.length) return null;
-  const readyCount = homePreview ? items.filter(canFeatureExchange).length : 0;
+  const readyCount = homePreview ? items.filter(canFeatureOneOnOneExchange).length : 0;
   return <section aria-label="이어서 진행할 1:1 매칭" className="mb-3 rounded-xl border border-rose-200 bg-white px-3 py-2">
     <p className="py-1 text-sm font-semibold text-neutral-800">{readyCount ? "연락처 교환 대기" : "이어서 진행하기"} <span className="text-[#f0003d]">{readyCount || items.length}건</span></p>
-    <OneOnOneContactList matches={items} initialVisibleCount={3} listClassName="divide-y divide-neutral-100"
-      feature={homePreview && renderContact && !focusedMatchId ? canFeatureExchange : undefined}
+    <OneOnOneContactList matches={items} initialVisibleCount={ONE_ON_ONE_NEXT_STEPS_PREVIEW_COUNT} listClassName="divide-y divide-neutral-100"
+      presentationNow={presentationNow} feature={homePreview && renderContact && !focusedMatchId ? canFeatureOneOnOneExchange : undefined}
       renderMatch={(match, isFeatured) => {
         const exchange = canOfferOneOnOneContact(match);
         // Keep one actionable offer visible on home. A focused match already
         // owns its full form, including any reply and the existing privacy choice.
-        const declines = hasDecliningReply(match);
+        const declines = hasOneOnOneDecliningReply(match);
         const showOffer = renderContact && exchange && (!homePreview || isFeatured);
         return <article key={match.id} className="py-2">
           <Link href={oneOnOneMatchHref(match.id)} className="flex min-h-[48px] items-center gap-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700">

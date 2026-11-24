@@ -1,11 +1,11 @@
 "use client";
 
 import { Fragment, useState, type ReactNode } from "react";
-import { groupContactPresentation, type ContactPresentationMatch } from "@/lib/dating-1on1-contact-presentation";
+import { groupContactPresentation, prioritizeFeaturedContact, type ContactPresentationMatch } from "@/lib/dating-1on1-contact-presentation";
 
 export default function OneOnOneContactList<T extends ContactPresentationMatch>({
   matches, renderMatch, initialVisibleCount = Number.POSITIVE_INFINITY, pageSize = 3,
-  moreLabel = "진행할 매칭 더보기", listClassName = "space-y-2", feature,
+  moreLabel = "진행할 매칭 더보기", listClassName = "space-y-2", feature, presentationNow,
 }: {
   matches: readonly T[];
   renderMatch: (match: T, isFeatured: boolean) => ReactNode;
@@ -14,15 +14,15 @@ export default function OneOnOneContactList<T extends ContactPresentationMatch>(
   pageSize?: number;
   moreLabel?: string;
   listClassName?: string;
+  presentationNow?: number;
 }) {
   // Keep groups stable while the member is reading/paying; no timers or extra API calls.
   const [now] = useState(() => Date.now());
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
   const [olderOpen, setOlderOpen] = useState(false);
   const [olderCount, setOlderCount] = useState(3);
-  const { current, older } = groupContactPresentation(matches, now);
-  const featured = feature ? current.find(feature) : undefined;
-  const ordered = featured ? [featured, ...current.filter(match => match.id !== featured.id)] : current;
+  const { current, older } = groupContactPresentation(matches, presentationNow ?? now);
+  const { featured, ordered } = prioritizeFeaturedContact(current, feature);
   return <>
     <div className={listClassName}>
       {ordered.slice(0, visibleCount).map(match => <Fragment key={match.id}>{renderMatch(match, match.id === featured?.id)}</Fragment>)}

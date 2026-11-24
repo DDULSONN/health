@@ -1,13 +1,14 @@
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
-import { CONTACT_CARE_UUID } from "@/lib/contact-care";
+import { CONTACT_CARE_MESSAGES, CONTACT_CARE_UUID } from "@/lib/contact-care";
 import { careJson, careError, careMatchNames, careManualBalance, CARE_CLAIM_FIELDS, readCareJson, parseCareCursor } from "@/lib/contact-care-server";
 import { careTargetPage } from "@/lib/contact-care-targets";
 import { hashDatingContactBlockValue, normalizeDatingContactPhone } from "@/lib/dating-contact-blocks";
 import { hashOneOnOneBlockedPhone } from "@/lib/dating-1on1-phone-blocks";
 import { CARE_EVIDENCE_BUCKET, prepareCareEvidence, readCareForm } from "@/lib/contact-care-evidence";
-import { reconcileExpiredCareCheckout } from "@/lib/contact-care-checkout";
+import { describeCareCheckout, reconcileExpiredCareCheckout } from "@/lib/contact-care-checkout";
+import { requestCareCheckoutSupport } from "@/lib/contact-care-checkout-support";
 
 export const runtime = "nodejs";
 
@@ -141,6 +142,10 @@ export async function POST(req: Request) {
       if (res.error) throw res.error;
       return careJson(res.data);
     }
+    if (body.action === "request_checkout_support") {
+      if (form) return careJson({ error: "매칭을 다시 선택해 주세요." }, 400);
+      return await requestCareCheckoutSupport(admin, user.id, body.matchId);
+    }
     const checkingCheckout = body.action === "check_checkout";
     if (!checkingCheckout && (!["redeem", "redeem_manual"].includes(body.action) || body.confirmed !== true)) return careJson({ error: "교환권 사용을 확인해 주세요." }, 400);
     const match = await admin.from("dating_1on1_match_proposals").select("source_user_id,candidate_user_id,state,contact_exchange_status,contact_exchange_approved_at,contact_exchange_paid_at").eq("id", body.matchId).maybeSingle();
@@ -161,9 +166,9 @@ export async function POST(req: Request) {
       if (match.data.state !== "mutual_accepted" || !["none", "awaiting_applicant_payment"].includes(match.data.contact_exchange_status) ||
         match.data.contact_exchange_approved_at || match.data.contact_exchange_paid_at) {
         // The following ordinary GET removes changed/paid matches from the UI.
-        return careJson({ ok: true, checkoutCleared: true });
+        return careJson({ ok: true, ...describeCareCheckout("cleared") });
       }
-      return careJson({ ok: true, checkoutCleared: await reconcileExpiredCareCheckout(admin, body.matchId, ids) });
+      return careJson({ ok: true, ...await reconcileExpiredCareCheckout(admin, body.matchId, ids) });
     }
     const profiles = await admin.from("profiles").select("user_id,phone_e164").in("user_id", ids);
     if (profiles.error) throw profiles.error;
@@ -173,10 +178,19 @@ export async function POST(req: Request) {
     const args = { p_user: user.id, p_match: body.matchId, p_phones: phones,
       p_contact_hashes: phones.map(p => hashDatingContactBlockValue("phone", p)), p_legacy_hashes: phones.map(hashOneOnOneBlockedPhone) };
     let res = await admin.rpc(rpc, args);
-    if (res.error?.message === "CARE_CHECKOUT" && await reconcileExpiredCareCheckout(admin, body.matchId, ids)) {
-      // One retry only, and only after a definite SQL rejection (no ambiguous
-      // mutation retries). SQL still owns atomic credit use and contact release.
-      res = await admin.rpc(rpc, args);
+    if (res.error?.message === "CARE_CHECKOUT") {
+      let status = await reconcileExpiredCareCheckout(admin, body.matchId, ids);
+      if (status.checkoutCleared) {
+        // One retry only, and only after a definite SQL rejection (no ambiguous
+        // mutation retries). SQL still owns atomic credit use and contact release.
+        res = await admin.rpc(rpc, args);
+        // A checkout may have been opened during the status check. Do not retry
+        // the redemption again or present a cleared status on a SQL hold.
+        if (res.error?.message === "CARE_CHECKOUT") status = describeCareCheckout("unverified", true);
+      }
+      if (res.error?.message === "CARE_CHECKOUT") {
+        return careJson({ error: CONTACT_CARE_MESSAGES.CARE_CHECKOUT, code: "CARE_CHECKOUT", ...status }, 409);
+      }
     }
     if (res.error) throw res.error;
     return careJson(res.data);

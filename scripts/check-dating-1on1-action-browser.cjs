@@ -30,7 +30,10 @@ async function main() {
     compiler.run((error, stats) => { compiler.close(() => {}); if (error || stats.hasErrors()) reject(error || Error(stats.toString({ all: false, errors: true }))); else resolve(); });
   });
   const cssRoot = path.join(root, '.next/static/css');
-  const css = fs.readdirSync(cssRoot).filter(n => n.endsWith('.css')).map(n => fs.readFileSync(path.join(cssRoot, n), 'utf8')).join('\n');
+  const css = polishOnly
+    ? (await require('postcss')([require('@tailwindcss/postcss')({ base: root })]).process(
+      fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8'), { from: path.join(root, 'app/globals.css') })).css
+    : fs.readdirSync(cssRoot).filter(n => n.endsWith('.css')).map(n => fs.readFileSync(path.join(cssRoot, n), 'utf8')).join('\n');
   const server = http.createServer((req, res) => {
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'");
     if (req.url === '/fixture.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(fs.readFileSync(path.join(output, 'fixture.js'))); }
@@ -49,7 +52,8 @@ async function main() {
       : resilienceOnly
       ? ['resilience-outage', 'resilience-malformed', 'resilience-slow', 'resilience-timeout', 'resilience-unauthorized', 'resilience-match-error', 'resilience-profile-error', 'resilience-profile-auth', 'resilience-no-profile-closed', 'resilience-rejected-profile', 'resilience-no-profile-active', 'resilience-no-profile-empty']
       : polishOnly
-      ? ['polish-incoming', 'polish-next', 'polish-final-accept', 'polish-waiting', 'polish-empty', 'polish-no-candidates', 'polish-read-error', 'polish-focused']
+      ? ['polish-incoming', 'polish-next', 'polish-final-accept', 'polish-hidden-final', 'polish-exchanged', 'polish-missing-contact',
+         'polish-pending', 'polish-declined-reply', 'polish-waiting', 'polish-empty', 'polish-no-candidates', 'polish-read-error', 'polish-focused']
       : journeyOnly
       ? surface === 'home' ? ['journey-incoming', 'journey-checkout', 'journey-paid', 'journey-pending', 'journey-approved', 'journey-closed', 'journey-missing', 'journey-deleted', 'journey-profile-deleted', 'journey-status-error', 'journey-status-auth', 'journey-status-foreign', 'journey-load-error', 'journey-many'] : ['journey-shortcut', 'journey-pending', 'journey-paid']
       : [
@@ -74,7 +78,7 @@ async function main() {
       const gate = new Promise(resolve => { release = resolve; });
       const now = new Date().toISOString();
       const profile = { id: 'fixture-one', user_id: 'fixture-member', name: '검증 프로필', sex: 'female', age: 29, birth_year: 1998,
-        height_cm: 165, job: '회사원', region: '서울', intro_text: '로컬 검증용 프로필입니다.', strengths_text: '배려해요.',
+        height_cm: 165, job: '회사원', region: polishOnly ? '서울 마포구' : '서울', intro_text: '로컬 검증용 프로필입니다.', strengths_text: '배려해요.',
         preferred_partner_text: '대화가 잘 통하는 분', smoking: 'non_smoker', status: 'approved', created_at: now,
         photo_signed_urls: ['/fixture-photo.png', '/fixture-photo.png'], plus_expires_at: '2099-01-01T00:00:00Z' };
       const candidate = { ...profile, id: 'candidate-card', user_id: 'candidate-user', name: '추천상대', sex: 'male',
@@ -155,10 +159,19 @@ async function main() {
             }
             if (scenario === 'polish-read-error') { await route.fulfill({ status: 503, json: { error: '로컬 매칭 조회 실패' } }); return; }
             if (polishOnly) {
+              const contact = scenario === 'polish-exchanged' || scenario === 'polish-missing-contact'
+                ? match(focusedId, 'source', 'mutual_accepted', '연락처교환회원', 'approved') : null;
+              if (contact && scenario === 'polish-exchanged') contact.counterparty_phone = '010-0000-0701';
               body = { items: scenario === 'polish-empty' ? [] : [
+                ...(contact ? [contact] : []),
                 ...(['polish-incoming', 'polish-no-candidates', 'polish-focused'].includes(scenario) ? [match(scenario === 'polish-focused' ? focusedId : 'incoming', 'candidate', 'source_selected', '요청한회원')] : []),
                 ...(scenario === 'polish-next' ? [match(focusedId, 'source', 'mutual_accepted', '교환대기회원', 'awaiting_applicant_payment')] : []),
-                ...(scenario === 'polish-final-accept' ? [match(focusedId, 'source', 'candidate_accepted', '수락할회원')] : []),
+                ...(['polish-final-accept', 'polish-hidden-final'].includes(scenario) ? [match(focusedId, 'source', 'candidate_accepted', '수락할회원')] : []),
+                ...(scenario === 'polish-hidden-final' ? [1, 2, 3].map(i =>
+                  match(`00000000-0000-4000-8000-00000000000${i}`, 'source', 'mutual_accepted', `교환대기회원 ${i}`, 'awaiting_applicant_payment')) : []),
+                ...(scenario === 'polish-pending' ? [match(focusedId, 'source', 'mutual_accepted', '결제대기회원', 'payment_pending_admin')] : []),
+                ...(scenario === 'polish-declined-reply' ? [{ ...match(focusedId, 'source', 'mutual_accepted', '거절답장회원', 'awaiting_applicant_payment'),
+                  contact_nudge: { available: true, replies_available: true, sent_by_me: { reply: { preset_key: 'not_right_now' } } } }] : []),
                 match('waiting', 'source', 'source_selected', '기다리는회원'),
               ] }; break;
             }
@@ -313,6 +326,17 @@ async function main() {
             await shortcuts.waitFor();
             const recommendations = page.locator('[data-one-on-one-section="recommendations"]'); await recommendations.waitFor();
             const initialReads = matchingReads, initialUrl = page.url();
+            const mobileAction = shortcuts.locator('[data-one-on-one-mobile-action]:visible');
+            const expectedAction = width < 768 ? { 'polish-incoming': 'incoming', 'polish-no-candidates': 'incoming',
+              'polish-next': 'next', 'polish-final-accept': 'next', 'polish-hidden-final': 'next', 'polish-exchanged': 'exchanged' }[scenario] : undefined;
+            assert.equal(await mobileAction.count(), expectedAction ? 1 : 0, 'only one mobile action is added, and none for uncertain or passive states');
+            if (expectedAction) {
+              assert.equal(await mobileAction.getAttribute('data-one-on-one-mobile-action'), expectedAction);
+              assert.doesNotMatch(await mobileAction.innerText(), /010-|@|18,000/);
+              const first = shortcuts.getByRole('button').first();
+              assert.ok(await first.locator('[data-one-on-one-mobile-action]').count(), 'mobile visual hierarchy follows keyboard order');
+              assert.ok((await first.boundingBox()).height >= 44);
+            }
             const order = await page.locator('[data-one-on-one-section]').evaluateAll(nodes => nodes.map(n => n.dataset.oneOnOneSection));
             assert.deepEqual(order, ['next-steps', 'incoming', 'recommendations', 'profile', 'matches']);
             if (width === 390 && scenario === 'polish-incoming') { await page.evaluate(() => scrollTo(0, 0)); await page.screenshot({ path: path.join(output, 'ui-polish-top-mobile.png') }); }
@@ -326,6 +350,7 @@ async function main() {
               const photos = recommendations.locator('article img[alt]:not([alt=""])');
               assert.equal(await photos.count(), 2);
               for (const photo of await photos.all()) { await photo.scrollIntoViewIfNeeded(); await page.waitForFunction(el => el.complete && el.naturalWidth > 0, await photo.elementHandle()); }
+              assert.equal(await recommendations.getByText('같은 구', { exact: true }).count(), 1);
               assert.equal(await request.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(240, 0, 61)');
               if (width === 390 && scenario === 'polish-incoming') { await recommendations.evaluate(el => el.scrollIntoView({ block: 'start' })); await page.screenshot({ path: path.join(output, 'ui-polish-candidates-mobile.png') }); }
             }
@@ -339,16 +364,26 @@ async function main() {
               await page.getByRole('region', { name: '받은 1:1 매칭 요청' }).getByRole('button', { name: /나에게 온 요청/ }).click();
               assert.equal(await page.getByRole('button', { name: '수락', exact: true }).count(), 0);
             }
-            await shortcuts.getByRole('button').nth(2).click();
+            if (expectedAction) await shortcuts.getByRole('button').first().click();
+            else await shortcuts.getByRole('button').nth(2).click();
             if (['polish-incoming', 'polish-no-candidates'].includes(scenario)) {
               assert.equal(await page.getByRole('button', { name: '수락', exact: true }).count(), 1, 'a shortcut reopens the collapsed inbox without accepting');
               assert.equal(await page.getByRole('button', { name: '소개 더보기' }).first().getAttribute('aria-expanded'), 'false', 'profile text is not opened by the inbox shortcut');
             }
             const target = scenario === 'polish-focused' ? '#selected-one-on-one-match'
               : ['polish-incoming', 'polish-no-candidates'].includes(scenario) ? '[data-one-on-one-section="incoming"]'
-              : ['polish-next', 'polish-final-accept'].includes(scenario) ? '[data-one-on-one-section="next-steps"]'
+              : ['polish-next', 'polish-final-accept', 'polish-hidden-final', 'polish-declined-reply'].includes(scenario) ? '[data-one-on-one-section="next-steps"]'
+              : expectedAction === 'exchanged' ? '[data-one-on-one-exchanged-target]'
               : '[data-one-on-one-section="matches"]';
             assert.equal(await page.locator(target).evaluate(el => el === document.activeElement), true);
+            if (expectedAction === 'exchanged') assert.equal(await page.locator(target).getByText('010-0000-0701', { exact: true }).count(), 1);
+            if (scenario === 'polish-hidden-final') {
+              const list = page.locator(target);
+              if (expectedAction) assert.match(await mobileAction.innerText(), /교환 안내 보기/);
+              assert.equal(await list.getByText('수락할회원', { exact: true }).count(), 0);
+              await list.getByRole('button', { name: /진행할 매칭 더보기/ }).click();
+              assert.equal(await list.getByText('수락할회원', { exact: true }).count(), 1);
+            }
             assert.equal(page.url(), initialUrl, 'shortcuts preserve the tab and existing deep link');
             assert.equal(matchingReads, initialReads, 'scroll shortcuts do not reload/consume candidates');
             for (const button of await shortcuts.getByRole('button').all()) assert.ok((await button.boundingBox()).height >= 44);
