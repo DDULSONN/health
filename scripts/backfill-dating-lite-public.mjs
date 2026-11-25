@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { canMirrorDatingPath, getMemberOnlyMirrorOwners, recheckPublicMirrorPaths } from "./dating-public-mirror-safety.mjs";
 
 const SOURCE_PRIMARY_BUCKET = "dating-card-photos";
 const SOURCE_LEGACY_BUCKET = "dating-photos";
@@ -166,16 +167,15 @@ async function main() {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  if (args.apply) {
-    await ensureTargetBucket(admin);
-  }
+  const restrictedOwners = await getMemberOnlyMirrorOwners(admin);
 
   const raw1 = await fetchAllRawPaths(admin, "dating_cards", args.verbose);
   const raw2 = await fetchAllRawPaths(admin, "dating_paid_cards", args.verbose);
   const dedupedLite = [...new Set([...raw1, ...raw2])]
-    .filter((p) => typeof p === "string" && p.includes("/raw/"))
+    .filter((p) => typeof p === "string" && p.includes("/raw/") && canMirrorDatingPath(p, restrictedOwners))
     .map(toLitePath);
   const targets = args.limit > 0 ? dedupedLite.slice(0, args.limit) : dedupedLite;
+  if (args.apply && targets.length > 0) await ensureTargetBucket(admin);
 
   const stats = {
     total: targets.length,
@@ -224,6 +224,7 @@ async function main() {
     }
 
     const bytes = Buffer.from(await res.arrayBuffer());
+    if (!await recheckPublicMirrorPaths(admin, [litePath], restrictedOwners)) return;
     const uploadError = await uploadTarget(admin, litePath, bytes);
     if (!uploadError) {
       stats.copied += 1;

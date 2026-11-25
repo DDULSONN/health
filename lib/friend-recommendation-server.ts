@@ -99,12 +99,15 @@ export async function friendPairBlocked(admin: FriendAdmin, a: FriendMember, b: 
   for (const result of [members, operators, ...contacts]) if (result.error) throw result.error;
   return [members, operators, ...contacts].some(result => Boolean(result.data?.length));
 }
-export async function friendCard(admin: FriendAdmin, kind: FriendKind, id: string): Promise<Card> {
+export async function friendCard(admin: FriendAdmin, kind: FriendKind, id: string, audience: "guest" | "member"): Promise<Card> {
   const table = kind === "one_on_one" ? "dating_1on1_cards" : kind === "paid_card" ? "dating_paid_cards" : "dating_cards";
   const fields: string = kind === "one_on_one" ? "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,status,photo_paths,phone" :
     kind === "paid_card" ? "id,user_id,nickname,gender,age,region,height_cm,job,strengths_text,ideal_text,intro_text,photo_visibility,photo_paths,status,expires_at,instagram_id" :
       "id,owner_user_id,display_nickname,sex,age,region,height_cm,job,strengths_text,ideal_type,photo_visibility,photo_paths,status,expires_at,instagram_id";
-  const result = await admin.from(table).select(fields).eq("id", id).maybeSingle();
+  const query = admin.from(table).select(fields).eq("id", id);
+  // Check the live Open Card visibility, not the saved link receipt. The photo
+  // proxy uses this same read before and after image processing.
+  const result = await (kind === "open_card" && audience === "guest" ? query.eq("members_only", false) : query).maybeSingle();
   if (result.error) throw result.error;
   const row = result.data as unknown as Record<string, unknown> | null;
   if (!row) throw new FriendError(410, "지금은 볼 수 없는 프로필이에요.");
@@ -146,7 +149,7 @@ export async function createFriendLink(admin: FriendAdmin, userId: string, reque
       if (favorite.error) throw favorite.error;
       if (!favorite.data?.length) throw new FriendError(409, "후보 목록을 다시 확인한 뒤 추천해 주세요.");
     }
-    const card = await friendCard(admin, selection.kind, selection.cardId);
+    const card = await friendCard(admin, selection.kind, selection.cardId, "member");
     const [target, pref] = await Promise.all([friendMember(admin, card.user_id), friendPreference(admin, card.user_id)]);
     if (card.user_id === userId || !pref.enabled || await friendPairBlocked(admin, sender, target, card.instagram)) throw new FriendError(410, "현재 추천할 수 없는 프로필이에요.");
     if (items.some(item => item.user_id === card.user_id)) throw new FriendError(400, "같은 회원은 한 번만 담아 주세요.");
@@ -177,7 +180,8 @@ export async function readFriendLink(admin: FriendAdmin, token: string, viewerId
   for (const item of link.items) {
     if (onlyItem && item.id !== onlyItem) continue;
     try {
-      const [pref, target, card] = await Promise.all([friendPreference(admin, item.user_id), friendMember(admin, item.user_id), friendCard(admin, item.kind, item.card_id)]);
+      const [pref, target, card] = await Promise.all([friendPreference(admin, item.user_id), friendMember(admin, item.user_id),
+        friendCard(admin, item.kind, item.card_id, viewer ? "member" : "guest")]);
       if (!pref.enabled || Number(pref.revision) !== Number(item.revision) || card.user_id !== item.user_id ||
         await friendPairBlocked(admin, sender, target, card.instagram) || (viewer && await friendPairBlocked(admin, viewer, target, card.instagram))) continue;
       items.push({ item, card });

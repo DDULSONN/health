@@ -71,6 +71,7 @@ async function loadLandingCards(): Promise<LandingCard[]> {
       .from("dating_cards")
       .select("id,sex,age,region,blur_paths,blur_thumb_path,created_at")
       .eq("status", "public")
+      .eq("members_only", false)
       .eq("sex", sex)
       .gt("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false })

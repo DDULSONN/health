@@ -4,6 +4,7 @@ import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
+import { mayMirrorOpenCardPhoto } from "@/lib/dating-open-card-public-mirror";
 
 export const runtime = "nodejs";
 
@@ -240,15 +241,17 @@ export async function POST(req: Request) {
       try {
         if (kind === "blur") {
           // Visibility is chosen after upload. Only a server-blurred image is
-          // safe to mirror in the public bucket at this stage.
-          const litePublicRes = await uploadLitePublicPhoto(adminClient, path, file, blurUploadOverride);
-          if (litePublicRes.error) {
-            console.warn("[POST /api/dating/cards/upload-card] public mirror upload failed", {
-              pathTail: path.split("/").slice(-2).join("/"),
-              message: litePublicRes.error.message ?? null,
-            });
-          } else {
-            await kvSetString(`litepublic:${path}`, "1", 365 * 24 * 60 * 60);
+          // eligible for a public mirror, and only for a confirmed public owner.
+          if (await mayMirrorOpenCardPhoto(adminClient, user.id)) {
+            const litePublicRes = await uploadLitePublicPhoto(adminClient, path, file, blurUploadOverride);
+            if (litePublicRes.error) {
+              console.warn("[POST /api/dating/cards/upload-card] public mirror upload failed", {
+                pathTail: path.split("/").slice(-2).join("/"),
+                message: litePublicRes.error.message ?? null,
+              });
+            } else {
+              await kvSetString(`litepublic:${path}`, "1", 365 * 24 * 60 * 60);
+            }
           }
         } else {
           const thumbPath = toThumbPath(path);

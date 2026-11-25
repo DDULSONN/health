@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { canMirrorDatingPath, getMemberOnlyMirrorOwners, recheckPublicMirrorPaths } from "./dating-public-mirror-safety.mjs";
 import sharp from "sharp";
 
 const CARD_BUCKET = "dating-card-photos";
@@ -254,15 +255,16 @@ async function main() {
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  if (args.apply) await ensurePublicBucket(admin);
+  const restrictedOwners = await getMemberOnlyMirrorOwners(admin);
 
   const cards = await fetchPaged(admin, "dating_cards", "id,blur_paths,blur_thumb_path", args.verbose);
   const paid = await fetchPaged(admin, "dating_paid_cards", "id,blur_thumb_path", args.verbose);
   const jobs = [
     ...cards.map(buildCardJob).filter(Boolean),
     ...paid.map(buildPaidJob).filter(Boolean),
-  ];
+  ].filter(job => job.sourcePaths.every(path => canMirrorDatingPath(path, restrictedOwners)));
   const targets = args.limit > 0 ? jobs.slice(0, args.limit) : jobs;
+  if (args.apply && targets.length > 0) await ensurePublicBucket(admin);
 
   const stats = {
     totalJobs: targets.length,
@@ -316,6 +318,7 @@ async function main() {
       }
       if (privateRes.existed) stats.privateExists += 1;
 
+      if (!await recheckPublicMirrorPaths(admin, [...job.sourcePaths, targetPath], restrictedOwners)) return;
       const publicRes = await uploadBytes(admin, PUBLIC_BUCKET, targetPath, bytes, "31536000");
       if (!publicRes.ok) {
         stats.uploadFail += 1;

@@ -134,7 +134,8 @@ async function createSignedImageUrls(
   blurPaths: unknown,
   blurThumbPath: unknown,
   photoVisibility: "blur" | "public",
-  counters: SignCounters
+  counters: SignCounters,
+  membersOnly = false
 ) {
   if (photoVisibility === "public") {
     const rawPaths = Array.isArray(photoPaths)
@@ -164,7 +165,7 @@ async function createSignedImageUrls(
   const blurUrls: string[] = [];
   for (const originalBlurPath of blurPathList) {
     const blurWebpPath = toBlurWebpPath(originalBlurPath);
-    const blurPublicUrl = await getLitePublicUrlIfAvailable(adminClient, blurWebpPath);
+    const blurPublicUrl = membersOnly ? "" : await getLitePublicUrlIfAvailable(adminClient, blurWebpPath);
     if (blurPublicUrl) {
       blurUrls.push(blurPublicUrl);
       counters.blurCount += 1;
@@ -182,7 +183,7 @@ async function createSignedImageUrls(
   const normalizedBlurThumbPath = normalizeDatingPhotoPath(blurThumbPath);
   if (normalizedBlurThumbPath) {
     const blurThumbWebpPath = toBlurWebpPath(normalizedBlurThumbPath);
-    const publicThumb = await getLitePublicUrlIfAvailable(adminClient, blurThumbWebpPath);
+    const publicThumb = membersOnly ? "" : await getLitePublicUrlIfAvailable(adminClient, blurThumbWebpPath);
     if (publicThumb) {
       counters.blurCount += 1;
       if (photoVisibility === "blur") return [publicThumb, publicThumb];
@@ -303,7 +304,7 @@ export async function GET(req: Request) {
   let query = adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, published_at"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, published_at, members_only"
     )
     .eq("status", "public")
     .gt("expires_at", new Date().toISOString())
@@ -311,6 +312,8 @@ export async function GET(req: Request) {
     .order("id", { ascending: false })
     .limit(limit + 1);
 
+  // Filter in the query so hidden cards never consume a guest page slot or cursor.
+  if (isGuestPreview) query = query.eq("members_only", false);
   if (sex === "male" || sex === "female") {
     query = query.eq("sex", sex);
   }
@@ -332,13 +335,14 @@ export async function GET(req: Request) {
     let legacyQuery = adminClient
       .from("dating_cards")
       .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, instagram_id, expires_at, created_at, published_at"
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, instagram_id, expires_at, created_at, published_at, members_only"
       )
       .eq("status", "public")
       .gt("expires_at", new Date().toISOString())
       .order("published_at", { ascending: false, nullsFirst: false })
       .order("id", { ascending: false })
       .limit(limit + 1);
+    if (isGuestPreview) legacyQuery = legacyQuery.eq("members_only", false);
     if (sex === "male" || sex === "female") {
       legacyQuery = legacyQuery.eq("sex", sex);
     }
@@ -414,7 +418,8 @@ export async function GET(req: Request) {
         row.blur_paths,
         row.blur_thumb_path,
         photoVisibility,
-        counters
+        counters,
+        row.members_only === true
       );
       return {
         id: row.id,

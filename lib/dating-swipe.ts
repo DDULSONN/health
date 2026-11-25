@@ -60,6 +60,7 @@ type DatingCardRow = {
   photo_paths?: string[] | null;
   blur_paths?: string[] | null;
   blur_thumb_path?: string | null;
+  members_only?: boolean | null;
   instagram_id?: string | null;
   status: string;
   expires_at?: string | null;
@@ -165,7 +166,7 @@ function toBlurWebpPath(path: string): string {
   return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
 }
 
-type SwipePreviewRow = Pick<DatingCardRow, "owner_user_id" | "expires_at" | "photo_visibility" | "photo_paths" | "blur_paths" | "blur_thumb_path"> & { status?: string };
+type SwipePreviewRow = Pick<DatingCardRow, "owner_user_id" | "expires_at" | "photo_visibility" | "photo_paths" | "blur_paths" | "blur_thumb_path" | "members_only"> & { status?: string };
 
 export function pickPreviewImage(row: SwipePreviewRow, hasSwipeConnection = false): string | null {
   const visibility = row.photo_visibility === "public" ? "public" : "blur";
@@ -183,6 +184,7 @@ export function pickPreviewImage(row: SwipePreviewRow, hasSwipeConnection = fals
     ? row.blur_paths.map((item) => normalizePhotoPath(item)).find((item) => isDatingCardBlurPath(item, row.owner_user_id)) ?? ""
     : "";
   if (blurPath) {
+    if (row.members_only === true) return buildSignedImageUrl("dating-card-photos", blurPath) || null;
     const blurWebp = toBlurWebpPath(blurPath);
     return (
       buildPublicLiteImageUrl("dating-card-lite", blurWebp) ||
@@ -194,6 +196,7 @@ export function pickPreviewImage(row: SwipePreviewRow, hasSwipeConnection = fals
 
   const blurThumb = normalizePhotoPath(row.blur_thumb_path ?? "");
   if (isDatingCardBlurPath(blurThumb, row.owner_user_id)) {
+    if (row.members_only === true) return buildSignedImageUrl("dating-card-photos", blurThumb) || null;
     const blurWebp = toBlurWebpPath(blurThumb);
     return (
       buildPublicLiteImageUrl("dating-card-lite", blurWebp) ||
@@ -474,7 +477,7 @@ export async function getSwipeCandidate(
     let query = adminClient
       .from("dating_cards")
       .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, total_3lift, is_3lift_verified, photo_visibility, photo_paths, blur_paths, blur_thumb_path, instagram_id, status, expires_at, created_at"
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, total_3lift, is_3lift_verified, photo_visibility, photo_paths, blur_paths, blur_thumb_path, instagram_id, status, expires_at, created_at, members_only"
       )
       .eq("sex", sex);
     if (options?.lovePass) query = query.in("status", ["pending", "public", "expired"]).gte("age", 19).lte("age", 99);
@@ -579,6 +582,7 @@ export async function getGuestSwipePreviewCandidate(
       "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, total_3lift, is_3lift_verified, photo_visibility, photo_paths, blur_paths, blur_thumb_path, instagram_id, status, expires_at, created_at"
     )
     .eq("sex", sex)
+    .eq("members_only", false)
     .order("created_at", { ascending: false })
     .limit(120);
 

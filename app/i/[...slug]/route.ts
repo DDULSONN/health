@@ -2,6 +2,8 @@ import { getCachedSignedUrlWithBucket } from "@/lib/signed-url-cache";
 import { hasCityViewCardAccess } from "@/lib/dating-city-view";
 import { hasMoreViewAccess, normalizeCardSex } from "@/lib/dating-more-view";
 import { isDatingCardBlurPath } from "@/lib/dating-card-photo-visibility";
+import { hasDatingBlockBetween } from "@/lib/dating-blocks";
+import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -119,6 +121,50 @@ function matchesDatingCardPhoto(objectPath: string, row: Record<string, unknown>
     candidates.add(toBlurWebpPath(blurThumbPath));
   }
   return candidates.has(objectPath);
+}
+
+const OPEN_CARD_PHOTO_BUCKETS = ["dating-card-photos", "dating-card-lite", "dating-photos"];
+
+function storedOpenCardPhotoPath(value: unknown) {
+  return extractStorageObjectPathFromBuckets(value, OPEN_CARD_PHOTO_BUCKETS) ?? "";
+}
+
+async function checkMemberOnlyOpenCardPhoto(req: Request, objectPath: string): Promise<"ordinary" | "allowed" | "denied"> {
+  // Storage URLs can normalize path segments differently from our exact match.
+  if (objectPath.split("/").some(part => !part || part === "." || part === ".." || part.includes("\\") || /%2f|%5c|%2e/i.test(part))) {
+    return "denied";
+  }
+  const admin = createAdminClient();
+  const owner = ownerFromPath(objectPath);
+  let query = admin.from("dating_cards")
+    .select("owner_user_id,members_only,instagram_id,photo_paths,blur_paths,blur_thumb_path")
+    .eq("members_only", true);
+  if (owner) query = query.eq("owner_user_id", owner);
+  const rows = await query.limit(101);
+  // Do not serve an object when access metadata is unavailable or truncated.
+  if (rows.error || !Array.isArray(rows.data) || rows.data.length > 100) return "denied";
+  const matched = rows.data.filter(row => row.members_only === true && matchesDatingCardPhoto(objectPath, {
+    photo_paths: pathList(row.photo_paths).map(storedOpenCardPhotoPath).filter(Boolean),
+    blur_paths: pathList(row.blur_paths).map(storedOpenCardPhotoPath).filter(Boolean),
+    blur_thumb_path: storedOpenCardPhotoPath(row.blur_thumb_path),
+  }));
+  if (!matched.length) return "ordinary";
+
+  const { user } = await getRequestAuthContext(req);
+  if (!user || !user.id || user.deleted_at) return "denied";
+  const isAdmin = isAllowedAdminUser(user.id, user.email);
+  if (!isAdmin) {
+    for (const row of matched) {
+      if (!row.owner_user_id) return "denied";
+      if (row.owner_user_id === user.id) continue;
+      const [memberBlocked, contactBlocked] = await Promise.all([
+        hasDatingBlockBetween(admin, user.id, row.owner_user_id),
+        hasDatingContactBlockBetween(admin, user.id, row.owner_user_id, { userBInstagramIds: [row.instagram_id] }),
+      ]);
+      if (memberBlocked || contactBlocked) return "denied";
+    }
+  }
+  return await canReadDatingCardPhoto(admin, objectPath, user.id, isAdmin) ? "allowed" : "denied";
 }
 
 async function canReadSwipeRelatedDatingCardPhoto(
@@ -713,6 +759,18 @@ async function handler(req: Request, params: Promise<{ slug: string[] }>) {
   const objectPath = decodeSegments(encodedPathParts);
   if (!bucket || !objectPath) return new Response("Bad Request", { status: 400 });
 
+  const openCardPhoto = (mode === "signed" && bucket === "dating-card-photos") ||
+    ((mode === "public-lite" || mode === "signed") && bucket === "dating-card-lite");
+  if (openCardPhoto) {
+    const visibility = await checkMemberOnlyOpenCardPhoto(req, objectPath).catch(() => "denied" as const);
+    if (visibility === "denied") return withoutPhotoCache(new Response("Not Found", { status: 404 }));
+    if (visibility === "allowed") {
+      // Private access must continue when the old public mirror is removed.
+      return withoutPhotoCache(await fetchSigned("dating-card-photos", objectPath, req.method, requestId,
+        new URL(req.url).searchParams.get("preview") === "1"));
+    }
+  }
+
   if (mode === "public-lite") {
     if (!PUBLIC_SIGNED_BUCKETS.has(bucket)) {
       return withoutPhotoCache(new Response("Not Found", { status: 404 }));
@@ -723,7 +781,9 @@ async function handler(req: Request, params: Promise<{ slug: string[] }>) {
         ? await fetchPublicLite(bucket, objectPath, req.method, requestId)
         : new Response("Not Found", { status: 404 }));
     }
-    return fetchPublicLite(bucket, objectPath, req.method, requestId);
+    const response = await fetchPublicLite(bucket, objectPath, req.method, requestId);
+    // A regular lite object can become member-only later.
+    return openCardPhoto ? withoutPhotoCache(response) : response;
   }
   if (mode === "admin-preview") {
     return withoutPhotoCache(await fetchAdminDatingCardPreview(req, bucket, objectPath, req.method, requestId));
@@ -738,7 +798,7 @@ async function handler(req: Request, params: Promise<{ slug: string[] }>) {
       : await fetchSigned(bucket, objectPath, req.method, requestId, new URL(req.url).searchParams.get("preview") === "1");
     // Authorization-dependent recordings must not be reused across account
     // sessions or after a card is hidden, including optimized GET and HEAD.
-    return SENSITIVE_SIGNED_BUCKETS.has(bucket) || isPermissionedLitePhoto(bucket, objectPath) ? withoutPhotoCache(response) : response;
+    return openCardPhoto || SENSITIVE_SIGNED_BUCKETS.has(bucket) || isPermissionedLitePhoto(bucket, objectPath) ? withoutPhotoCache(response) : response;
   }
   return new Response("Not Found", { status: 404 });
 }

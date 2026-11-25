@@ -34,7 +34,7 @@ const changes = {
       '        </div>\n\n        {swipeRefreshing && !swipeLoading ?',
     ],
     ['  unlimitedPass?: boolean;\n', ''],
-    ['          unlimitedPass: body.unlimitedPass === true,\n', ''],
+    ['        unlimitedPass: body.unlimitedPass === true,\n', ''],
     ['      if (action === "like" && swipeState.unlimitedPass && swipeState.remaining <= 0) return;\n', ''],
     [', swipeState.loggedIn, swipeState.unlimitedPass, swipeState.remaining, swipeSubmitting]', ', swipeState.loggedIn, swipeSubmitting]'],
     ['{swipeState.unlimitedPass ? `후보는 계속 볼 수 있어요. 좋아요는 하루 ${swipeState.limit}번까지예요.` : <>랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있어요.</>}', '랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있어요.'],

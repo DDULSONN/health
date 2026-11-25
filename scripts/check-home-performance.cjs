@@ -22,6 +22,10 @@ function callback(name, ctx) {
   const node = find(n => ts.isVariableDeclaration(n) && n.name.getText(tree) === name);
   return evaluate(node.initializer.arguments[0].getText(tree), ctx);
 }
+function declared(name, ctx) {
+  const node = find(n => ts.isFunctionDeclaration(n) && n.name?.getText(tree) === name);
+  return evaluate(node.getText(tree), ctx);
+}
 function evaluate(source, ctx) {
   const js = ts.transpileModule('(' + source + ');', {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
@@ -35,6 +39,7 @@ function fixture(tab = 'open_cards', response) {
   let now = 1_000_000;
   const ctx = {
     homeFeatureTab: tab, homeFeatureTabRef: { current: tab }, activeSexRef: { current: 'female' },
+    openCardsScope: 'member:fixture-viewer', openCardsScopeRef: { current: 'member:fixture-viewer' },
     secondaryCardsRequestRef: { current: 0 }, cardsAudience: { status: 'resolved', canSwitchSex: false, targetSex: 'female' },
     AbortController, Date: { now: () => now },
     window: { setInterval(fn, ms) { assert.equal(ms, 300000); timers.set(1, fn); return 1; }, clearInterval: id => timers.delete(id) },
@@ -74,6 +79,97 @@ for (const change of ['unmount', 'tab', 'sex', 'new-request']) test('late backgr
   if (change === 'new-request') f.ctx.secondaryCardsRequestRef.current++;
   pending.resolve({ ok: true, json: async () => ({ items: [{ id: 'stale' }], female: 'approved' }) });
   await flush(); await flush(); assert.equal(f.writes.length, 0); assert.equal(f.calls.length, 2); stop();
+});
+test('browser snapshot reads only the active scope and stores navigation metadata, never card payloads', () => {
+  const storage = new Map([
+    ['community-dating-open-cards:v3', JSON.stringify({ activeSex: 'male', males: [{ id: 'old-shared-candidate' }] })],
+  ]);
+  const scope = 'member:fixture-viewer', key = 'community-dating-open-cards:v4';
+  const ctx = { OPEN_CARDS_CACHE_KEY: key, window: { sessionStorage: {
+    getItem: name => storage.get(name) ?? null, setItem: (name, value) => storage.set(name, value),
+  } } };
+  ctx.readOpenCardsSnapshot = declared('readOpenCardsSnapshot', ctx);
+  const write = declared('writeOpenCardsSnapshot', ctx);
+  assert.equal(ctx.readOpenCardsSnapshot('guest'), null);
+  assert.equal(ctx.readOpenCardsSnapshot(scope), null);
+  write(scope, { activeSex: 'female', scrollY: 320, females: [{ id: 'private-candidate' }],
+    paidItems: [{ id: 'paid-candidate' }], restoreOnNextVisit: true, restoreRequestedAt: 19 });
+  assert.deepEqual(JSON.parse(storage.get(key + ':' + scope)), {
+    activeSex: 'female', scrollY: 320, restoreOnNextVisit: true, restoreRequestedAt: 19,
+  });
+  assert.equal(ctx.readOpenCardsSnapshot('guest'), null);
+  assert.equal(ctx.readOpenCardsSnapshot('member:next-viewer'), null);
+  storage.set(key + ':guest', JSON.stringify({ activeSex: 'male', males: [{ id: 'injected' }] }));
+  assert.equal(ctx.readOpenCardsSnapshot('guest').males, undefined);
+});
+test('known auth scope and response audience are required before cards enter the list', async () => {
+  const { ctx } = fixture();
+  const committed = [];
+  Object.assign(ctx, { initialCardsRequestRef: { current: 0 }, loadedOpenCardSexesRef: { current: {} },
+    swipeRequestIdRef: { current: { male: 0, female: 0 } }, swipeCacheRef: { current: {} }, refreshSecondary() {},
+    console: { error() {} } });
+  for (const name of ['Loading','CardsAudience','ViewerSexError','Males','Females','PaidItems','MoreViewMale','MoreViewFemale',
+    'ActiveSex','MaleHasMore','FemaleHasMore',
+    'MaleCursorCreatedAt','MaleCursorId','FemaleCursorCreatedAt','FemaleCursorId']) ctx['set' + name] = data => committed.push({ name, data });
+  ctx.acceptsOpenCardsAudience = declared('acceptsOpenCardsAudience', ctx);
+  const load = callback('loadInitial', ctx);
+  let calls = 0, next;
+  ctx.fetchBySex = async () => { calls++; return await next; };
+  ctx.openCardsScopeRef.current = null;
+  await load(); assert.equal(calls, 0);
+  ctx.openCardsScopeRef.current = 'guest';
+  next = { items: [{ id: 'private-card' }], audience: { status: 'resolved' } };
+  await load(); assert.equal(calls, 1);
+  assert.equal(committed.findLast(({ name }) => name === 'Females').data.length, 0);
+  next = { items: [{ id: 'public-card' }], audience: { status: 'guest', targetSex: 'female', canSwitchSex: true } };
+  await load(); assert.equal(calls, 2);
+  assert.equal(committed.findLast(({ name }) => name === 'Females').data[0].id, 'public-card');
+
+  const pending = deferred();
+  committed.length = 0;
+  ctx.openCardsScopeRef.current = 'member:old-viewer';
+  next = pending.promise;
+  const old = load();
+  ctx.openCardsScopeRef.current = 'member:new-viewer';
+  pending.resolve({ items: [{ id: 'old-account-card' }], audience: { status: 'resolved' } });
+  await old;
+  assert.ok(!committed.some(({ name }) => name === 'Females' || name === 'CardsAudience'));
+});
+test('a browser back-forward restore clears old member scope before forcing a fresh session', () => {
+  const handlers = new Map(), calls = [];
+  const ctx = {
+    supabase: { auth: {} }, createViewerSessionRecovery: () => ({ retry() {}, recoverOnReturn() {}, start() {}, stop() {} }),
+    viewerSessionRetryRef: { current: null }, queueMicrotask(fn) { fn(); },
+    openCardsScopeRef: { current: 'member:cached-viewer' }, setOpenCardsScope: scope => calls.push(scope),
+    oneOnOneHomeRequest: { cancel() {} }, oneOnOneRecommendationsRequest: { cancel() {} },
+    window: { addEventListener: (name, fn) => handlers.set(name, fn), removeEventListener: name => handlers.delete(name),
+      location: { reload: () => calls.push('reload') } },
+    document: { addEventListener() {}, removeEventListener() {} },
+  };
+  const stop = effect('createViewerSessionRecovery', ctx);
+  handlers.get('pageshow')({ persisted: false });
+  assert.deepEqual(calls, []);
+  handlers.get('pageshow')({ persisted: true });
+  assert.equal(ctx.openCardsScopeRef.current, null);
+  assert.deepEqual(calls, [null, 'reload']);
+  stop();
+  assert.ok(!handlers.has('pageshow'));
+});
+test('late quick-match submission cannot display the prior member match or release the next account lock', async () => {
+  const pending = deferred(), writes = [];
+  const { ctx } = fixture();
+  Object.assign(ctx, {
+    activeSex: 'female', swipeSubmitting: false,
+    swipeState: { candidate: { user_id: 'candidate', card_id: 'card' }, canSwipe: true, loggedIn: true },
+    fetch: () => pending.promise,
+    setSwipeSubmitting: value => writes.push(value), setSwipeMessage: message => writes.push(message),
+    loadSwipe() { assert.fail('must not reload the previous member result'); },
+  });
+  const submit = callback('handleSwipe', ctx)('like');
+  ctx.openCardsScopeRef.current = 'member:other-viewer';
+  pending.resolve({ ok: true, json: async () => ({ match: { other_instagram_id: 'private-old-match' } }) });
+  await submit;
+  assert.deepEqual(writes, [true, '']);
 });
 test('tab change while JSON is decoding cannot commit old counters or cards', async () => {
   const pending = deferred(), f = fixture('open_cards', () => ({ ok: true, json: () => pending.promise }));

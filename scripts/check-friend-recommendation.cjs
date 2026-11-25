@@ -125,6 +125,78 @@ test('open-card link does not query or require a recipient one-on-one profile',a
 });
 test('guest projection has no identity, introduction, contact, storage path or exact region',async()=>{const f=fixture(),link=await share(f);f.state.viewer=null;const route=f.load('@/app/api/dating/friend-shares/[token]/route');const response=await route.GET(f.request('/'),{params:Promise.resolve({token:link.token})});assert.equal(response.status,200);const data=await response.json();assert.equal(data.access,'guest');assert.deepEqual(Object.keys(data.items[0]).sort(),['id','kind','ageBand','area','photos'].sort());assert.equal(data.items[0].area,'서울');assert.doesNotMatch(JSON.stringify(data),/추천회원|강남|profile.jpg|private_handle|산책|phone_e164|user_id/);assert.match(response.headers.get('cache-control'),/no-store/);});
 test('only verified member sees detail; unverified member still gets guest fields',async()=>{const f=fixture(),link=await share(f),s=f.load('@/lib/friend-recommendation-server');let page=await s.readFriendLink(f.admin,link.token,id(3));assert.equal(page.detailed,true);assert.equal(s.projectFriendItem(link.token,page.items[0].item,page.items[0].card,true).detail.name,'추천회원');f.tables.profiles[2].phone_verified=false;page=await s.readFriendLink(f.admin,link.token,id(3));assert.equal(page.detailed,false);});
+
+test('member-only Open Card stays inside authenticated friend views, including direct legacy photo URLs', async()=>{
+  const f=fixture(),link=await share(f);
+  f.tables.dating_cards[0].members_only=true;
+  const lookup=f.load('@/app/api/dating/friend-shares/[token]/route');
+  const photo=f.load('@/app/api/dating/friend-shares/[token]/photos/[itemId]/[index]/route');
+  const read=()=>lookup.GET(f.request('/'),{params:Promise.resolve({token:link.token})});
+  const view=()=>photo.GET(f.request('/'),{params:Promise.resolve({token:link.token,itemId:link.items[0].id,index:'0'})});
+  let downloads=0;
+  const storage=f.admin.storage.from;
+  f.admin.storage.from=bucket=>({download:async path=>{downloads++;return storage(bucket).download(path);}});
+
+  f.state.viewer=null;
+  const guest=await read();assert.equal(guest.status,410);
+  const refusal=await guest.json();assert.deepEqual(Object.keys(refusal),['error']);
+  assert.match(guest.headers.get('cache-control'),/no-store/);
+  assert.equal((await view()).status,410);assert.equal(downloads,0);
+
+  f.state.viewer=id(3);
+  const member=await read();assert.equal(member.status,200);
+  const data=await member.json();assert.equal(data.access,'member');assert.equal(data.items[0].detail.name,'추천회원');
+  const prefix='/api/dating/friend-shares/'+link.token+'/photos/';
+  assert.ok(data.items[0].photos[0].startsWith(prefix));
+  assert.doesNotMatch(JSON.stringify(data),/public-lite|profile.jpg|members_only/);
+  const privatePhoto=await view();assert.equal(privatePhoto.status,200);assert.match(privatePhoto.headers.get('cache-control'),/no-store/);
+
+  f.tables.profiles[2].phone_verified=false;
+  const unverified=await read();assert.equal(unverified.status,200);
+  const partial=await unverified.json();assert.equal(partial.access,'verify');assert.equal(partial.items[0].detail,undefined);
+  const masked=await view();assert.equal(masked.status,200);
+  assert.ok((await require('sharp')(Buffer.from(await masked.arrayBuffer())).metadata()).width<=120);
+
+  f.tables.profiles[2].phone_verified=true;
+  f.tables.dating_user_blocks.push({id:id(81),blocker_user_id:id(2),blocked_user_id:id(3)});
+  assert.equal((await read()).status,410);assert.equal((await view()).status,410);
+  assert.equal(downloads,2);
+});
+
+test('an existing mixed share suppresses only its member-only Open Card for a guest', async()=>{
+  const f=fixture(),service=f.load('@/lib/friend-recommendation-server');
+  f.tables.dating_cards.push({...f.tables.dating_cards[0],id:id(13),owner_user_id:id(4),display_nickname:'공개 후보',
+    photo_paths:[`cards/${id(4)}/public.jpg`],instagram_id:null,members_only:false});
+  const link=await service.createFriendLink(f.admin,id(1),id(90),'fit',[
+    {kind:'open_card',cardId:id(12)},{kind:'open_card',cardId:id(13)},
+  ]);
+  const lookup=f.load('@/app/api/dating/friend-shares/[token]/route');
+  const read=()=>lookup.GET(f.request('/'),{params:Promise.resolve({token:link.token})});
+  f.state.viewer=null;
+  assert.equal((await (await read()).json()).items.length,2);
+  f.tables.dating_cards[0].members_only=true;
+  const guest=await read();assert.equal(guest.status,200);
+  assert.deepEqual((await guest.json()).items.map(item=>item.id),[link.items[1].id]);
+  f.state.viewer=id(3);
+  assert.deepEqual((await (await read()).json()).items.map(item=>item.id),link.items.map(item=>item.id));
+});
+
+test('member-only switch during guest image processing refuses the stale preview', async()=>{
+  const f=fixture(),link=await share(f);
+  const photo=f.load('@/app/api/dating/friend-shares/[token]/photos/[itemId]/[index]/route');
+  const storage=f.admin.storage.from;
+  let downloads=0;
+  f.admin.storage.from=bucket=>({download:async path=>{
+    downloads++;const image=await storage(bucket).download(path);
+    f.tables.dating_cards[0].members_only=true;
+    return image;
+  }});
+  f.state.viewer=null;
+  const guest=await photo.GET(f.request('/'),{params:Promise.resolve({token:link.token,itemId:link.items[0].id,index:'0'})});
+  assert.equal(downloads,1);assert.equal(guest.status,410);assert.doesNotMatch(guest.headers.get('content-type'),/^image\//);
+  assert.match(guest.headers.get('cache-control'),/no-store/);
+});
+
 for(const mode of ['off','off-on','revoked','expired','deleted-profile','banned','deleted-auth','auth-ban','internal','hidden-card','expired-card','policy-off'])test('link gate: '+mode,async()=>{const f=fixture(),link=await share(f),s=f.load('@/lib/friend-recommendation-server');
   if(mode.startsWith('off')){await f.admin.rpc('set_dating_friend_share_preference',{p_user:id(2),p_enabled:false});if(mode==='off-on')await f.admin.rpc('set_dating_friend_share_preference',{p_user:id(2),p_enabled:true});}
   if(mode==='revoked')f.tables.dating_friend_shares[0].revoked_at=new Date().toISOString();if(mode==='expired')f.tables.dating_friend_shares[0].expires_at='2020-01-01';

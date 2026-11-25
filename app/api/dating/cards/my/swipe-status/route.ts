@@ -51,6 +51,7 @@ type CardRow = {
   photo_paths?: string[] | null;
   blur_paths?: string[] | null;
   blur_thumb_path?: string | null;
+  members_only?: boolean | null;
 };
 
 type ProfileRow = {
@@ -86,7 +87,7 @@ async function loadCardsWithFallback(admin: ReturnType<typeof createAdminClient>
   const withIntroRes = await admin
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, intro_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, intro_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path, members_only"
     )
     .in("id", cardIds);
 
@@ -101,7 +102,7 @@ async function loadCardsWithFallback(admin: ReturnType<typeof createAdminClient>
   const fallbackRes = await admin
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path, members_only"
     )
     .in("id", cardIds);
 

@@ -15,7 +15,7 @@ function match(row,filter){if(filter.startsWith('and('))return split(filter.slic
 function fixture(){
   const tables={profiles:[1,2,3,4].map(n=>({user_id:id(n),nickname:['보낸회원','추천회원','받은친구','관리자'][n-1],phone_e164:`+82101234000${n}`,phone_verified:true,is_banned:false})),
     dating_friend_share_policy:[{id:true,enabled:true}],dating_friend_share_preferences:[],dating_friend_shares:[],
-    dating_cards:[{id:id(12),owner_user_id:id(2),display_nickname:'추천회원',sex:'male',age:31,region:'서울 강남구',height_cm:180,job:'개발자',strengths_text:'산책을 좋아해요',ideal_type:'대화가 편한 분',photo_visibility:'public',photo_paths:[`cards/${id(2)}/profile.jpg`],status:'public',expires_at:new Date(Date.now()+86400000).toISOString(),instagram_id:'private_handle'}],
+    dating_cards:[{id:id(12),owner_user_id:id(2),display_nickname:'추천회원',sex:'male',age:31,region:'서울 강남구',height_cm:180,job:'개발자',strengths_text:'산책을 좋아해요',ideal_type:'대화가 편한 분',photo_visibility:'public',photo_paths:[`cards/${id(2)}/profile.jpg`],status:'public',expires_at:new Date(Date.now()+86400000).toISOString(),instagram_id:'private_handle',members_only:false}],
     dating_paid_cards:[],dating_1on1_cards:[],dating_user_blocks:[],dating_1on1_admin_user_blocks:[],dating_1on1_phone_blocks:[],dating_contact_blocks:[],dating_1on1_candidate_favorites:[]};
   const state={viewer:id(1),admin:false,failTable:null,authMissing:new Set(),authBanned:new Set(),internal:new Set(),calls:[],matchCalls:0};
   function from(table){let filters=[],fields='*',limit=1000,single=false,order=[],update=null;const query={

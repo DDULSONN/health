@@ -2,6 +2,7 @@
 // No network or live storage: execute actual helper/route against bounded mocks.
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),ts=require('typescript');
 const root=path.resolve(__dirname,'..');
+const owner='00000000-0000-4000-8000-000000000101';
 function load(file,deps={},globals={}){
   const exports={},js=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   new Function('require','exports',...Object.keys(globals),js)(name=>{if(name in deps)return deps[name];if(name.startsWith('@/'))return load(name.slice(2)+'.ts',deps,globals);throw Error('Unexpected dependency '+name);},exports,...Object.values(globals));return exports;
@@ -24,8 +25,24 @@ for(const bodyStage of [false,true])test('timeout covers headers AND response bo
   const promise=f.run();await Promise.resolve();f.expire();await assert.rejects(promise,e=>e.diagnostic.reason==='timeout');assert.equal(f.timers.size,0);
 });
 function server(options={}){
-  const writes=[],kv=[],logs=[];
-  const admin={storage:{from:bucket=>({upload:async(object,payload,config)=>{
+  const writes=[],kv=[],logs=[],mirrorChecks=[];
+  const admin={from:table=>{
+    const filters=[];
+    const query={
+      select:field=>{assert.equal(field,'id');return query;},
+      eq:(key,value)=>{filters.push([key,value]);return query;},
+      limit:limit=>{assert.equal(limit,1);return query;},
+      abortSignal:async signal=>{
+        assert.ok(signal instanceof AbortSignal);assert.equal(table,'dating_cards');
+        assert.deepEqual(filters,[['owner_user_id',owner],['members_only',true]]);
+        mirrorChecks.push(owner);
+        if(options.mirrorCheckThrow)throw Error('unavailable');
+        if(options.mirrorCheckError)return {data:null,error:{code:'PGRST204'}};
+        return {data:options.memberOnly?[{id:'marked'}]:[],error:null};
+      },
+    };
+    return query;
+  },storage:{from:bucket=>({download:async()=>({data:new Blob(['fixture']),error:null}),upload:async(object,payload,config)=>{
     writes.push({bucket,object,config});
     if(options.primaryFailure&&bucket==='dating-card-photos'&&!object.includes('/thumb/'))return {error:{message:'storage failure'}};
     if(options.publicThrow&&bucket==='dating-card-lite')throw Error('mirror failed');
@@ -33,19 +50,41 @@ function server(options={}){
     return {error:null};
   }})}};
   const sharp={default:()=>{const chain={rotate:()=>chain,resize:()=>chain,blur:()=>chain,webp:()=>chain,toBuffer:async()=>{if(options.processingThrow)throw Error('image codec failed');return Buffer.from('webp');}};return chain;}};
-  const api=load('app/api/dating/cards/upload-card/route.ts',{
-    '@/lib/supabase/server':{createAdminClient:()=>admin},'@/lib/supabase/request':{getRequestAuthContext:async()=>({user:options.signedOut?null:{id:'fixture-owner'}})},
+  const deps={
+    '@/lib/supabase/server':{createAdminClient:()=>admin},'@/lib/supabase/request':{getRequestAuthContext:async()=>({user:options.signedOut?null:{id:owner}})},
     '@/lib/request-origin':{ensureAllowedMutationOrigin:()=>options.badOrigin?new Response(null,{status:403}):null},
     '@/lib/edge-kv':{kvSetString:async(...args)=>{kv.push(args);if(options.kvThrow)throw Error('kv unavailable');}},
     'next/server':{NextResponse:{json:(body,options)=>new Response(JSON.stringify(body),options)}},sharp,
-  },{console:{error:()=>{},warn:(...args)=>logs.push(args)},process:{env:{SUPABASE_SERVICE_ROLE_KEY:'fake-only'}}});
-  return {writes,kv,logs,post:kind=>{const form=new FormData();form.set('kind',kind);form.set('asset_id','fixture-asset');form.set('index','0');form.set('file',new File(['fixture'],'photo.webp',{type:'image/webp'}));return api.POST(new Request('https://fixture.invalid/api/dating/cards/upload-card',{method:'POST',body:form}));}};
+  },globals={console:{error:()=>{},warn:(...args)=>logs.push(args)},process:{env:{SUPABASE_SERVICE_ROLE_KEY:'fake-only'}}};
+  const api=load('app/api/dating/cards/upload-card/route.ts',deps,globals);
+  const thumb=load('lib/dating-blur-thumb.ts',deps,globals);
+  return {writes,kv,logs,mirrorChecks,thumb:(raw='cards/'+owner+'/raw/fixture-asset-0.webp')=>thumb.ensureBlurThumbFromRaw(admin,raw),
+    post:kind=>{const form=new FormData();form.set('kind',kind);form.set('asset_id','fixture-asset');form.set('index','0');form.set('file',new File(['fixture'],'photo.webp',{type:'image/webp'}));return api.POST(new Request('https://fixture.invalid/api/dating/cards/upload-card',{method:'POST',body:form}));}};
 }
 for(const kind of ['raw','lite','blur'])test('valid '+kind+' remains owner scoped with matching WebP extension',async()=>{
-  const f=server(),r=await f.post(kind);assert.equal(r.status,201);const body=await r.json();assert.equal(body.path,'cards/fixture-owner/'+kind+'/fixture-asset-0.webp');assert.equal(f.writes[0].config.upsert,false);
+  const f=server(),r=await f.post(kind);assert.equal(r.status,201);const body=await r.json();assert.equal(body.path,'cards/'+owner+'/'+kind+'/fixture-asset-0.webp');assert.equal(f.writes[0].config.upsert,false);
+  assert.equal(f.mirrorChecks.length,kind==='blur'?1:0,'raw and lite never need a public-mirror lookup');
   if(kind==='raw')assert.equal(f.writes.length,1);
   if(kind==='lite')assert.deepEqual(f.writes.map(write=>write.bucket),['dating-card-photos','dating-card-photos']);
   if(kind==='blur')assert.deepEqual(f.writes.map(write=>write.bucket),['dating-card-photos','dating-card-lite']);
+});
+for(const options of [{memberOnly:true},{mirrorCheckError:true},{mirrorCheckThrow:true}])test('blur upload and regeneration remain private and usable '+JSON.stringify(options),async()=>{
+  const f=server(options),r=await f.post('blur');
+  assert.equal(r.status,201);
+  assert.equal((await r.json()).path,'cards/'+owner+'/blur/fixture-asset-0.webp');
+  assert.equal(await f.thumb(),'cards/'+owner+'/blur/fixture-asset-0.webp');
+  assert.deepEqual(f.writes.map(write=>write.bucket),['dating-card-photos','dating-card-photos']);
+  assert.deepEqual(f.mirrorChecks,[owner,owner]);assert.deepEqual(f.kv,[]);
+});
+test('regeneration preserves ordinary public mirrors but refuses unknown legacy ownership',async()=>{
+  const f=server();
+  assert.equal(await f.thumb(),'cards/'+owner+'/blur/fixture-asset-0.webp');
+  assert.deepEqual(f.writes.map(write=>write.bucket),['dating-card-photos','dating-card-lite']);
+  assert.equal(f.kv.length,1);
+  const legacy=server();
+  assert.equal(await legacy.thumb('legacy/raw/a.jpg'),'legacy/blur/a.webp');
+  assert.deepEqual(legacy.writes.map(write=>write.bucket),['dating-card-photos']);
+  assert.deepEqual(legacy.mirrorChecks,[]);assert.deepEqual(legacy.kv,[]);
 });
 for(const [kind,options] of [['lite',{processingThrow:true}],['lite',{thumbUploadThrow:true}],['blur',{publicThrow:true}],['blur',{kvThrow:true}]])test('optional thumbnail/mirror failure cannot undo private '+kind+' upload '+JSON.stringify(options),async()=>{const f=server(options),r=await f.post(kind);assert.equal(r.status,201);assert.ok((await r.json()).path.includes('/'+kind+'/'));assert.ok(f.logs.length);});
 test('blur processing is mandatory, never falls back to public raw image',async()=>{const f=server({processingThrow:true});assert.equal((await f.post('blur')).status,500);assert.equal(f.writes.length,0);});

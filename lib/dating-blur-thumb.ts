@@ -2,6 +2,7 @@ import sharp from "sharp";
 import { kvSetString } from "@/lib/edge-kv";
 import { extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { createAdminClient } from "@/lib/supabase/server";
+import { mayMirrorOpenCardPhoto, openCardRawPhotoOwner } from "@/lib/dating-open-card-public-mirror";
 
 const CARD_BUCKET = "dating-card-photos";
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
@@ -101,7 +102,10 @@ export async function ensureBlurThumbFromRaw(
     .toBuffer();
 
   const privateOk = await uploadWithEnsureBucket(adminClient, CARD_BUCKET, blurPath, blurBytes, "3600");
-  const publicOk = await uploadWithEnsureBucket(adminClient, LITE_PUBLIC_BUCKET, blurPath, blurBytes, "31536000");
+  // Paid paths sometimes reuse an OpenCard's photo. Apply the authenticated
+  // uploader's same owner policy before re-creating any public derivative.
+  const publicOk = await mayMirrorOpenCardPhoto(adminClient, openCardRawPhotoOwner(rawPath)) &&
+    await uploadWithEnsureBucket(adminClient, LITE_PUBLIC_BUCKET, blurPath, blurBytes, "31536000");
 
   if (publicOk) {
     await kvSetString(`litepublic:${blurPath}`, "1", 365 * 24 * 60 * 60);

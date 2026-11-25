@@ -127,7 +127,8 @@ async function createSignedImageUrls(
   blurThumbPath: unknown,
   photoVisibility: "blur" | "public",
   requestId: string,
-  counters: SignCounters
+  counters: SignCounters,
+  membersOnly = false
 ) {
   if (photoVisibility === "public") {
     const rawPaths = Array.isArray(photoPaths)
@@ -148,7 +149,7 @@ async function createSignedImageUrls(
       continue;
     }
     const blurWebpPath = toBlurWebpPath(originalBlurPath);
-    const blurPublicUrl = await getLitePublicUrlIfAvailable(adminClient, blurWebpPath);
+    const blurPublicUrl = membersOnly ? "" : await getLitePublicUrlIfAvailable(adminClient, blurWebpPath);
     if (blurPublicUrl) blurUrls.push(blurPublicUrl);
   }
   if (blurUrls.length > 0) return blurUrls;
@@ -156,7 +157,7 @@ async function createSignedImageUrls(
   const normalizedBlurThumbPath = normalizeDatingPhotoPath(blurThumbPath);
   if (isDatingCardBlurPath(normalizedBlurThumbPath, ownerId)) {
     const blurThumbWebpPath = toBlurWebpPath(normalizedBlurThumbPath);
-    const publicThumb = await getLitePublicUrlIfAvailable(adminClient, blurThumbWebpPath);
+    const publicThumb = membersOnly ? "" : await getLitePublicUrlIfAvailable(adminClient, blurThumbWebpPath);
     if (publicThumb) {
       if (photoVisibility === "blur") return [publicThumb, publicThumb];
       return [publicThumb];
@@ -206,7 +207,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let { data, error } = await adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status, members_only"
     )
     .eq("id", id)
     .single();
@@ -215,7 +216,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const legacyRes = await adminClient
       .from("dating_cards")
       .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, instagram_id, expires_at, created_at, status"
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, instagram_id, expires_at, created_at, status, members_only"
       )
       .eq("id", id)
       .single();
@@ -283,7 +284,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     data.blur_thumb_path,
     photoVisibility,
     requestId,
-    counters
+    counters,
+    data.members_only === true
   );
 
   console.log(

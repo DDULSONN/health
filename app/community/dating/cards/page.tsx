@@ -35,7 +35,7 @@ import {
   SWIPE_PREMIUM_PRICE_KRW,
 } from "@/lib/dating-swipe";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
-import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-cache";
+import { cachePaidCardDetail } from "@/lib/dating-detail-cache";
 import { createClient } from "@/lib/supabase/client";
 import { createLatestRequest } from "@/lib/latest-request";
 import { createViewerSessionRecovery, VIEWER_SESSION_ERROR } from "@/lib/viewer-session-recovery";
@@ -237,7 +237,7 @@ type ReelsDatingListing = {
 };
 
 const PAGE_SIZE = 20;
-const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v3";
+const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v4";
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const ONE_ON_ONE_WAIT_NOTICE = /^(?:1\s*대\s*1|1\s*:\s*1)\s*매칭은\s*대기가\s*없어요[!！.]?$/u;
 const contactHomeDismissKey = (viewerId: string, matchId: string) => `gymtool:contact-home-dismiss:${viewerId}:${matchId}`;
@@ -257,20 +257,9 @@ function parseHomeFeatureTab(value: string | null): HomeFeatureTab | null {
   return HOME_FEATURE_TABS.some((tab) => tab.key === value) ? (value as HomeFeatureTab) : null;
 }
 
+type OpenCardsScope = "guest" | `member:${string}`;
 type OpenCardsSnapshot = {
   activeSex: "male" | "female";
-  males: PublicCard[];
-  females: PublicCard[];
-  maleCursorCreatedAt: string | null;
-  maleCursorId: string | null;
-  femaleCursorCreatedAt: string | null;
-  femaleCursorId: string | null;
-  maleHasMore: boolean;
-  femaleHasMore: boolean;
-  queueStats: QueueStats | null;
-  paidItems: PaidCard[];
-  moreViewMale: PublicCard[];
-  moreViewFemale: PublicCard[];
   scrollY?: number;
   restoreOnNextVisit?: boolean;
   restoreRequestedAt?: number;
@@ -356,25 +345,30 @@ function openCardBorderClass(card: { sex: "male" | "female"; total_3lift: number
     : "border-black/5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]";
 }
 
-function readOpenCardsSnapshot(): OpenCardsSnapshot | null {
+function readOpenCardsSnapshot(scope: OpenCardsScope): OpenCardsSnapshot | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.sessionStorage.getItem(OPEN_CARDS_CACHE_KEY);
+    const raw = window.sessionStorage.getItem(`${OPEN_CARDS_CACHE_KEY}:${scope}`);
     if (!raw) return null;
-    return JSON.parse(raw) as OpenCardsSnapshot;
+    const value = JSON.parse(raw) as Partial<OpenCardsSnapshot> | null;
+    if (!value || (value.activeSex !== "male" && value.activeSex !== "female")) return null;
+    return { activeSex: value.activeSex, scrollY: value.scrollY,
+      restoreOnNextVisit: value.restoreOnNextVisit === true, restoreRequestedAt: value.restoreRequestedAt };
   } catch {
     return null;
   }
 }
 
-function writeOpenCardsSnapshot(snapshot: OpenCardsSnapshot) {
+function writeOpenCardsSnapshot(scope: OpenCardsScope, snapshot: OpenCardsSnapshot) {
   if (typeof window === "undefined") return;
   try {
-    const current = readOpenCardsSnapshot();
+    const current = readOpenCardsSnapshot(scope);
     window.sessionStorage.setItem(
-      OPEN_CARDS_CACHE_KEY,
+      `${OPEN_CARDS_CACHE_KEY}:${scope}`,
       JSON.stringify({
-        ...snapshot,
+        // Persist navigation only: a card may become restricted while this tab is away.
+        activeSex: snapshot.activeSex,
+        scrollY: snapshot.scrollY,
         restoreOnNextVisit:
           "restoreOnNextVisit" in snapshot ? snapshot.restoreOnNextVisit : (current?.restoreOnNextVisit ?? false),
         restoreRequestedAt:
@@ -1572,6 +1566,10 @@ async function fetchBySex(
   return (await res.json()) as OpenCardsListResponse;
 }
 
+function acceptsOpenCardsAudience(scope: OpenCardsScope, audience: OpenCardsAudience | undefined) {
+  return Boolean(audience) && (scope === "guest" ? audience?.status === "guest" : audience?.status !== "guest");
+}
+
 export default function OpenCardsPage() {
   return <Suspense fallback={<p className="p-6 text-sm text-neutral-500">불러오는 중...</p>}><OpenCardsContent /></Suspense>;
 }
@@ -1581,6 +1579,8 @@ function OpenCardsContent() {
   const supabase = useMemo(() => createClient(), []);
   const [restoredSnapshot, setRestoredSnapshot] = useState<OpenCardsSnapshot | null>(null);
   const [snapshotReady, setSnapshotReady] = useState(false);
+  const [openCardsScope, setOpenCardsScope] = useState<OpenCardsScope | null>(null);
+  const openCardsScopeRef = useRef<OpenCardsScope | null>(null);
   const [activeSex, setActiveSex] = useState<DatingSex>("female");
   const [cardsAudience, setCardsAudience] = useState<OpenCardsAudience | null>(null);
   const [viewerSexSaving, setViewerSexSaving] = useState(false);
@@ -1606,8 +1606,8 @@ function OpenCardsContent() {
     male: "none",
     female: "none",
   });
-  const [moreViewMale, setMoreViewMale] = useState<PublicCard[]>([]);
-  const [moreViewFemale, setMoreViewFemale] = useState<PublicCard[]>([]);
+  const [, setMoreViewMale] = useState<PublicCard[]>([]);
+  const [, setMoreViewFemale] = useState<PublicCard[]>([]);
   const [tick, setTick] = useState(0);
   const [swipeLoading, setSwipeLoading] = useState(true);
   const [swipeRefreshing, setSwipeRefreshing] = useState(false);
@@ -1752,27 +1752,15 @@ function OpenCardsContent() {
   }, [activeSex]);
 
   useEffect(() => {
-    const snapshot = readOpenCardsSnapshot();
+    if (!openCardsScope) return;
+    const snapshot = readOpenCardsSnapshot(openCardsScope);
     if (snapshot) {
       setRestoredSnapshot(snapshot);
       setActiveSex(snapshot.activeSex);
-      setMales(snapshot.males);
-      setFemales(snapshot.females);
-      setMaleCursorCreatedAt(snapshot.maleCursorCreatedAt);
-      setMaleCursorId(snapshot.maleCursorId);
-      setFemaleCursorCreatedAt(snapshot.femaleCursorCreatedAt);
-      setFemaleCursorId(snapshot.femaleCursorId);
-      setMaleHasMore(snapshot.maleHasMore);
-      setFemaleHasMore(snapshot.femaleHasMore);
-      setQueueStats(snapshot.queueStats);
-      setPaidItems(snapshot.paidItems);
-      setMoreViewMale(snapshot.moreViewMale);
-      setMoreViewFemale(snapshot.moreViewFemale);
-      loadedOpenCardSexesRef.current.male = snapshot.males.length > 0;
-      loadedOpenCardSexesRef.current.female = snapshot.females.length > 0;
+      activeSexRef.current = snapshot.activeSex;
     }
     setSnapshotReady(true);
-  }, []);
+  }, [openCardsScope]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
@@ -1883,6 +1871,35 @@ function OpenCardsContent() {
     const recovery = createViewerSessionRecovery({
       auth: supabase.auth,
       onState: (state) => {
+        const nextScope: OpenCardsScope | null = state.status === "authenticated" && state.userId
+          ? `member:${state.userId}` : state.status === "guest" ? "guest" : null;
+        if (openCardsScopeRef.current !== nextScope) {
+          // Invalidate in-flight card reads before the old account can publish
+          // a late response or save its UI under the next account's scope.
+          openCardsScopeRef.current = nextScope;
+          initialCardsRequestRef.current += 1;
+          secondaryCardsRequestRef.current += 1;
+          swipeRequestIdRef.current.male += 1;
+          swipeRequestIdRef.current.female += 1;
+          swipeCacheRef.current = {};
+          initialCardsStartedRef.current = false;
+          loadedOpenCardSexesRef.current = { male: false, female: false };
+          setOpenCardsScope(nextScope);
+          setSnapshotReady(false);
+          setRestoredSnapshot(null);
+          setCardsAudience(null);
+          setLoading(true);
+          activeSexRef.current = "female";
+          setActiveSex("female");
+          setMales([]); setFemales([]);
+          setMaleCursorCreatedAt(null); setMaleCursorId(null);
+          setFemaleCursorCreatedAt(null); setFemaleCursorId(null);
+          setMaleHasMore(true); setFemaleHasMore(true);
+          setPaidItems([]); setMoreViewMale([]); setMoreViewFemale([]);
+          setQueueStats(null);
+          setSwipeState({ loggedIn: false, canSwipe: false, remaining: 0, limit: 7, candidate: null, reason: null });
+          setSwipeMessage(""); setSwipeLoading(true); setSwipeRefreshing(false); setSwipeSubmitting(false);
+        }
         oneOnOneReplaceIdentityRef.current = state.status === "authenticated" ? state.userId : null;
         setViewerLoggedIn(state.status === "authenticated");
         setDraftUserId(state.userId);
@@ -1908,10 +1925,18 @@ function OpenCardsContent() {
     });
     viewerSessionRetryRef.current = recovery.retry;
     const onVisible = () => { if (document.visibilityState === "visible") recovery.recoverOnReturn(); };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      // A browser-restored page may predate a sign-out or switch in another tab.
+      openCardsScopeRef.current = null;
+      setOpenCardsScope(null);
+      window.location.reload();
+    };
     // Defer Auth reads outside React setup and Auth event callbacks.
     queueMicrotask(recovery.start);
     window.addEventListener("focus", recovery.recoverOnReturn);
     window.addEventListener("online", recovery.recoverOnReturn);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       recovery.stop();
@@ -1920,6 +1945,7 @@ function OpenCardsContent() {
       viewerSessionRetryRef.current = null;
       window.removeEventListener("focus", recovery.recoverOnReturn);
       window.removeEventListener("online", recovery.recoverOnReturn);
+      window.removeEventListener("pageshow", onPageShow);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [supabase, oneOnOneHomeRequest, oneOnOneRecommendationsRequest]);
@@ -2180,97 +2206,52 @@ function OpenCardsContent() {
   };
 
   useEffect(() => {
-    writeOpenCardsSnapshot({
-      activeSex,
-      males,
-      females,
-      maleCursorCreatedAt,
-      maleCursorId,
-      femaleCursorCreatedAt,
-      femaleCursorId,
-      maleHasMore,
-      femaleHasMore,
-      queueStats,
-      paidItems,
-      moreViewMale,
-      moreViewFemale,
-      scrollY: typeof window !== "undefined" ? window.scrollY : 0,
-    });
-  }, [
-    activeSex,
-    females,
-    femaleCursorCreatedAt,
-    femaleCursorId,
-    femaleHasMore,
-    males,
-    maleCursorCreatedAt,
-    maleCursorId,
-    maleHasMore,
-    moreViewFemale,
-    moreViewMale,
-    paidItems,
-    queueStats,
-  ]);
+    if (!snapshotReady || !openCardsScope || openCardsScopeRef.current !== openCardsScope) return;
+    writeOpenCardsSnapshot(openCardsScope, { activeSex, scrollY: window.scrollY });
+  }, [activeSex, openCardsScope, snapshotReady]);
 
   useEffect(() => {
-    if (!restoredSnapshot?.restoreOnNextVisit) return;
+    if (loading || !openCardsScope || openCardsScopeRef.current !== openCardsScope || !restoredSnapshot?.restoreOnNextVisit) return;
     const requestedAt = Number(restoredSnapshot.restoreRequestedAt ?? 0);
     const restoreIsFresh = requestedAt > 0 && Date.now() - requestedAt <= 30 * 60 * 1000;
-    writeOpenCardsSnapshot({
+    writeOpenCardsSnapshot(openCardsScope, {
       ...restoredSnapshot,
       restoreOnNextVisit: false,
       restoreRequestedAt: undefined,
     });
     if (!restoreIsFresh) return;
     const restore = window.requestAnimationFrame(() => {
-      window.scrollTo({ top: restoredSnapshot.scrollY ?? 0, behavior: "auto" });
+      if (openCardsScopeRef.current === openCardsScope) window.scrollTo({ top: restoredSnapshot.scrollY ?? 0, behavior: "auto" });
     });
     return () => window.cancelAnimationFrame(restore);
-  }, [restoredSnapshot]);
+  }, [loading, openCardsScope, restoredSnapshot]);
 
   useEffect(() => {
+    if (!snapshotReady || !openCardsScope) return;
     const saveSnapshot = () => {
-      writeOpenCardsSnapshot({
-        activeSex,
-        males,
-        females,
-        maleCursorCreatedAt,
-        maleCursorId,
-        femaleCursorCreatedAt,
-        femaleCursorId,
-        maleHasMore,
-        femaleHasMore,
-        queueStats,
-        paidItems,
-        moreViewMale,
-        moreViewFemale,
-        scrollY: window.scrollY,
-      });
+      if (openCardsScopeRef.current !== openCardsScope) return;
+      writeOpenCardsSnapshot(openCardsScope, { activeSex, scrollY: window.scrollY });
     };
 
     window.addEventListener("pagehide", saveSnapshot);
     return () => window.removeEventListener("pagehide", saveSnapshot);
-  }, [
-    activeSex,
-    femaleCursorCreatedAt,
-    femaleCursorId,
-    femaleHasMore,
-    females,
-    maleCursorCreatedAt,
-    maleCursorId,
-    maleHasMore,
-    males,
-    moreViewFemale,
-    moreViewMale,
-    paidItems,
-    queueStats,
-  ]);
+  }, [activeSex, openCardsScope, snapshotReady]);
+
+  const rememberOpenCardsScroll = useCallback(() => {
+    const scope = openCardsScopeRef.current;
+    if (!scope) return;
+    writeOpenCardsSnapshot(scope, {
+      activeSex: activeSexRef.current, scrollY: window.scrollY,
+      restoreOnNextVisit: true, restoreRequestedAt: Date.now(),
+    });
+  }, []);
 
   const refreshSecondary = useCallback(async (preferredSex?: DatingSex) => {
-    if (homeFeatureTabRef.current !== "open_cards") return;
+    const scope = openCardsScopeRef.current;
+    if (!scope || homeFeatureTabRef.current !== "open_cards") return;
     const visibleSex = preferredSex ?? activeSexRef.current;
     const requestId = ++secondaryCardsRequestRef.current;
-    const isCurrent = () => homeFeatureTabRef.current === "open_cards" && requestId === secondaryCardsRequestRef.current;
+    const isCurrent = () => openCardsScopeRef.current === scope && homeFeatureTabRef.current === "open_cards" && requestId === secondaryCardsRequestRef.current;
     setPaidCardsLoading(true);
     setPaidCardsError("");
     // Settle independently: queue/more-view delays must not hide paid cards.
@@ -2294,7 +2275,7 @@ function OpenCardsContent() {
         setMoreViewStatus(nextStatus);
         setMoreViewMale([]);
         setMoreViewFemale([]);
-        if (nextStatus[visibleSex] !== "approved") return;
+        if (scope === "guest" || nextStatus[visibleSex] !== "approved") return;
         const cards = await readDatingJson<{ items?: PublicCard[] }>(`/api/dating/cards/more-view/list?sex=${visibleSex}`);
         if (!isCurrent()) return;
         const setItems = visibleSex === "male" ? setMoreViewMale : setMoreViewFemale;
@@ -2305,6 +2286,8 @@ function OpenCardsContent() {
 
   const loadInitial = useCallback(
     async (options?: { silent?: boolean; sex?: DatingSex }) => {
+      const scope = openCardsScopeRef.current;
+      if (!scope) return;
       const requestId = ++initialCardsRequestRef.current;
       secondaryCardsRequestRef.current += 1;
       if (!options?.silent) {
@@ -2313,7 +2296,19 @@ function OpenCardsContent() {
       try {
         const requestedSex = options?.sex ?? activeSexRef.current;
         const result = await fetchBySex(requestedSex, 0, null, null);
-        if (requestId !== initialCardsRequestRef.current) return;
+        if (openCardsScopeRef.current !== scope || requestId !== initialCardsRequestRef.current) return;
+        if (!acceptsOpenCardsAudience(scope, result.audience)) {
+          secondaryCardsRequestRef.current += 1;
+          swipeRequestIdRef.current.male += 1;
+          swipeRequestIdRef.current.female += 1;
+          swipeCacheRef.current = {};
+          loadedOpenCardSexesRef.current = { male: false, female: false };
+          setCardsAudience(null);
+          setMales([]); setFemales([]);
+          setPaidItems([]); setMoreViewMale([]); setMoreViewFemale([]);
+          setLoading(false);
+          return;
+        }
         const audience = result.audience ?? null;
         const effectiveSex = audience?.targetSex ?? requestedSex;
         setCardsAudience(audience);
@@ -2354,7 +2349,7 @@ function OpenCardsContent() {
         activeSexRef.current = effectiveSex;
         void refreshSecondary(effectiveSex);
       } catch (e) {
-        if (requestId !== initialCardsRequestRef.current) return;
+        if (openCardsScopeRef.current !== scope || requestId !== initialCardsRequestRef.current) return;
         console.error("open cards load failed", e);
         setLoading(false);
       }
@@ -2461,13 +2456,13 @@ function OpenCardsContent() {
         return;
       }
       initialCardsStartedRef.current = true;
-      void loadInitial({ silent: Boolean(restoredSnapshot) });
+      void loadInitial();
     });
     return () => { cancelled = true; };
-  }, [snapshotReady, restoredSnapshot, loadInitial, refreshSecondary, homeFeatureTab]);
+  }, [snapshotReady, loadInitial, refreshSecondary, homeFeatureTab]);
 
   useEffect(() => {
-    if (homeFeatureTab !== "open_cards") return;
+    if (!openCardsScope || homeFeatureTab !== "open_cards") return;
     const SECONDARY_POLL_INTERVAL_MS = 5 * 60_000;
     const SECONDARY_FOCUS_REFRESH_GAP_MS = 60_000;
     const controller = new AbortController();
@@ -2475,13 +2470,13 @@ function OpenCardsContent() {
     let inFlight = false;
 
     const pollSecondaryStatus = async () => {
-      if (controller.signal.aborted || inFlight || document.visibilityState !== "visible") return;
+      if (openCardsScopeRef.current !== openCardsScope || controller.signal.aborted || inFlight || document.visibilityState !== "visible") return;
       inFlight = true;
       lastPolledAt = Date.now();
       const version = secondaryCardsRequestRef.current;
       const visibleSex = activeSexRef.current;
       const isCurrent = () => !controller.signal.aborted && homeFeatureTabRef.current === "open_cards"
-        && version === secondaryCardsRequestRef.current && visibleSex === activeSexRef.current;
+        && openCardsScopeRef.current === openCardsScope && version === secondaryCardsRequestRef.current && visibleSex === activeSexRef.current;
 
       try {
         const [mvStatusRes, qsRes] = await Promise.all([
@@ -2509,7 +2504,7 @@ function OpenCardsContent() {
         const allowed = !enforcedTarget || enforcedTarget === visibleSex;
         const setItems = visibleSex === "male" ? setMoreViewMale : setMoreViewFemale;
         // Refresh only the visible sex, preserving server-side audience enforcement.
-        if (allowed && nextStatus[visibleSex] === "approved") {
+        if (openCardsScope !== "guest" && allowed && nextStatus[visibleSex] === "approved") {
           const res = await fetch(`/api/dating/cards/more-view/list?sex=${visibleSex}`, {
             cache: "no-store", signal: controller.signal,
           });
@@ -2541,12 +2536,15 @@ function OpenCardsContent() {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [cardsAudience, homeFeatureTab]);
+  }, [cardsAudience, homeFeatureTab, openCardsScope]);
 
   const loadMoreMale = useCallback(async () => {
-    if (!maleHasMore) return;
+    const scope = openCardsScopeRef.current;
+    const version = initialCardsRequestRef.current;
+    if (!scope || !maleHasMore) return;
     try {
       const m = await fetchBySex("male", 0, maleCursorCreatedAt, maleCursorId);
+      if (openCardsScopeRef.current !== scope || initialCardsRequestRef.current !== version || !acceptsOpenCardsAudience(scope, m.audience)) return;
       setMales((prev) => [...prev, ...(m.items ?? [])]);
       setMaleCursorCreatedAt(m.nextCursorCreatedAt ?? null);
       setMaleCursorId(m.nextCursorId ?? null);
@@ -2557,9 +2555,12 @@ function OpenCardsContent() {
   }, [maleHasMore, maleCursorCreatedAt, maleCursorId]);
 
   const loadMoreFemale = useCallback(async () => {
-    if (!femaleHasMore) return;
+    const scope = openCardsScopeRef.current;
+    const version = initialCardsRequestRef.current;
+    if (!scope || !femaleHasMore) return;
     try {
       const f = await fetchBySex("female", 0, femaleCursorCreatedAt, femaleCursorId);
+      if (openCardsScopeRef.current !== scope || initialCardsRequestRef.current !== version || !acceptsOpenCardsAudience(scope, f.audience)) return;
       setFemales((prev) => [...prev, ...(f.items ?? [])]);
       setFemaleCursorCreatedAt(f.nextCursorCreatedAt ?? null);
       setFemaleCursorId(f.nextCursorId ?? null);
@@ -2570,6 +2571,8 @@ function OpenCardsContent() {
   }, [femaleHasMore, femaleCursorCreatedAt, femaleCursorId]);
 
   const loadSwipe = useCallback(async (sex: "male" | "female", options?: SwipeRequestOptions) => {
+    const scope = openCardsScopeRef.current;
+    if (!scope) return;
     const { preferCache = true, silent = false } = options ?? {};
     const requestId = ++swipeRequestIdRef.current[sex];
     const cached = preferCache ? swipeCacheRef.current[sex] : undefined;
@@ -2593,15 +2596,23 @@ function OpenCardsContent() {
       if (!res.ok) {
         throw new Error(body.error ?? "스와이프 후보를 불러오지 못했습니다.");
       }
-        const nextState = {
-          loggedIn: body.loggedIn === true,
-          canSwipe: body.canSwipe === true,
-          remaining: Math.max(0, Number(body.remaining ?? 0)),
-          limit: Math.max(1, Number(body.limit ?? 7)),
-          unlimitedPass: body.unlimitedPass === true,
-          candidate: body.candidate ?? null,
-          reason: body.reason ?? null,
-        };
+      if (openCardsScopeRef.current !== scope || swipeRequestIdRef.current[sex] !== requestId) return;
+      if (body.loggedIn !== (scope !== "guest")) {
+        delete swipeCacheRef.current[sex];
+        if (activeSexRef.current === sex) {
+          setSwipeState({ loggedIn: false, canSwipe: false, remaining: 0, limit: 7, candidate: null, reason: null });
+        }
+        return;
+      }
+      const nextState = {
+        loggedIn: body.loggedIn === true,
+        canSwipe: body.canSwipe === true,
+        remaining: Math.max(0, Number(body.remaining ?? 0)),
+        limit: Math.max(1, Number(body.limit ?? 7)),
+        unlimitedPass: body.unlimitedPass === true,
+        candidate: body.candidate ?? null,
+        reason: body.reason ?? null,
+      };
       swipeCacheRef.current[sex] = nextState;
       if (activeSexRef.current === sex && swipeRequestIdRef.current[sex] === requestId) {
         setSwipeImgFailed(false);
@@ -2642,7 +2653,8 @@ function OpenCardsContent() {
 
   const handleSwipe = useCallback(
     async (action: "like" | "pass") => {
-      if (!swipeState.candidate || swipeSubmitting) return;
+      const scope = openCardsScopeRef.current;
+      if (!scope || scope === "guest" || !swipeState.candidate || swipeSubmitting) return;
       if (action === "like" && swipeState.unlimitedPass && swipeState.remaining <= 0) return;
       if (!swipeState.canSwipe) {
         setSwipeMessage(
@@ -2670,6 +2682,7 @@ function OpenCardsContent() {
           error?: string;
           match?: { other_instagram_id: string; other_nickname: string } | null;
         };
+        if (openCardsScopeRef.current !== scope) return;
         if (!res.ok) {
           throw new Error(body.error ?? "처리에 실패했습니다.");
         }
@@ -2682,10 +2695,11 @@ function OpenCardsContent() {
         }
         await loadSwipe(activeSex);
       } catch (error) {
+        if (openCardsScopeRef.current !== scope) return;
         console.error("swipe submit failed", error);
         setSwipeMessage(error instanceof Error ? error.message : "처리에 실패했습니다.");
       } finally {
-        setSwipeSubmitting(false);
+        if (openCardsScopeRef.current === scope) setSwipeSubmitting(false);
       }
     },
     [activeSex, loadSwipe, swipeState.canSwipe, swipeState.candidate, swipeState.loggedIn, swipeState.unlimitedPass, swipeState.remaining, swipeSubmitting]
@@ -3366,7 +3380,7 @@ function OpenCardsContent() {
           </div>
         ) : null}
 
-        {swipeLoading ? (
+        {!openCardsScope || swipeLoading ? (
           <p className="mt-5 text-sm text-neutral-500">후보를 불러오는 중...</p>
         ) : !swipeState.candidate ? (
           <>
@@ -3717,9 +3731,9 @@ function OpenCardsContent() {
       {showOpenCardSection && !openCardsAudienceBlocked && paidCardsLoading ? (
         <p role="status" className="mb-2 text-xs text-neutral-500">대기 없이 등록 카드 불러오는 중...</p>
       ) : null}
-      {showOpenCardSection && loading ? (
+      {showOpenCardSection && (!openCardsScope || loading) && !viewerSessionError ? (
         <p className="text-neutral-400 text-center py-10">불러오는 중...</p>
-      ) : showOpenCardSection && !openCardsAudienceBlocked ? (
+      ) : showOpenCardSection && openCardsScope && !openCardsAudienceBlocked ? (
         <Section
           title={activeSex === "male" ? "남자 오픈카드" : "여자 오픈카드"}
           currentCount={activeCurrentCount + activePaidItems.length}
@@ -3728,6 +3742,7 @@ function OpenCardsContent() {
           hasMore={activeHasMore}
           onMore={activeSex === "male" ? loadMoreMale : loadMoreFemale}
           viewerLoggedIn={viewerLoggedIn}
+          rememberScroll={rememberOpenCardsScroll}
           guideOpen={openCardMatchGuideOpen}
           onGuideToggle={() => setOpenCardMatchGuideOpen((open) => !open)}
         />
@@ -3866,6 +3881,7 @@ function Section({
   hasMore,
   onMore,
   viewerLoggedIn,
+  rememberScroll,
   guideOpen,
   onGuideToggle,
 }: {
@@ -3876,6 +3892,7 @@ function Section({
   hasMore: boolean;
   onMore: () => void;
   viewerLoggedIn: boolean;
+  rememberScroll: () => void;
   guideOpen: boolean;
   onGuideToggle: () => void;
 }) {
@@ -3920,13 +3937,13 @@ function Section({
           {pinnedPaidItems.length > 0 && (
             <div className="mb-3 grid grid-cols-2 gap-2.5 md:gap-3">
               {pinnedPaidItems.map((card) => (
-                <PaidCardRow key={card.id} card={card} viewerLoggedIn={viewerLoggedIn} />
+                <PaidCardRow key={card.id} card={card} viewerLoggedIn={viewerLoggedIn} rememberScroll={rememberScroll} />
               ))}
             </div>
           )}
           <div className="grid grid-cols-2 gap-2.5 md:gap-3">
             {items.map((card) => (
-              <CardRow key={card.id} card={card} viewerLoggedIn={viewerLoggedIn} />
+              <CardRow key={card.id} card={card} viewerLoggedIn={viewerLoggedIn} rememberScroll={rememberScroll} />
             ))}
           </div>
           {hasMore && viewerLoggedIn && (
@@ -3944,7 +3961,7 @@ function Section({
   );
 }
 
-function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn: boolean }) {
+function PaidCardRow({ card, viewerLoggedIn, rememberScroll }: { card: PaidCard; viewerLoggedIn: boolean; rememberScroll: () => void }) {
   const router = useRouter();
   const isPriority = card.display_mode !== "instant_public";
   const theme = getCardVisualTheme(card.id);
@@ -3971,16 +3988,6 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
     router.prefetch(detailHref);
     router.prefetch(applyHref);
   }, [applyHref, card, detailHref, router]);
-  const rememberScroll = useCallback(() => {
-    const snapshot = readOpenCardsSnapshot();
-    if (!snapshot) return;
-    writeOpenCardsSnapshot({
-      ...snapshot,
-      scrollY: window.scrollY,
-      restoreOnNextVisit: true,
-      restoreRequestedAt: Date.now(),
-    });
-  }, []);
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white">
@@ -4077,7 +4084,7 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
   );
 }
 
-function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: boolean }) {
+function CardRow({ card, viewerLoggedIn, rememberScroll }: { card: PublicCard; viewerLoggedIn: boolean; rememberScroll: () => void }) {
   const router = useRouter();
   const ideal = maskIdealTypeForPreview(card.ideal_type);
   const [imgFailed, setImgFailed] = useState(false);
@@ -4085,20 +4092,9 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
   const detailHref = viewerLoggedIn ? `/community/dating/cards/${card.id}` : buildLoginRedirect(`/community/dating/cards/${card.id}`);
   const applyHref = viewerLoggedIn ? `/community/dating/cards/${card.id}/apply` : buildLoginRedirect(`/community/dating/cards/${card.id}/apply`);
   const warmRoute = useCallback(() => {
-    cacheOpenCardDetail(card.id, card);
     router.prefetch(detailHref);
     router.prefetch(applyHref);
-  }, [applyHref, card, detailHref, router]);
-  const rememberScroll = useCallback(() => {
-    const snapshot = readOpenCardsSnapshot();
-    if (!snapshot) return;
-    writeOpenCardsSnapshot({
-      ...snapshot,
-      scrollY: window.scrollY,
-      restoreOnNextVisit: true,
-      restoreRequestedAt: Date.now(),
-    });
-  }, []);
+  }, [applyHref, detailHref, router]);
 
   return (
     <div className={`flex h-full flex-col overflow-hidden rounded-xl border bg-white ${openCardBorderClass(card)}`}>

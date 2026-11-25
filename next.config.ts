@@ -12,7 +12,12 @@ const withPWA = withPWAInit({
   runtimeCaching: [
     {
       // Do not let generic image or navigation caches bypass member permissions.
-      urlPattern: /^https?:\/\/[^/]+\/i\/(?:signed\/|admin-preview\/|public-lite\/dating-card-lite\/)/i,
+      urlPattern: /^https?:\/\/[^/]+\/(?:i\/(?:signed\/|admin-preview\/|public-lite\/dating-card-lite\/)|storage\/v1\/object\/public\/dating-card-lite\/)/i,
+      handler: "NetworkOnly",
+    },
+    {
+      // The entry pages can contain anonymous OpenCard previews.
+      urlPattern: /^https?:\/\/[^/]+\/(?:landing\/?(?:[?#]|$)|[?#]|$)/i,
       handler: "NetworkOnly",
     },
     {
