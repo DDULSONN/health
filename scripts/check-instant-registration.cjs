@@ -7,19 +7,19 @@ const root = path.resolve(__dirname, '..');
 const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const home = read('app/community/dating/cards/page.tsx');
 const compile = source => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+const homeAst = ts.createSourceFile('home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 function load(p, context = {}) {
   const exports = {};
   vm.runInNewContext(compile(read(p)), { exports, module: { exports }, console, ...context });
   return exports;
 }
 function callback(name, ctx) {
-  const ast = ts.createSourceFile('home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let fn;
   const visit = node => {
-    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === name) fn = node.initializer.arguments[0].getText(ast);
+    if (ts.isVariableDeclaration(node) && node.name.getText(homeAst) === name) fn = node.initializer.arguments[0].getText(homeAst);
     ts.forEachChild(node, visit);
   };
-  visit(ast); assert.ok(fn, name);
+  visit(homeAst); assert.ok(fn, name);
   return vm.runInNewContext(compile('const run = ' + fn + '; run;'), ctx);
 }
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -38,7 +38,7 @@ for (const page of ['app/dating/paid/[id]/page.tsx', 'app/dating/paid/[id]/apply
 
 function context(extra = {}) {
   const state = {};
-  const ctx = { console, viewerLoggedIn: true, homeFeatureTabRef: { current: 'open_cards' }, activeSexRef: { current: 'male' }, secondaryCardsRequestRef: { current: 0 }, profilePresenceRequestRef: { current: 0 }, ...extra };
+  const ctx = { console, viewerLoggedIn: true, openCardsScopeRef: { current: 'member:fixture-viewer' }, homeFeatureTabRef: { current: 'open_cards' }, activeSexRef: { current: 'male' }, secondaryCardsRequestRef: { current: 0 }, profilePresenceRequestRef: { current: 0 }, ...extra };
   for (const key of ['PaidItems','PaidCardsError','PaidCardsLoading','QueueStats','MoreViewStatus','MoreViewMale','MoreViewFemale','MyOpenCards','HomeProfilePresenceReady','OpenCardPresenceReady','OpenCardPresenceError','HasActiveOneOnOneProfile']) ctx['set'+key] = value => { state[key] = value; };
   return { ctx, state };
 }
@@ -155,10 +155,13 @@ test('same-page apply navigation reacts to search params; instant cards are not 
 
 test('late initial list cannot switch the active tab back or start an obsolete paid read',async()=>{
   const old=deferred(), refreshed=[], values={};
-  const ctx={console,initialCardsRequestRef:{current:0},secondaryCardsRequestRef:{current:0},activeSexRef:{current:'female'},loadedOpenCardSexesRef:{current:{male:false,female:false}},
-    fetchBySex:sex=>sex==='female'?old.promise:Promise.resolve({items:[{id:'male'}],audience:{targetSex:'male',canSwitchSex:true}}),refreshSecondary:sex=>refreshed.push(sex)};
+  const audienceCheck = homeAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'acceptsOpenCardsAudience');
+  assert.ok(audienceCheck);
+  const acceptsOpenCardsAudience = vm.runInNewContext(compile(audienceCheck.getText(homeAst)+'; acceptsOpenCardsAudience;'));
+  const ctx={console,openCardsScopeRef:{current:'member:fixture-admin'},acceptsOpenCardsAudience,initialCardsRequestRef:{current:0},secondaryCardsRequestRef:{current:0},activeSexRef:{current:'female'},loadedOpenCardSexesRef:{current:{male:false,female:false}},
+    fetchBySex:sex=>sex==='female'?old.promise:Promise.resolve({items:[{id:'male'}],audience:{status:'admin',targetSex:'male',canSwitchSex:true}}),refreshSecondary:sex=>refreshed.push(sex)};
   for(const key of ['Loading','CardsAudience','ViewerSexError','ActiveSex','Males','Females','MaleHasMore','FemaleHasMore','MaleCursorCreatedAt','MaleCursorId','FemaleCursorCreatedAt','FemaleCursorId'])ctx['set'+key]=value=>{values[key]=value;};
-  const run=callback('loadInitial',ctx), first=run({sex:'female'});await run({sex:'male'});old.resolve({items:[{id:'female'}],audience:{targetSex:'female',canSwitchSex:true}});await first;
+  const run=callback('loadInitial',ctx), first=run({sex:'female'});await run({sex:'male'});old.resolve({items:[{id:'female'}],audience:{status:'admin',targetSex:'female',canSwitchSex:true}});await first;
   assert.equal(values.ActiveSex,'male');assert.equal(ctx.activeSexRef.current,'male');assert.deepEqual(refreshed,['male']);
 });
 test('existing fulfillment still approves once for 36 hours without touching ordinary cards',async()=>{
