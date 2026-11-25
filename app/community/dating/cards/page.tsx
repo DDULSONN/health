@@ -3025,8 +3025,9 @@ function OpenCardsContent() {
   // configurable banners pointing at the links set by the operator.
   const isOneOnOneWaitNotice = ONE_ON_ONE_WAIT_NOTICE.test(homeAdLink?.title ?? "");
   const showQuickMatchSection = homeFeatureTab === "quick_match";
-  const hasLovePassQuickMatch = viewerLoggedIn && (swipeState.unlimitedPass === true || swipeSubscriptionStatus?.lovePassActive === true);
-  const showSwipePlusOffer = viewerSessionReady && !hasLovePassQuickMatch && (!viewerLoggedIn || (swipeSubscriptionStatus !== null && !swipeSubscriptionLoading));
+  const showMemberOffers = viewerSessionReady && viewerLoggedIn && !viewerSessionError;
+  const hasLovePassQuickMatch = showMemberOffers && (swipeState.unlimitedPass === true || swipeSubscriptionStatus?.lovePassActive === true);
+  const showSwipePlusOffer = showMemberOffers && !hasLovePassQuickMatch && swipeSubscriptionStatus !== null && !swipeSubscriptionLoading;
   const showOneOnOneSection = homeFeatureTab === "one_on_one";
   const showLoveFortuneSection = isAdminPreviewUser && homeFeatureTab === "love_fortune";
   const hasActiveMyOpenCard = myOpenCards.some((card) => card.status === "pending" || card.status === "public");
@@ -3139,7 +3140,7 @@ function OpenCardsContent() {
           </div>
         </section>
       ) : null}
-      {showOpenCardSection && !viewerSessionError ? <LovePassLink placement="open-card-home" /> : null}
+      {showOpenCardSection && showMemberOffers ? <LovePassLink placement="open-card-home" /> : null}
       {showDraftResumeCard && profileDraft ? <DatingDraftResumeCard draft={profileDraft} href="/onboarding/dating" /> : null}
       <AllPassProfileOfferBanner placement="matching_home_profile_complete" />
       {showProfileStartCard ? (
@@ -3323,7 +3324,7 @@ function OpenCardsContent() {
         </div>
         ) : null}
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        {showMemberOffers ? <div className="mt-4 flex flex-wrap items-center gap-2">
           {hasLovePassQuickMatch ? <>
             <Link href="/dating/love-pass" className="inline-flex min-h-11 items-center rounded-full border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-800">연애 패스 이용 중</Link>
             <p className="text-xs text-neutral-500">빠른매칭 혜택이 포함돼 있어요.</p>
@@ -3344,7 +3345,7 @@ function OpenCardsContent() {
             </> : null}
             <LovePassLink />
           </>}
-        </div>
+        </div> : null}
 
         {swipeRefreshing && !swipeLoading ? <p className="mt-3 text-xs font-medium text-neutral-400">최신 후보로 업데이트 중...</p> : null}
         {swipeMessage ? <p className="mt-3 text-sm font-semibold text-emerald-700">{swipeMessage}</p> : null}

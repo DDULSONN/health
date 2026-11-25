@@ -17,7 +17,22 @@ const navigation = [
 const changes = {
   'app/community/dating/cards/page.tsx': [
     ['import LovePassLink from "@/components/dating/LovePassLink";\n', ''],
-    ['      {showOpenCardSection && !viewerSessionError ? <LovePassLink placement="open-card-home" /> : null}\n', ''],
+    ['      {showOpenCardSection && showMemberOffers ? <LovePassLink placement="open-card-home" /> : null}\n', ''],
+    [
+      '  const showMemberOffers = viewerSessionReady && viewerLoggedIn && !viewerSessionError;\n' +
+      '  const hasLovePassQuickMatch = showMemberOffers && (swipeState.unlimitedPass === true || swipeSubscriptionStatus?.lovePassActive === true);\n' +
+      '  const showSwipePlusOffer = showMemberOffers && !hasLovePassQuickMatch && swipeSubscriptionStatus !== null && !swipeSubscriptionLoading;\n',
+      '  const hasLovePassQuickMatch = viewerLoggedIn && (swipeState.unlimitedPass === true || swipeSubscriptionStatus?.lovePassActive === true);\n' +
+      '  const showSwipePlusOffer = viewerSessionReady && !hasLovePassQuickMatch && (!viewerLoggedIn || (swipeSubscriptionStatus !== null && !swipeSubscriptionLoading));\n',
+    ],
+    [
+      '        {showMemberOffers ? <div className="mt-4 flex flex-wrap items-center gap-2">\n          {hasLovePassQuickMatch ? <>',
+      '        <div className="mt-4 flex flex-wrap items-center gap-2">\n          {hasLovePassQuickMatch ? <>',
+    ],
+    [
+      '        </div> : null}\n\n        {swipeRefreshing && !swipeLoading ?',
+      '        </div>\n\n        {swipeRefreshing && !swipeLoading ?',
+    ],
     ['  unlimitedPass?: boolean;\n', ''],
     ['          unlimitedPass: body.unlimitedPass === true,\n', ''],
     ['      if (action === "like" && swipeState.unlimitedPass && swipeState.remaining <= 0) return;\n', ''],
