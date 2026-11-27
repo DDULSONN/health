@@ -86,8 +86,18 @@ module.exports = async ({ browser, origin }) => {
     });
     try {
       await page.goto(origin+(surface === 'home' ? '/community/dating/cards?tab=one_on_one' : '/mypage?section=matching&matching=one_on_one'));
-      const candidate = page.getByText(/^노출후보 0\b/).first();
-      await candidate.scrollIntoViewIfNeeded(); await page.waitForTimeout(1000);
+      const viewCardElement = async card => {
+        await card.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+        assert.ok(await card.evaluate(el => {
+          const r = el.getBoundingClientRect();
+          return Math.min(r.bottom, innerHeight) - Math.max(r.top, 0) >= Math.min(r.height / 4, 200);
+        }), 'the card itself must cross the production visibility threshold');
+        await page.waitForTimeout(1000);
+      };
+      const viewCard = index => viewCardElement(page.getByText(new RegExp(`^노출후보 ${index}\\b`)).first()
+        .locator(surface === 'home' ? 'xpath=ancestor::article[1]' :
+          'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " border-neutral-200 ") and contains(concat(" ", normalize-space(@class), " "), " p-3 ")][1]'));
+      await viewCard(0);
       const refresh = page.getByRole('button', { name: /후보 새로고침 · 2회/ }).first();
       await refresh.evaluate(el => el.click());
       const modal = page.getByRole('dialog', { name: '후보를 새로고침할까요?' }); await modal.waitFor();
@@ -97,7 +107,8 @@ module.exports = async ({ browser, origin }) => {
       const firstSeen = actions.findIndex(a => a.type === 'seen' && a.candidate_ids.includes('candidate-0'));
       assert.ok(firstSeen >= 0 && firstSeen < actions.findIndex(a => a.type === 'refresh'));
       assert.ok(!actions.some(a => a.type === 'seen' && a.candidate_ids.includes('candidate-12')), 'offscreen extra must not count');
-      await page.getByText(/^노출후보 12\b/).first().scrollIntoViewIfNeeded(); await page.waitForTimeout(1000);
+      if (surface === 'home') await page.getByRole('button', { name: '전체 후보 펼치기', exact: true }).click();
+      await viewCard(12);
       await page.evaluate(() => window.dispatchEvent(new Event('pagehide'))); await page.waitForTimeout(150);
       assert.ok(actions.some(a => a.type === 'seen' && a.candidate_ids.includes('candidate-12')), 'extra records only after visible');
       const panel = page.getByRole('region', { name: '후보 범위 넓히기' });
@@ -106,7 +117,7 @@ module.exports = async ({ browser, origin }) => {
       await panel.getByRole('button', { name: '추가 후보 접기' }).click(); await page.waitForTimeout(1000);
       assert.ok(!actions.some(a => a.type === 'seen' && a.candidate_ids.includes('expanded')), 'brief open then collapse must not count');
       await panel.getByRole('button', { name: '후보 넓혀보기' }).click();
-      await panel.getByText(/^넓힌 후보/).scrollIntoViewIfNeeded(); await page.waitForTimeout(1000);
+      await viewCardElement(panel.locator('article').filter({ has: page.getByText(/^넓힌 후보/) }));
       await page.evaluate(() => window.dispatchEvent(new Event('pagehide'))); await page.waitForTimeout(150);
       assert.ok(actions.some(a => a.type === 'seen' && a.ticket === 'expansion-receipt' && a.candidate_ids.includes('expanded')));
       assert.equal(posts, 1, 'impressions and expansion do not consume another refresh');

@@ -38,6 +38,10 @@
       "schedule": "18 * * * *"
     },
     {
+      "path": "/api/cron/dating-1on1-winter-candidates",
+      "schedule": "47 0-13 * * *"
+    },
+    {
       "path": "/api/cron/dating-registration-reminders",
       "schedule": "28 * * * *"
     },

@@ -3,8 +3,9 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { getKstDateString } from "@/lib/weekly";
-import { EXPANSION_LIMIT, EXPANSION_TABLE, isExpansionEnabled } from "@/lib/dating-1on1-expansion";
+import { EXPANSION_LIMIT, EXPANSION_TABLE, isExpansionEnabled, isWinterExpansionEnabled } from "@/lib/dating-1on1-expansion";
 import { loadOneOnOneRecommendations } from "@/lib/dating-1on1-recommendation-service";
+import { readOneOnOneWinterAvailability } from "@/lib/dating-1on1-winter-expansion";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Batch = { source_card_id: string; candidate_ids: string[]; day_key: string };
@@ -14,6 +15,22 @@ const validBatch = (batch: Batch, day: string) => batch && uuid.test(batch.sourc
   validIds(batch.candidate_ids) && !batch.candidate_ids.includes(batch.source_card_id);
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
 const unavailable = () => reply({ error: "추가 후보를 확인하지 못했어요. 기존 추천과 새로고침 횟수는 그대로예요. 잠시 후 다시 시도해 주세요." }, 503);
+const winterAlreadyOpened = () => reply({ code: "WINTER_ALREADY_OPENED",
+  error: "오늘 추가 후보를 이미 열었어요. ‘후보 넓혀보기’에서 확인할 수 있어요." }, 409);
+const expiresAt = (day: string) => new Date(Date.parse(`${day}T00:00:00+09:00`) + 86400000).toISOString();
+
+export async function GET(req: Request) {
+  const { user } = await getRequestAuthContext(req);
+  if (!user) return reply({ error: "로그인이 필요합니다." }, 401);
+  if (!isWinterExpansionEnabled(user.id)) return reply({ error: "아직 이용할 수 없는 기능입니다." }, 404);
+  const query = new URL(req.url).searchParams;
+  const sourceId = query.get("source_card_id");
+  if (!sourceId || !uuid.test(sourceId) || (query.has("mode") && query.get("mode") !== "winter"))
+    return reply({ error: "프로필을 다시 확인해 주세요." }, 400);
+  const signal = AbortSignal.any([req.signal, AbortSignal.timeout(8000)]);
+  const availability = await readOneOnOneWinterAvailability(createAdminClient({ signal }), user, sourceId);
+  return availability ? reply(availability) : unavailable();
+}
 
 export async function POST(req: Request) {
   const originError = ensureAllowedMutationOrigin(req);
@@ -24,6 +41,8 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const sourceId = body?.source_card_id;
   if (typeof sourceId !== "string" || !uuid.test(sourceId)) return reply({ error: "프로필을 다시 확인해 주세요." }, 400);
+  const winter = body?.mode === "winter";
+  if (winter && !isWinterExpansionEnabled(user.id)) return reply({ error: "아직 이용할 수 없는 기능입니다." }, 404);
   const day = getKstDateString();
   const admin = createAdminClient();
   try {
@@ -34,12 +53,21 @@ export async function POST(req: Request) {
     let batch = saved.data as Batch | null;
     if (batch && !validBatch(batch, day)) return unavailable();
     if (batch && batch.source_card_id !== sourceId) return reply({ error: "오늘 확인한 후보는 이전 프로필 기준이에요. 새 프로필의 추가 후보는 내일 확인할 수 있어요." }, 409);
-    const response = await loadOneOnOneRecommendations(admin, user, undefined, { candidateIds: batch?.candidate_ids });
+    if (winter && batch) return winterAlreadyOpened();
+    const response = await loadOneOnOneRecommendations(admin, user, undefined,
+      winter ? { winter: { sourceCardId: sourceId } } : { candidateIds: batch?.candidate_ids });
     if (response.status === 403) return reply({ error: "휴대폰 인증과 현재 프로필 상태를 확인해 주세요." }, 403);
+    if (response.status === 409) return reply({ error: "현재 사용 중인 프로필을 다시 불러와 주세요." }, 409);
     if (!response.ok) return unavailable();
     let result = await response.json();
     if (result.source_card_id !== sourceId || !Array.isArray(result.candidates)) return reply({ error: "현재 사용 중인 프로필을 다시 불러와 주세요." }, 409);
     if (!validIds(result.candidates.map((candidate: { id?: string } | null) => candidate?.id))) return unavailable();
+    // Count may change between the preview and the tap. Never use up the
+    // existing daily expansion when winter stock is gone or no longer relevant.
+    if (winter && (result.repeated !== true || !result.candidates.length)) {
+      if (getKstDateString() !== day) return reply({ error: "날짜가 바뀌었어요. 추가 후보를 다시 확인해 주세요." }, 409);
+      return reply({ source_card_id: sourceId, day_key: day, candidates: [], impression_ticket: null, expires_at: expiresAt(day) });
+    }
     if (!batch) {
       const ids = result.candidates.map((candidate: { id: string }) => candidate.id);
       const claimed = await admin.rpc("claim_dating_1on1_expansion_batch", {
@@ -49,6 +77,9 @@ export async function POST(req: Request) {
       batch = claimed.data[0] as Batch;
       if (!validBatch(batch, day) || batch.source_card_id !== sourceId) return unavailable();
       if (JSON.stringify(ids) !== JSON.stringify(batch.candidate_ids)) {
+        // An ordinary expansion may have won the daily claim concurrently. Do
+        // not present its cards under the winter promise or refill the batch.
+        if (winter) return winterAlreadyOpened();
         const winner = await loadOneOnOneRecommendations(admin, user, undefined, { candidateIds: batch.candidate_ids });
         if (!winner.ok) return unavailable();
         result = await winner.json();
@@ -60,7 +91,7 @@ export async function POST(req: Request) {
     if (getKstDateString() !== day) return reply({ error: "날짜가 바뀌었어요. 추가 후보를 다시 확인해 주세요." }, 409);
     return reply({ source_card_id: sourceId, day_key: day, candidates: result.candidates,
       impression_ticket: result.impression_ticket ?? null,
-      expires_at: new Date(Date.parse(`${day}T00:00:00+09:00`) + 86400000).toISOString() });
+      expires_at: expiresAt(day) });
   } catch (error) {
     console.error("[dating-expansion] unavailable", { code: (error as { code?: string })?.code });
     return unavailable();

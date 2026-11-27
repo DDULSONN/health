@@ -735,6 +735,11 @@ export default function OneOnOneHomePanel({
                         {onCandidateRestored ? <CandidateHidesPanel enabled={group.hides_enabled === true}
                           availability={group.recommendation_availability}
                           revision={group} onRestored={onCandidateRestored} /> : null}
+                        <OneOnOneExpansionPanel enabled={!starterPreview && group.expansion_enabled === true} sourceCardId={sourceCardId}
+                          primary={groupIndex === 0} winterEligible={Boolean(group.new_candidate_notice)}
+                          revision={group} blocked={refreshing || replacing || processingAutoKeys.length > 0}
+                          hidesEnabled={group.hides_enabled === true && Boolean(onCandidateHidden)} onHidden={onCandidateHidden}
+                          onSelect={(candidateId, name) => onAutoSelect(sourceCardId, candidateId, name)} onReported={onReported} />
                         <div className="mt-3 space-y-3">
                           {remainingCount > 0 ? <OneOnOneCandidateMore count={remainingCount} initial={<>
                             {firstRecommendations.map(candidate => renderCandidate(candidate))}
@@ -747,10 +752,6 @@ export default function OneOnOneHomePanel({
                             {renderAdditional(firstAdditional)}
                           </>}
                         </div>
-                        <OneOnOneExpansionPanel enabled={!starterPreview && group.expansion_enabled === true} sourceCardId={sourceCardId}
-                          revision={group} blocked={refreshing || processingAutoKeys.length > 0}
-                          hidesEnabled={group.hides_enabled === true && Boolean(onCandidateHidden)} onHidden={onCandidateHidden}
-                          onSelect={(candidateId, name) => onAutoSelect(sourceCardId, candidateId, name)} onReported={onReported} />
                       </div>
                     );
                   })}

@@ -38,6 +38,22 @@ test('recent regional alternatives are revisited before pinning the same local p
   assert.equal(next.recommendations.filter(c => Number(c.region) <= 180).length, 10, 'available regional alternatives need not reserve half the page for distant profiles');
   assert.equal(ids(next).filter(id => ids(previous).includes(id)).length, 0);
 });
+
+test('an unseen age-compatible local is not excluded for inactivity on normal refresh', () => {
+  const source = card('source', { sex: 'male', age: 30, region: '0' });
+  const staleNearby = card('stale-nearby', { region: '12', last_active_at: null });
+  const activeNearby = card('active-nearby', { region: '31', last_active_at: new Date(now - 1000).toISOString() });
+  const activeFar = card('active-far', { region: '140', last_active_at: new Date(now - 1000).toISOString() });
+  const shown = Array.from({ length: 10 }, (_, i) => card(`shown-${i}`, { region: '2' }));
+  const pool = [...shown, staleNearby, activeNearby, activeFar];
+  const ctx = context(shown);
+  const next = pages.nextRecommendationPage(source, pool, { recommendations: shown, extraRecommendations: [] },
+    new Date(now).toISOString(), now, ctx);
+  assert.deepEqual(ids(next).slice(0, 3), ['stale-nearby', 'active-nearby', 'active-far']);
+  assert.equal(next.recommendations.length, 10);
+  assert.equal(new Set(ids(next)).size, 13);
+});
+
 function run(source, pool, rounds = 30) {
   const ctx = context(pool), initial = { recommendations: pool.slice(0, 10), extraRecommendations: pool.slice(10, 13) };
   let previous = initial;

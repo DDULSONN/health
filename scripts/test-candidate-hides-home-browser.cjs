@@ -65,6 +65,11 @@ module.exports=async({browser,origin,output})=>{
       const mainTitles=prefix=>surface==='home'
         ?page.locator('article').getByText(new RegExp(`^${prefix}(?: \\d+)?$`))
         :page.getByText(new RegExp(`^${prefix}(?: \\d+)? / 30세 / 서울$`));
+      const expandMain=async()=>{
+        if(surface!=='home')return;
+        const more=page.getByRole('button',{name:'전체 후보 펼치기',exact:true});
+        if(await more.count())await more.click();
+      };
       // MyPage cards use sections/divs; use the real hide button's nearest profile container.
       const hideNamed=async(name)=>{
         if(surface==='home') await article(name).getByRole('button',{name:'숨기기',exact:true}).click();
@@ -74,14 +79,17 @@ module.exports=async({browser,origin,output})=>{
         }
       };
       await page.getByRole('button',{name:'숨기기',exact:true}).first().waitFor();
+      await expandMain();
       assert.equal(await mainTitles('기본 숨김 후보').count(),10);
       await hideNamed(main.name); await page.getByText('숨김 저장을 확인하지 못했어요.',{exact:true}).waitFor();
       assert.equal(hidden.size,0);fail=false;await hideNamed(main.name);
       await page.getByText('후보를 숨겼어요. 빈자리는 바로 채워지지 않아요. 기존 요청·매칭은 그대로 유지돼요.',{exact:true}).waitFor();
       assert.equal(hidden.has(main.id),true);assert.equal(writes,2);
       await title(main.name).waitFor({state:'hidden'});
+      await expandMain();
       assert.equal(await mainTitles('기본 숨김 후보').count(),9);
       await page.reload();await page.getByRole('button',{name:'숨긴 후보 보기'}).waitFor();
+      await expandMain();
       assert.equal(await title(main.name).count(),0);
       assert.equal(await mainTitles('기본 숨김 후보').count(),9);
       assert.equal(refreshes,0,'hiding and reload cannot call the quota mutation');
@@ -91,6 +99,7 @@ module.exports=async({browser,origin,output})=>{
       await page.getByRole('button',{name:'숨긴 후보 보기'}).click();await page.getByRole('button',{name:'숨김 해제',exact:true}).click();
       await title(main.name).waitFor();assert.equal(hidden.size,0);
       if(surface==='home'){
+        await expandMain();
         await hideNamed(extra.name);await article(extra.name).waitFor({state:'hidden'});
         await hideNamed(proposed.name);await article(proposed.name).waitFor({state:'hidden'});
         const expansion=page.getByRole('region',{name:'후보 범위 넓히기'});
@@ -100,15 +109,18 @@ module.exports=async({browser,origin,output})=>{
       }
       // Hide the main candidate again, then use the actual paid-quota refresh UI.
       await hideNamed(main.name);await title(main.name).waitFor({state:'hidden'});
+      await expandMain();
       assert.equal(await mainTitles('기본 숨김 후보').count(),9);
       await page.getByRole('button',{name:/후보 새로고침 · 2회/}).click();
       const confirmation=page.getByRole('dialog',{name:'후보를 새로고침할까요?'});
       await confirmation.waitFor();assert.equal(refreshes,0);
       await confirmation.getByRole('button',{name:'1회 사용하기',exact:true}).click();
       await page.getByRole('button',{name:/후보 새로고침 · 1회/}).waitFor();
+      await expandMain();
       assert.equal(await mainTitles('새 명단 후보').count(),10);
       assert.equal(refreshes,1);
       await page.reload();await page.getByRole('button',{name:/후보 새로고침 · 1회/}).waitFor();
+      await expandMain();
       assert.equal(await mainTitles('새 명단 후보').count(),10);
       assert.equal(await title(main.name).count(),0);
       assert.equal(refreshes,1);assert.ok((await page.locator('body').innerText()).includes('01000000000'));

@@ -54,7 +54,7 @@ import {
 import { getCurrentOneOnOneCardIds } from "@/lib/dating-1on1-current-cards";
 import { DATING_AGE_INELIGIBLE_MESSAGE, parseDatingBirthYear } from "@/lib/dating-age";
 import { fetchOneOnOnePairHistory, type OneOnOnePairHistory } from "@/lib/dating-1on1-pair-history";
-import { EXPANSION_TABLE, isExpansionEnabled, selectExpansionCandidates } from "@/lib/dating-1on1-expansion";
+import { EXPANSION_TABLE, isExpansionEnabled, selectExpansionCandidates, selectWinterExpansionCandidates } from "@/lib/dating-1on1-expansion";
 import { createImpressionTicket, readCandidateImpressions } from "@/lib/dating-1on1-impressions";
 import { readRefreshCompensation } from "@/lib/dating-1on1-refresh-compensation";
 import { readRecommendationPage, recommendationSourceKey } from "@/lib/dating-1on1-recommendation-page-store";
@@ -178,16 +178,20 @@ export type RecommendationRefreshPlan = {
   };
 };
 
+type RecommendationExpansion = { candidateIds?: readonly string[]; winter?: { sourceCardId?: string; countOnly?: boolean } };
+
 // Only server code may request a plan. Public GET has no seed/preview overrides.
 // Both display and consumption use exactly the same safety filters and ranking.
 export async function loadOneOnOneRecommendations(admin: ReturnType<typeof createAdminClient>, user: { id: string },
-  refreshPlan?: { sourceCardId: string; at: string; partialRepair?: boolean }, expansion?: { candidateIds?: readonly string[] },
+  refreshPlan?: { sourceCardId: string; at: string; partialRepair?: boolean }, expansion?: RecommendationExpansion,
   singleRefresh?: SingleCandidateRefreshRequest) {
   if ([refreshPlan, expansion, singleRefresh].filter(Boolean).length > 1) throw new Error("Conflicting recommendation actions.");
   const nowMs = refreshPlan ? Date.parse(refreshPlan.at) : singleRefresh ? Date.parse(singleRefresh.plannedAt) : Date.now();
   const availabilityOnly = singleRefresh?.mode === "availability";
+  const winter = expansion?.winter;
   const staleSingle = () => NextResponse.json({ code: "SINGLE_REFRESH_STALE", error: "추천 목록이 달라졌어요. 다시 불러와 주세요." }, { status: 409 });
   const unavailableSingle = () => NextResponse.json({ code: "SINGLE_REFRESH_UNAVAILABLE", error: "새 후보를 잠시 확인하지 못했어요." }, { status: 503 });
+  const unavailableWinter = () => NextResponse.json({ code: "WINTER_UNAVAILABLE", error: "겨울 후보를 잠시 확인하지 못했어요." }, { status: 503 });
   let ownRows: RecommendationCardRow[];
   let candidateRows: RecommendationCardRow[];
   let profiles: Awaited<ReturnType<typeof fetchRecommendationProfiles>>;
@@ -198,6 +202,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     // Only the newest active application determines the source's gender.
     ownRows = ownRows.slice(0, 1);
     if (singleRefresh && singleRefresh.sourceCardId !== ownRows[0].id) return staleSingle();
+    if (winter?.sourceCardId && winter.sourceCardId !== ownRows[0].id) return NextResponse.json({ code: "WINTER_SOURCE_CHANGED" }, { status: 409 });
     if (parseDatingBirthYear(ownRows[0].birth_year, nowMs) == null) {
       return NextResponse.json({ error: DATING_AGE_INELIGIBLE_MESSAGE, code: "DATING_AGE_INELIGIBLE" }, { status: 403 });
     }
@@ -246,13 +251,14 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       .maybeSingle(),
     readCandidateImpressions(admin, user.id, nowMs).catch(() => null),
     // The availability hint is independent of paid/bonus full-page usage.
-    availabilityOnly ? 0 : readRefreshCompensation(admin, user.id).catch(() => null),
+    (availabilityOnly || winter) ? 0 : readRefreshCompensation(admin, user.id).catch(() => null),
     readRecommendationPage(admin, user.id).catch(() => null),
     readRecommendationHistory(admin, user.id, nowMs).catch(() => null),
     !refreshPlan?.partialRepair && (refreshPlan || profiles.get(user.id)?.phone) ? readSingleCandidateSwaps(admin, user.id) : null,
   ]);
   const singleSwaps = singleSwapRead?.kind === "ready" ? singleSwapRead.rows : null;
   if (singleRefresh && (!singleSwaps || !impressionResult?.available || !Number.isFinite(nowMs))) return unavailableSingle();
+  if (winter && (!singleSwaps || !impressionResult?.available || !savedPageResult?.available || !recentPages)) return unavailableWinter();
   if (refreshPlan && !refreshPlan.partialRepair && (singleSwapRead?.kind === "error" ||
     (singleSwapRead?.kind === "ready" && !savedPageResult?.available))) {
     return NextResponse.json({ error: "최근 후보 교체 기록을 확인하지 못했어요. 새로고침 횟수는 그대로예요." }, { status: 503 });
@@ -413,6 +419,35 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     ...hiddenCandidates.rows.flatMap(row => row.candidate_card_id ? [row.candidate_card_id] : []),
     ...candidateUniverse.filter(card => hiddenUserIds.has(card.user_id)).map(card => card.id),
   ])];
+
+  // Treat receipts of recommendations already shown anywhere, not only browser
+  // impression acknowledgements, as exposure. Resolve historical cards to stable
+  // member IDs so re-registering a photo/profile cannot become a new person.
+  const winterExposedUsers = new Set<string>();
+  if (winter) {
+    if (!hiddenCandidates.available) return unavailableWinter();
+    try {
+      const history = await admin.from(EXPANSION_TABLE).select("candidate_ids,day_key").eq("user_id", user.id)
+        .gte("day_key", getKstDateString(new Date(nowMs - 30 * 86400000))).lt("day_key", adminRecommendationDate).limit(31);
+      if (history.error) return unavailableWinter();
+      const delivered = new Map<string, number>();
+      const record = (ids: readonly string[], at: number) => { for (const id of ids) delivered.set(id, at); };
+      for (const page of recentPages ?? []) record(page.ids, page.at);
+      if (savedPageResult.page) record([...savedPageResult.page.main_candidate_ids, ...savedPageResult.page.extra_candidate_ids],
+        Date.parse(savedPageResult.page.refreshed_at));
+      for (const row of history.data ?? []) record(row.candidate_ids, Date.parse(`${row.day_key}T00:00:00+09:00`));
+      for (const swap of singleSwaps ?? []) {
+        record([swap.from_candidate_card_id], Date.parse(swap.created_at));
+        winterExposedUsers.add(swap.to_candidate_user_id);
+      }
+      const { owners } = await resolvePreviouslyDeliveredUsers(admin, delivered, candidateUniverse);
+      for (const userId of owners.values()) winterExposedUsers.add(userId);
+      for (const row of impressionResult?.rows ?? []) winterExposedUsers.add(row.candidate_user_id);
+      for (const userId of handledUserIds) winterExposedUsers.add(userId);
+    } catch {
+      return unavailableWinter();
+    }
+  }
 
   const unavailableCardIds = new Set<string>();
   const pageGenerationTimes = new Map<string, number>();
@@ -616,8 +651,12 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       // only revalidated, never reranked/refilled as history changes.
       ...(expansion.candidateIds ? [] : observations.length
         ? observedCandidateIdsAt(observations, nowMs) : replay.shownIds)]) : new Set<string>();
-    const expansionCandidates = expansion ? selectExpansionCandidates(sourceCard, unsavedCandidates.filter(card => notHidden(card) && profiles.get(card.user_id)?.phone),
-      expansionExclusions, adminRecommendationDate, nowMs, expansion.candidateIds) : [];
+    const expansionPool = expansion ? unsavedCandidates.filter(card => notHidden(card) && profiles.get(card.user_id)?.phone) : [];
+    const winterRepeated = winter ? getOneOnOneNewCandidateNotice({ source: sourceCard,
+      visible: recommendations.filter(notHidden), observations, pageAt, nowMs }) != null : false;
+    const expansionCandidates = winter
+      ? winterRepeated ? selectWinterExpansionCandidates(sourceCard, expansionPool, expansionExclusions, winterExposedUsers, nowMs) : []
+      : expansion ? selectExpansionCandidates(sourceCard, expansionPool, expansionExclusions, adminRecommendationDate, nowMs, expansion.candidateIds) : [];
 
     return {
       source_card_id: sourceCard.id,
@@ -647,6 +686,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       admin_recommendations: adminRecommendations.filter(notHidden),
       admin_recommendation_limit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
       ...(expansion ? { expansion_candidates: expansionCandidates } : {}),
+      ...(winter ? { winter_repeated: winterRepeated } : {}),
     };
   });
 
@@ -654,26 +694,46 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     let items = buildItems();
     let plannedItems = refreshPlan ? buildItems(true) : [];
     const checkedCardIds = new Set<string>();
+    const winterPhotoChecked = new Set<string>();
     // Validate only the short list we intend to display. Refill removed stale
     // identities from the full ranked pool, not by scanning everyone's phones.
     // Each iteration checks new IDs, so even a dirty legacy pool terminates.
     while (true) {
+      if (winter && Date.now() - nowMs > 8_000) return unavailableWinter();
       const pending = [...new Map([
         ...mySourceCards,
         ...[...singleRefreshDonors.values()].flatMap(donors => [...donors.values()]),
         ...[...items, ...plannedItems].flatMap((item) => [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations, ...(item.expansion_candidates ?? [])]),
       ].filter((card) => !checkedCardIds.has(card.id)).map((card) => [card.id, card])).values()];
-      if (pending.length === 0) break;
-      const currentIds = await getCurrentOneOnOneCardIds(admin, pending, profiles);
-      const invalid = pending.filter((card) => !currentIds.has(card.id));
+      const photoCheck = winter ? [...mySourceCards, ...items.flatMap(item => item.expansion_candidates ?? [])]
+        .filter(card => !winterPhotoChecked.has(card.id)) : [];
+      if (pending.length === 0 && photoCheck.length === 0) break;
+      const [currentIds, lightDetails] = await Promise.all([
+        getCurrentOneOnOneCardIds(admin, pending, profiles),
+        photoCheck.length ? fetchRecommendationAvailabilityDetails(admin, photoCheck.map(card => card.id)) : null,
+      ]);
+      const invalid = pending.filter(card => !currentIds.has(card.id));
+      for (const card of photoCheck) {
+        winterPhotoChecked.add(card.id);
+        const detail = lightDetails?.get(card.id);
+        if (!detail || (card.user_id !== user.id && !detail.hasPhoto) ||
+            detail.user_id !== card.user_id || recommendationSourceKey(detail) !== recommendationSourceKey(card)) invalid.push(card);
+      }
       for (const card of pending) checkedCardIds.add(card.id);
-      if (invalid.some((card) => card.user_id === user.id)) return singleRefresh ? staleSingle() : NextResponse.json({ items: [] });
+      if (invalid.some((card) => card.user_id === user.id)) return singleRefresh ? staleSingle()
+        : winter ? unavailableWinter() : NextResponse.json({ items: [] });
       if (invalid.length === 0) break;
       for (const card of invalid) unavailableCardIds.add(card.id);
       items = buildItems();
       plannedItems = refreshPlan ? buildItems(true) : [];
     }
-    const details = await fetchRecommendationDetails(admin, availabilityOnly ? [] : [
+    if (winter?.countOnly) {
+      const item = items[0];
+      return NextResponse.json({ source_card_id: item?.source_card_id ?? null,
+        repeated: item?.winter_repeated === true, count: item?.expansion_candidates?.length ?? 0 });
+    }
+    const details = await fetchRecommendationDetails(admin, availabilityOnly ? [] : winter
+      ? items.flatMap(item => (item.expansion_candidates ?? []).map(card => card.id)) : [
       ...[...singleRefreshDonors.values()].flatMap(donors => [...donors.values()].map(card => card.id)),
       ...[...items, ...plannedItems].flatMap((item) =>
         [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations, ...(item.expansion_candidates ?? [])].map(card => card.id)),
@@ -846,8 +906,14 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     }
     if (expansion) {
       const item = items[0];
-      const candidates = hydrate(item?.expansion_candidates ?? []);
+      const selected = item?.expansion_candidates ?? [];
+      const candidates = winter ? selected.flatMap(card => {
+        const detail = details.get(card.id);
+        return detail?.user_id === card.user_id && detail.photo_signed_urls.length &&
+          recommendationSourceKey(detail) === recommendationSourceKey(card) ? [detail] : [];
+      }) : hydrate(selected);
       return NextResponse.json({ source_card_id: item?.source_card_id ?? null, candidates,
+        ...(winter ? { repeated: item?.winter_repeated === true } : {}),
         impression_ticket: impressionResult?.available && item ? createImpressionTicket(user.id, item.source_card_id, candidates.map(card => card.id), nowMs) : null });
     }
     if (refreshPlan) {

@@ -155,6 +155,60 @@ test('protected hidden slots are not replaced by automatic newcomer promotion', 
   assert.ok([...protectedIds].every(id => ids(result).includes(id)));
 });
 
+test('exact-page promotion cannot replace closer compatible profiles just because a newcomer is within 90 km', () => {
+  const ranked = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_from, to) => ({ distanceKm: Number(to) }),
+  } })('@/lib/dating-1on1-recommendations');
+  const origin = { ...source, region: '0' };
+  const saved = [0, 2, 15, 21].map((km, i) => card(`existing-${i}`, { region: String(km) }));
+  const newcomer = card('further-newcomer', { region: '70', created_at: new Date(now - 1).toISOString() });
+  const result = ranked.includeNewRelevantCandidates(origin, [...saved, newcomer], saved,
+    now - 100, now, saved.length, new Set(), undefined, new Set(), true);
+  assert.deepEqual(ids(result), ids(saved), 'being older or inactive alone does not remove any closer age-compatible profile');
+});
+
+test('exact-page promotion replaces the farthest replaceable card, not the last card in a distance band', () => {
+  const ranked = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_from, to) => ({ distanceKm: to === 'unknown' ? null : Number(to) }),
+  } })('@/lib/dating-1on1-recommendations');
+  const origin = { ...source, region: '0' };
+  const saved = [89, 86, 5, 61, 'unknown'].map((km, i) => card(`existing-${i}`, { region: String(km) }));
+  const fresh = card('new-comparable', { region: '55', created_at: new Date(now - 1).toISOString() });
+  const protectedIds = new Set(['existing-0', 'existing-4']);
+  const result = ranked.includeNewRelevantCandidates(origin, [...saved, fresh], saved,
+    now - 100, now, saved.length, new Set(), undefined, new Set(), true, protectedIds);
+  assert.deepEqual(ids(result), ['new-comparable', 'existing-0', 'existing-2', 'existing-3', 'existing-4']);
+  assert.equal(new Set(ids(result)).size, saved.length);
+});
+
+test('exact-page promotion may improve age fit among nearby people without excluding them globally', () => {
+  const ranked = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_from, to) => ({ distanceKm: Number(to) }),
+  } })('@/lib/dating-1on1-recommendations');
+  const origin = { ...source, region: '0' };
+  const saved = [card('close-age-fallback', { age: 34, region: '3' }), card('close-age-fit', { region: '6' })];
+  const fresh = card('new-age-fit', { region: '25', created_at: new Date(now - 1).toISOString() });
+  const pool = [...saved, fresh];
+  const result = ranked.includeNewRelevantCandidates(origin, pool, saved,
+    now - 100, now, saved.length, new Set(), undefined, new Set(), true);
+  assert.deepEqual(ids(result), ['new-age-fit', 'close-age-fit']);
+  assert.ok(ids(ranked.sortCandidatesForSource(origin, pool, 'test', now)).includes('close-age-fallback'));
+});
+
+test('exact-page promotion can skip farther recent arrivals to find a closer new card in the same band', () => {
+  const ranked = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_from, to) => ({ distanceKm: Number(to) }),
+  } })('@/lib/dating-1on1-recommendations');
+  const origin = { ...source, region: '0' };
+  const saved = [4, 10, 12].map((km, i) => card(`existing-${i}`, { region: String(km) }));
+  const arrivals = [27, 21, 7].map((km, i) => card(`arrival-${i}`, {
+    region: String(km), created_at: new Date(now - 1 - i).toISOString(),
+  }));
+  const result = ranked.includeNewRelevantCandidates(origin, [...saved, ...arrivals, arrivals[2]], saved,
+    now - 100, now, saved.length, new Set(), undefined, new Set(), true);
+  assert.deepEqual(ids(result), ['arrival-2', 'existing-0', 'existing-1']);
+});
+
 test('newcomer check does not resolve regions again for thousands of old registrations', () => {
   const old = Array.from({ length: 5000 }, (_, i) => card('old-' + i));
   const fresh = card('fresh', { created_at: new Date(now).toISOString() });
@@ -1867,6 +1921,58 @@ const activeFixture = size => {
   tables.profiles.forEach(p => { p.last_meaningful_activity_at = new Date(now - 1000).toISOString(); });
   return tables;
 };
+
+function winterFixture() {
+  const tables = activeFixture(24);
+  const [source, ...candidates] = tables.dating_1on1_cards;
+  const refreshed = new Date(now - 3600000).toISOString();
+  source.recommendation_refresh_used_at = refreshed;
+  tables.dating_1on1_recommendation_refresh_events = [{ card_id: source.id, refreshed_at: refreshed }];
+  tables.dating_1on1_recommendation_pages = [{ user_id: source.user_id, source_card_id: source.id, refreshed_at: refreshed,
+    source_profile_key: load('@/lib/dating-1on1-recommendation-page-store').recommendationSourceKey(source),
+    main_candidate_ids: ids(candidates.slice(0, 10)), extra_candidate_ids: ids(candidates.slice(10, 13)) }];
+  tables.dating_1on1_recommendation_page_history = [];
+  tables.dating_1on1_single_candidate_swaps = [];
+  tables.dating_1on1_candidate_impressions = [...candidates.slice(0, 6), candidates[14]].map(c => ({ viewer_user_id: source.user_id,
+    candidate_user_id: c.user_id, first_seen_at: new Date(now - day).toISOString() }));
+  tables.dating_1on1_expansion_batches = [{ user_id: source.user_id, day_key: new Date(now - day).toISOString().slice(0, 10), candidate_ids: [candidates[13].id] }];
+  // A profile re-registration is still the same candidate; no impression receipt for the new ID.
+  tables.dating_1on1_cards.push({ ...candidates[13], id: 'new-revision-c13', created_at: '2026-01-02T00:00:00Z' });
+  candidates[15].photo_paths = [];
+  candidates.slice(18).forEach(c => { c.region = '경기 성남시'; });
+  return tables;
+}
+
+async function runWinter(tables, countOnly) {
+  const db = mockDatabase(tables);
+  const response = await createLoader({}, now)('@/lib/dating-1on1-recommendation-service')
+    .loadOneOnOneRecommendations(db, { id: 'user-source' }, undefined, { winter: { sourceCardId: 'source', countOnly } });
+  return { response, body: await response.json(), calls: db.calls };
+}
+
+test('winter service counts the same verified, unseen nearby profiles it reveals, without signing photos on GET', async () => {
+  const tables = winterFixture(), before = structuredClone(tables);
+  const preview = await runWinter(tables, true);
+  const revealed = await runWinter(tables, false);
+  assert.equal(preview.response.status, 200);
+  assert.deepEqual(preview.body, { source_card_id: 'source', repeated: true, count: 2 });
+  assert.equal(revealed.response.status, 200);
+  assert.deepEqual(new Set(ids(revealed.body.candidates)), new Set(['c16', 'c17']));
+  assert.equal(revealed.body.candidates.every(c => c.photo_signed_urls.length && !Object.hasOwn(c, 'phone')), true);
+  assert.equal(preview.calls.some(q => q.fields.includes('intro_text')), false);
+  assert.equal([...preview.calls, ...revealed.calls].some(q => q.insert || q.update || q.delete), false);
+  assert.deepEqual(tables, before);
+});
+
+test('winter never advertises a same-generation reload as a repeat or guesses when safety history is missing', async () => {
+  const tables = winterFixture();
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_candidate_impressions.map(row => ({ ...row,
+    first_seen_at: new Date(now - 1000).toISOString() }));
+  assert.deepEqual((await runWinter(tables, true)).body, { source_card_id: 'source', repeated: false, count: 0 });
+  delete tables.dating_1on1_recommendation_page_history;
+  assert.equal((await runWinter(tables, true)).response.status, 503);
+});
+
 function hideCandidate(tables, candidate, atTime = now) {
   tables.dating_1on1_candidate_hides ??= [];
   tables.dating_1on1_candidate_hides.push({ id: 'hide-' + candidate.id, user_id: 'user-source',

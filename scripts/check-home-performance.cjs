@@ -333,6 +333,22 @@ for (const [name, hash] of Object.entries(movedFunctions)) test('extraction pres
     const quotaCheck = '                          onCheckUsage={onReload}\n';
     assert.equal(code.split(quotaCheck).length, 2);
     code = code.replace(quotaCheck, '');
+    // Preserve the original pin for all other markup. The reviewed panel moved
+    // above the candidate cards so a truthful winter offer is visible on phones.
+    const winterPanel = `                        <OneOnOneExpansionPanel enabled={!starterPreview && group.expansion_enabled === true} sourceCardId={sourceCardId}
+                          primary={groupIndex === 0} winterEligible={Boolean(group.new_candidate_notice)}
+                          revision={group} blocked={refreshing || replacing || processingAutoKeys.length > 0}
+                          hidesEnabled={group.hides_enabled === true && Boolean(onCandidateHidden)} onHidden={onCandidateHidden}
+                          onSelect={(candidateId, name) => onAutoSelect(sourceCardId, candidateId, name)} onReported={onReported} />
+`;
+    const candidateList = '                        <div className="mt-3 space-y-3">\n';
+    assert.equal(code.split(winterPanel + candidateList).length, 2, 'winter offer is above the candidate list');
+    code = code.replace(winterPanel, '');
+    const endOfGroup = '                        </div>\n                      </div>\n                    );\n                  })}';
+    const previousPanel = winterPanel.replace('                          primary={groupIndex === 0} winterEligible={Boolean(group.new_candidate_notice)}\n', '')
+      .replace('blocked={refreshing || replacing || processingAutoKeys.length > 0}', 'blocked={refreshing || processingAutoKeys.length > 0}');
+    assert.equal(code.split(endOfGroup).length, 2, 'original expansion placement');
+    code = code.replace(endOfGroup, `                        </div>\n${previousPanel}                      </div>\n                    );\n                  })}`);
   }
   if (name === 'OneOnOneCandidateCard') {
     // Preserve the separately tested region note boundary. The new pin also

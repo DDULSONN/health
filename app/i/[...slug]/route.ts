@@ -718,9 +718,19 @@ async function optimizeSignedImageResponse(
   const width = Number.isFinite(widthParam) ? Math.max(320, Math.min(1600, Math.round(widthParam))) : DEFAULT_MAX_WIDTH;
   const quality = Number.isFinite(qualityParam) ? Math.max(45, Math.min(85, Math.round(qualityParam))) : DEFAULT_QUALITY;
 
+  let original: ArrayBuffer;
   try {
-    const input = Buffer.from(await upstream.arrayBuffer());
-    const output = await sharp(input, { limitInputPixels: 33_000_000 })
+    original = await upstream.arrayBuffer();
+  } catch (error) {
+    console.warn("[image-proxy] source image read failed", {
+      bucket,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return new Response("Bad Gateway", { status: 502, headers: { "Cache-Control": "no-store" } });
+  }
+
+  try {
+    const output = await sharp(Buffer.from(original), { limitInputPixels: 33_000_000 })
       .rotate()
       .resize({ width, withoutEnlargement: true })
       .webp({ quality })
@@ -741,9 +751,12 @@ async function optimizeSignedImageResponse(
       error: error instanceof Error ? error.message : String(error),
     });
     upstreamHeaders.set("Cache-Control", LONG_IMAGE_CACHE_CONTROL);
+    upstreamHeaders.set("Content-Length", String(original.byteLength));
     upstreamHeaders.set("Vary", "Accept");
     upstreamHeaders.delete("set-cookie");
-    return new Response(upstream.body, { status: upstream.status, headers: upstreamHeaders });
+    // The upstream stream was already consumed for optimization. Reuse the
+    // bytes for the same authorized object, not the now-disturbed stream.
+    return new Response(original, { status: upstream.status, headers: upstreamHeaders });
   }
 }
 

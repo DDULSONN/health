@@ -69,6 +69,28 @@ test('local candidates are preferred before adjacent regions', () => {
   assert.deepEqual(rules.selectExpansionCandidates(source, pool, new Set(), day, now).map(c => c.id), ['near', 'adjacent']);
 });
 
+test('winter candidates stay in the same province and age band, never recycle a member, and sort by distance', () => {
+  const fresh = card('fresh');
+  const candidates = [card('outside', { region: '경기 성남시' }), card('age', { age: 32 }),
+    card('known', { user_id: 'seen-user' }), card('hidden-id'), card('same-person', { user_id: source.user_id }),
+    card('repeat-account', { user_id: fresh.user_id, region: '서울 은평구' }), fresh,
+    card('dongdaemun', { region: '서울 동대문구' }), card('gangdong', { region: '서울 강동구' }),
+    card('invalid', { region: '미상' }), card('quiet', { created_at: '2025-01-01' }),
+    card('old_request', { last_handled_at: new Date(now - 1000).toISOString() })];
+  const select = list => rules.selectWinterExpansionCandidates(source, list, new Set(['hidden-id']), new Set(['seen-user']), now).map(c => c.id);
+  assert.equal(select(candidates)[0], 'fresh');
+  assert.deepEqual(new Set(select(candidates)), new Set(['fresh', 'dongdaemun', 'gangdong']));
+  assert.equal(select(candidates.filter(c => ['outside', 'age', 'known', 'hidden-id', 'invalid'].includes(c.id))).length, 0);
+});
+
+test('winter has its own pause switch without disabling ordinary expansion', () => {
+  const disabled = loader({}, { DATING_WINTER_EXPANSION_ENABLED: '0' })('@/lib/dating-1on1-expansion');
+  assert.equal(disabled.isExpansionEnabled('member'), true);
+  assert.equal(disabled.isWinterExpansionEnabled('member'), false);
+  assert.equal(loader({}, {})('@/lib/dating-1on1-expansion').isWinterExpansionEnabled('member'), true);
+  assert.equal(loader({}, { DATING_EXPANSION_PERCENT: '0' })('@/lib/dating-1on1-expansion').isWinterExpansionEnabled('member'), false);
+});
+
 const sourceId = '00000000-0000-4000-8000-000000000001';
 const ownerId = '00000000-0000-4000-8000-000000000002';
 const candidateId = '00000000-0000-4000-8000-000000000003';
@@ -91,16 +113,22 @@ async function routeFixture(options = {}) {
     '@/lib/supabase/request': { getRequestAuthContext: async () => ({ user: options.anon ? null : { id: ownerId } }) },
     '@/lib/request-origin': { ensureAllowedMutationOrigin: () => options.badOrigin ? Response.json({}, { status: 403 }) : null },
     '@/lib/weekly': { getKstDateString: () => options.midnight && dayReads++ ? '2026-10-10' : day },
-    '@/lib/dating-1on1-expansion': { ...rules, isExpansionEnabled: () => !options.disabled },
+    '@/lib/dating-1on1-expansion': { ...rules, isExpansionEnabled: () => !options.disabled, isWinterExpansionEnabled: () => !options.disabled },
     '@/lib/dating-1on1-recommendation-service': { loadOneOnOneRecommendations: async (_db, user, refresh, expansion) => {
       assert.equal(user.id, ownerId); assert.equal(refresh, undefined); plans.push(expansion);
+      if (expansion.winter?.countOnly) return Response.json(options.serviceBody ?? { source_card_id: sourceId,
+        repeated: true, count: 2, candidates: [{ id: candidateId, name: 'not exposed' }] }, { status: options.serviceStatus ?? 200 });
       return Response.json(options.serviceBody ?? { source_card_id: sourceId,
-        candidates: (expansion.candidateIds ?? [candidateId]).map(id => ({ id, name: '한글 후보' })) }, { status: options.serviceStatus ?? 200 });
+        repeated: true, candidates: (expansion.candidateIds ?? [candidateId]).map(id => ({ id, name: '한글 후보' })) }, { status: options.serviceStatus ?? 200 });
     } },
   });
-  const response = await load('@/app/api/dating/1on1/recommendations/expand/route').POST(new Request('http://localhost/api/dating/1on1/recommendations/expand', {
-    method: 'POST', body: options.invalidJson ? '{' : JSON.stringify({ source_card_id: options.sourceId ?? sourceId, candidate_ids: [otherId], day_key: '2099-01-01', refresh_seed: 'forged' }),
-  }));
+  const route = load('@/app/api/dating/1on1/recommendations/expand/route');
+  const url = 'http://localhost/api/dating/1on1/recommendations/expand';
+  const response = options.preview ? await route.GET(new Request(url + `?mode=winter&source_card_id=${options.sourceId ?? sourceId}`))
+    : await route.POST(new Request(url, {
+      method: 'POST', body: options.invalidJson ? '{' : JSON.stringify({ source_card_id: options.sourceId ?? sourceId,
+        ...(options.winter ? { mode: 'winter' } : {}), candidate_ids: [otherId], day_key: '2099-01-01', refresh_seed: 'forged' }),
+    }));
   return { response, body: await response.json(), calls, plans };
 }
 for (const [label, options, status] of [
@@ -142,6 +170,58 @@ test('a persisted batch cannot reveal IDs that were not claimed', async () => {
   const r = await routeFixture({ saved: { source_card_id: sourceId, day_key: day, candidate_ids: [candidateId] },
     serviceBody: { source_card_id: sourceId, candidates: [{ id: otherId }] } });
   assert.equal(r.response.status, 503); assert.equal(r.body.candidates, undefined);
+});
+
+test('winter availability returns nothing except KST day, own card, validated count and cohort flags; no RPC', async () => {
+  const r = await routeFixture({ preview: true });
+  assert.equal(r.response.status, 200);
+  assert.equal(r.response.headers.get('Cache-Control'), 'private, no-store');
+  assert.deepEqual(r.body, { source_card_id: sourceId, day_key: day, repeated: true, count: 2, claimed: false });
+  assert.deepEqual(r.plans, [{ winter: { sourceCardId: sourceId, countOnly: true } }]);
+  assert.deepEqual(r.calls, [['read'], ['user_id', ownerId], ['day_key', day]]);
+});
+
+test('winter availability does not reuse another profile, invent stock or reopen the daily claim', async () => {
+  const setup = { preview: true };
+  for (const [extra, status] of [
+    [{ anon: true }, 401], [{ disabled: true }, 404], [{ sourceId: 'malformed' }, 400], [{ sourceId: otherId }, 503],
+    [{ serviceBody: { source_card_id: sourceId, repeated: true, count: 4 } }, 503],
+    [{ serviceBody: { source_card_id: sourceId, repeated: false, count: 1 } }, 503],
+    [{ midnight: true }, 503],
+  ]) {
+    const r = await routeFixture({ ...setup, ...extra });
+    assert.equal(r.response.status, status);
+    assert.equal(r.calls.some(c => c[0] === 'rpc'), false);
+  }
+  const opened = await routeFixture({ ...setup, saved: { source_card_id: sourceId, candidate_ids: [candidateId] } });
+  assert.deepEqual(opened.body, { source_card_id: sourceId, day_key: day, repeated: false, count: 0, claimed: true });
+  assert.equal(opened.plans.length, 0);
+  const empty = await routeFixture({ ...setup, serviceBody: { source_card_id: sourceId, repeated: true, count: 0 } });
+  assert.deepEqual(empty.body, { source_card_id: sourceId, day_key: day, repeated: true, count: 0, claimed: false });
+  const openedEmpty = await routeFixture({ ...setup, saved: { source_card_id: sourceId, candidate_ids: [] } });
+  assert.deepEqual(openedEmpty.body, { source_card_id: sourceId, day_key: day, repeated: true, count: 0, claimed: true });
+  assert.equal(openedEmpty.calls.some(c => c[0] === 'rpc'), false);
+});
+
+test('winter POST uses the same daily snapshot only when valid stock exists; losing a race never reveals another batch', async () => {
+  const good = await routeFixture({ winter: true });
+  assert.equal(good.response.status, 200);
+  assert.deepEqual(good.plans, [{ winter: { sourceCardId: sourceId } }]);
+  assert.deepEqual(good.calls.filter(c => c[0] === 'rpc').map(c => [c[1], c[2].p_candidate_ids]), [['claim_dating_1on1_expansion_batch', [candidateId]]]);
+  for (const r of [await routeFixture({ winter: true, serviceBody: { source_card_id: sourceId, repeated: true, candidates: [] } }),
+    await routeFixture({ winter: true, serviceBody: { source_card_id: sourceId, repeated: false, candidates: [{ id: candidateId }] } })]) {
+    assert.equal(r.response.status, 200);
+    assert.deepEqual(r.body.candidates, []);
+    assert.equal(r.calls.some(c => c[0] === 'rpc'), false);
+  }
+  const saved = { source_card_id: sourceId, day_key: day, candidate_ids: [otherId] };
+  for (const extra of [{ saved }, { rpcResult: { data: [saved], error: null } }]) {
+    const r = await routeFixture({ winter: true, ...extra });
+    assert.equal(r.response.status, 409);
+    assert.equal(r.body.code, 'WINTER_ALREADY_OPENED');
+    assert.equal(r.body.candidates, undefined);
+    assert.ok(r.plans.length <= 1);
+  }
 });
 
 test('real SQL: repeatable, one immutable daily batch, empty/concurrent claims, ACLs and account cleanup', async () => {

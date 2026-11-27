@@ -408,9 +408,8 @@ export function includeNewRelevantCandidates<T extends RecommendationCandidate>(
   newcomerPool.sort((a, b) => readMeta(a).tier - readMeta(b).tier ||
     distanceBand(readMeta(a).km) - distanceBand(readMeta(b).km) ||
     Date.parse(b.created_at) - Date.parse(a.created_at) || stableOrder.get(a.id)! - stableOrder.get(b.id)!);
-  const newcomers = takeRecommendations(newcomerPool, Math.min(2, limit));
-  const newcomerIds = new Set(newcomers.map((card) => card.id));
-  let merged = [...newcomers, ...previous.filter((card) => !newcomerIds.has(card.id))].slice(0, limit);
+  const newcomerLimit = Math.min(2, limit);
+  let merged: T[];
   if (preserveCloserCandidates) {
     // Exact pages may come from older rankings with locals at the end. Do not
     // drop those locals merely to prepend a distant newcomer. Keep the saved
@@ -418,20 +417,35 @@ export function includeNewRelevantCandidates<T extends RecommendationCandidate>(
     // Legacy replay stays unchanged to preserve pre-snapshot plan/GET agreement.
     const retained = previous.slice(0, limit);
     const promoted: T[] = [];
-    for (const newcomer of newcomers) {
+    for (const newcomer of newcomerPool) {
+      // The limit is on successful insertions. A newer 80 km card refused by
+      // the saved page must not hide a slightly older, closer arrival.
+      if (promoted.length >= newcomerLimit) break;
+      if (promoted.some(card => card.id === newcomer.id)) continue;
       const existing = retained.findIndex(card => card.id === newcomer.id);
       if (existing >= 0) retained.splice(existing, 1);
       else if (retained.length + promoted.length >= limit) {
         const incoming = readMeta(newcomer);
+        const incomingKm = incoming.km ?? Number.POSITIVE_INFINITY;
         let replace = -1;
-        let farthestBand = -1;
+        let farthestKm = -1;
+        let victimAgeFit = false;
         for (let index = 0; index < retained.length; index++) {
           // A newly hidden card keeps its empty slot until an explicit refresh.
           if (protectedIds.has(retained[index].id)) continue;
-          const band = distanceBand(readMeta(retained[index]).km);
-          if ((incoming.close || band >= distanceBand(incoming.km)) && band >= farthestBand) {
-            replace = index; farthestBand = band;
+          const outgoing = readMeta(retained[index]);
+          const outgoingKm = outgoing.km ?? Number.POSITIVE_INFINITY;
+          // Preserve closer, age-compatible local cards. A local arrival may
+          // improve an age fallback; outside the local range, keep the existing
+          // novelty allowance within the same distance band only.
+          if (outgoingKm < incomingKm) {
+            if (outgoing.close && (!incoming.close || outgoing.ageMatch)) continue;
+            if (!outgoing.close && distanceBand(outgoing.km) < distanceBand(incoming.km)) continue;
           }
+          if (outgoingKm < farthestKm || (outgoingKm === farthestKm && !victimAgeFit && outgoing.ageMatch)) continue;
+          replace = index;
+          farthestKm = outgoingKm;
+          victimAgeFit = outgoing.ageMatch;
         }
         if (replace < 0) continue;
         retained.splice(replace, 1);
@@ -439,6 +453,10 @@ export function includeNewRelevantCandidates<T extends RecommendationCandidate>(
       promoted.push(newcomer);
     }
     merged = [...promoted, ...retained];
+  } else {
+    const newcomers = takeRecommendations(newcomerPool, newcomerLimit);
+    const newcomerIds = new Set(newcomers.map((card) => card.id));
+    merged = [...newcomers, ...previous.filter((card) => !newcomerIds.has(card.id))].slice(0, limit);
   }
   // The historical pool may have been smaller. Reserve two fresh slots, but
   // never leave the rest empty when eligible people registered afterwards.
