@@ -253,7 +253,7 @@ function withoutSingleCandidatePanelChanges(source) {
     ['blocked={!canRefresh || replacing || favoriteBusyKeys.length > 0}', 'blocked={!canRefresh || favoriteBusyKeys.length > 0}'],
     [`                        {singleRefreshNotice?.sourceCardId === sourceCardId ? <p role="status" className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-700">{singleRefreshNotice.message}</p> : null}
 `, ''],
-    ['  const waitingSingleCandidateGroup = firstWaitingSingleCandidateGroup(displayedGroups, singleRefreshNotice);\n', ''],
+    ['  const waitingSingleCandidateGroup = customizedView ? undefined : firstWaitingSingleCandidateGroup(displayedGroups, singleRefreshNotice);\n', ''],
     [`                        {group === waitingSingleCandidateGroup && viewerLoggedIn && !sessionError && !singleRefreshBusy && !refreshingRecommendationIds.length &&
                           !processingAutoKeys.length && !processingMatchIds.length && !processingContactIds.length &&
                           !processingNudgeIds.length && !favoriteBusyKeys.length ?

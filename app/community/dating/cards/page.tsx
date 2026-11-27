@@ -49,6 +49,7 @@ import AllPassProfileOfferBanner from "@/components/dating/AllPassProfileOfferBa
 import ProfileStartCard from "@/components/dating/ProfileStartCard";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
 import { buildOneOnOneRequestSentMessage } from "@/lib/dating-1on1-action-copy";
+import type { OpenCardOneOnOneEntry } from "@/lib/dating-open-card-one-on-one-entry";
 import type {
   OneOnOneContactNudgePresetKey,
 } from "@/lib/dating-1on1-contact-nudge";
@@ -1673,18 +1674,33 @@ function OpenCardsContent() {
     () => parseHomeFeatureTab(searchParams.get("tab")) ?? "open_cards"
   );
   const [contactHomeNotice, setContactHomeNotice] = useState<{ viewerId: string; matchId: string } | null>(null);
+  const [openCardOneOnOneEntry, setOpenCardOneOnOneEntry] = useState<(OpenCardOneOnOneEntry & { viewerId: string }) | null>(null);
   const contactNoticeViewer = homeFeatureTab === "open_cards" && viewerSessionReady && viewerLoggedIn &&
-    viewerPhoneVerified && !viewerSessionError && hasActiveOneOnOneProfile ? draftUserId : null;
+    viewerPhoneVerified && !viewerSessionError ? draftUserId : null;
   useEffect(() => {
     setContactHomeNotice(null);
+    setOpenCardOneOnOneEntry(null);
     if (!contactNoticeViewer) return;
     const controller = new AbortController();
-    void fetchClientJson<{ matchId?: unknown }>("/api/dating/1on1/contact-home-notice", {
+    void fetchClientJson<Partial<OpenCardOneOnOneEntry> & { matchId?: unknown }>("/api/dating/1on1/contact-home-notice?entry=1", {
       cache: "no-store",
       signal: controller.signal,
+      headers: { "X-Jimtul-Viewer": contactNoticeViewer },
     }, 5000).then(({ response, body }) => {
-      const matchId = response.ok ? normalizeOneOnOneMatchId(body?.matchId) : null;
-      if (!matchId || controller.signal.aborted) return;
+      if (!response.ok || !body || controller.signal.aborted ||
+          openCardsScopeRef.current !== `member:${contactNoticeViewer}`) return;
+      const hasIncoming = body.hasIncoming === true;
+      const count = body.incomingCount;
+      let suggestion = body.suggestion === "nearby" || body.suggestion === "profile" ? body.suggestion : null;
+      try {
+        if (suggestion && sessionStorage.getItem(`open-card-1on1-entry:${contactNoticeViewer}:${suggestion}`)) suggestion = null;
+      } catch { /* Optional suggestions do not depend on browser storage. */ }
+      if (hasIncoming || suggestion) setOpenCardOneOnOneEntry({
+        viewerId: contactNoticeViewer, hasIncoming, suggestion,
+        incomingCount: typeof count === "number" && Number.isSafeInteger(count) && count > 0 ? count : null,
+      });
+      const matchId = normalizeOneOnOneMatchId(body.matchId);
+      if (hasIncoming || !matchId) return;
       try {
         if (sessionStorage.getItem(contactHomeDismissKey(contactNoticeViewer, matchId))) return;
       } catch { /* Privacy mode may disable storage. */ }
@@ -3053,12 +3069,15 @@ function OpenCardsContent() {
     : null;
   const hasAnyOpenCardProfile = myOpenCards.length > 0;
   const registeredProfileServiceCount = Number(hasAnyOpenCardProfile) + Number(hasActiveOneOnOneProfile);
+  const oneOnOneEntry = openCardOneOnOneEntry?.viewerId === contactNoticeViewer ? openCardOneOnOneEntry : null;
+  const showOneOnOneContact = contactHomeNotice?.viewerId === contactNoticeViewer;
   const hasProfileDraft = canResumeDatingDraft(profileDraft, { open: hasAnyOpenCardProfile, oneOnOne: hasActiveOneOnOneProfile });
   const showDraftResumeCard = !showLoveFortuneSection && viewerSessionReady && viewerLoggedIn &&
     viewerPhoneVerified && homeProfilePresenceReady && hasProfileDraft;
   const showProfileStartCard =
     !showOneOnOneSection && !showLoveFortuneSection && !showDraftResumeCard &&
     viewerSessionReady && !viewerSessionError &&
+    !(showOpenCardSection && viewerLoggedIn && hasAnyOpenCardProfile && !hasActiveOneOnOneProfile) &&
     (!showOpenCardSection || cardsAudience?.status === "guest" || cardsAudience?.status === "resolved" || cardsAudience?.status === "admin") &&
     (!viewerLoggedIn || (homeProfilePresenceReady && registeredProfileServiceCount < 2));
   const showOpenCardManagement =
@@ -3135,7 +3154,18 @@ function OpenCardsContent() {
           })}
         </div>
       </section>
-      {contactHomeNotice && contactHomeNotice.viewerId === contactNoticeViewer ? (
+      {oneOnOneEntry?.hasIncoming ? (
+        <section aria-label="받은 1:1 요청 안내" className="mb-3 flex flex-wrap items-center justify-between gap-x-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-1">
+          <p className="min-w-0 py-1.5 text-sm font-semibold text-neutral-900">
+            받은 1:1 요청{oneOnOneEntry.incomingCount ? ` ${oneOnOneEntry.incomingCount}건` : ""}
+          </p>
+          <Link href={`${ONE_ON_ONE_HOME_HREF}&focus=incoming#one-on-one-incoming`} prefetch={false}
+            className="inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold text-rose-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700">
+            요청 보기
+          </Link>
+        </section>
+      ) : null}
+      {contactHomeNotice && showOneOnOneContact ? (
         <section aria-label="서로 수락한 1:1 매칭 안내" className="mb-3 flex flex-wrap items-center gap-x-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-1.5">
           <p className="min-w-0 flex-1 basis-32 break-keep py-1.5 text-sm font-semibold leading-5 text-neutral-900">서로 수락한 매칭이 있어요</p>
           <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -3148,6 +3178,28 @@ function OpenCardsContent() {
               onClick={() => {
                 try { sessionStorage.setItem(contactHomeDismissKey(contactHomeNotice.viewerId, contactHomeNotice.matchId), "1"); } catch { /* Still close locally. */ }
                 setContactHomeNotice(null);
+              }}>
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
+        </section>
+      ) : null}
+      {!showOneOnOneContact && !showDraftResumeCard && !oneOnOneEntry?.hasIncoming && oneOnOneEntry?.suggestion ? (
+        <section aria-label="1:1 둘러보기 안내" className="mb-3 flex flex-wrap items-center gap-x-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1">
+          <p className="min-w-0 flex-1 basis-36 break-keep py-1.5 text-sm text-neutral-700">
+            {oneOnOneEntry.suggestion === "nearby" ? "가까운 1:1 후보도 볼까요?" : "내 지역·나이대에 맞는 1:1도 볼까요?"}
+            <span className="mt-0.5 block text-xs text-neutral-500">요청 무료 · 연락처 교환만 유료</span>
+          </p>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <Link href={oneOnOneEntry.suggestion === "nearby" ? ONE_ON_ONE_HOME_HREF : ONE_ON_ONE_ONBOARDING_HREF} prefetch={false}
+              className="inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
+              {oneOnOneEntry.suggestion === "nearby" ? "후보 보기" : "기존 프로필로 시작"}
+            </Link>
+            <button type="button" aria-label="1:1 추천 안내 닫기"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-lg text-neutral-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+              onClick={() => {
+                try { sessionStorage.setItem(`open-card-1on1-entry:${oneOnOneEntry.viewerId}:${oneOnOneEntry.suggestion}`, "1"); } catch { /* Still close locally. */ }
+                setOpenCardOneOnOneEntry(null);
               }}>
               <span aria-hidden="true">×</span>
             </button>

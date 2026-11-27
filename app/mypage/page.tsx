@@ -45,7 +45,9 @@ import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingReques
 import OneOnOneNextSteps from "@/components/dating/OneOnOneNextSteps";
 import OneOnOneContactList from "@/components/dating/OneOnOneContactList";
 import OneOnOneContactPending from "@/components/dating/OneOnOneContactPending";
-import { canOfferOneOnOneContact } from "@/lib/dating-1on1-match-navigation";
+import { canOfferOneOnOneContact, oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
+import type { ContactOrderDelivery } from "@/lib/contact-payment-order-state";
+import ContactPaymentOrderCheck from "@/components/dating/ContactPaymentOrderCheck";
 import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import IncomingSwipeLikeActions from "@/components/dating/IncomingSwipeLikeActions";
 import { fetchClientJson } from "@/lib/client-json-request";
@@ -694,6 +696,8 @@ type MyPaymentCenterOrder = {
   canResume?: boolean;
   canResumeProduct?: boolean;
   resumeMatchId?: string | null;
+  contactDelivery?: ContactOrderDelivery;
+  contactDeliveryMatchId?: string | null;
 };
 
 type MyPaymentCenterData = {
@@ -805,7 +809,11 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   }
   if (order.product_type === "more_view") return "이상형 더보기 권한 반영 완료";
   if (order.product_type === "city_view") return "가까운 후보 30명 열람권 반영 완료";
-  if (order.product_type === "one_on_one_contact_exchange") return "상대 연락처 공개 완료";
+  if (order.product_type === "one_on_one_contact_exchange") {
+    if (order.contactDelivery === "delivered") return "연락처 교환 반영 완료";
+    if (order.contactDelivery === "processing") return "연락처 교환 반영 확인 중";
+    return "연락처 교환 상태 확인 필요";
+  }
   if (order.product_type === "one_on_one_priority_24h") return "1:1 우선 추천 적용 완료";
   if (order.product_type === "one_on_one_plus_30d") return "1:1 매칭 플러스 적용 완료";
   if (order.product_type === "one_on_one_plus_7d") return "1:1 매칭 플러스 7일 적용 완료";
@@ -3715,6 +3723,7 @@ export default function MyPage() {
       const section = params.get("section");
       const match = params.get("match");
       const settings = params.get("settings");
+      const adminTab = params.get("adminTab");
       const anchorFilter = getMypageMatchingAnchorFilter(window.location.hash);
       const openCardAnchor = getMypageOpenCardAnchor(window.location.hash);
       const hasExplicitSection = Boolean(section && MY_PAGE_SECTION_TABS.has(section as MyPageSectionTab));
@@ -3727,6 +3736,10 @@ export default function MyPage() {
       if (target?.id === "my-open-card-status") setOpenCardManagementOpen(true);
       setPageSectionTab(nextSection);
       setMatchingFilter(nextFilter);
+      if (nextSection === "admin" && (adminTab === "payment_center" ||
+          adminTab === "one_on_one_contact" || adminTab === "dating_stats" || adminTab === "card_ai_review")) {
+        setAdminManageTab(adminTab);
+      }
       setActiveTab(
         settings && MY_PAGE_CERT_TABS.has(settings as MyPageTab)
           ? (settings as MyPageTab)
@@ -9465,22 +9478,13 @@ export default function MyPage() {
           </div>
         </div>
 
-        {resumableOneOnOneOrder?.resumeMatchId ? (
+        {!paymentCenterOpen && resumableOneOnOneOrder?.resumeMatchId ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
             <div>
-              <p className="text-sm font-semibold text-amber-950">완료하지 않은 1:1 번호 교환이 있어요.</p>
-              <p className="mt-1 text-xs text-amber-800">상호 수락 상태를 다시 확인한 뒤 새 결제창으로 안전하게 이어집니다.</p>
+              <p className="text-sm font-semibold text-amber-950">확인할 1:1 번호 교환 주문이 있어요.</p>
+              <p className="mt-1 text-xs text-amber-800">새 결제창을 열기 전에 기존 주문 상태를 확인해 주세요.</p>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleRequestOneOnOneContactExchange(resumableOneOnOneOrder.resumeMatchId as string)}
-              disabled={processingOneOnOneContactExchangeIds.includes(resumableOneOnOneOrder.resumeMatchId)}
-              className="inline-flex min-h-10 items-center rounded-lg bg-neutral-900 px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {processingOneOnOneContactExchangeIds.includes(resumableOneOnOneOrder.resumeMatchId)
-                ? "결제창 준비 중..."
-                : "결제 이어하기"}
-            </button>
+            <ContactPaymentOrderCheck key={resumableOneOnOneOrder.id} orderId={resumableOneOnOneOrder.toss_order_id} matchId={resumableOneOnOneOrder.resumeMatchId} />
           </div>
         ) : null}
 
@@ -9586,7 +9590,9 @@ export default function MyPage() {
                               <p className="mt-1 text-[11px] text-neutral-500">주문번호 {order.toss_order_id}</p>
                             </div>
                             <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                              {formatPaymentStatusLabel(order.status)}
+                              {order.product_type === "one_on_one_contact_exchange" && order.status === "paid"
+                                ? "결제 승인 기록"
+                                : formatPaymentStatusLabel(order.status)}
                             </span>
                           </div>
 
@@ -9618,17 +9624,16 @@ export default function MyPage() {
                                 매출전표 보기
                               </a>
                             ) : null}
-                            {order.status === "ready" && order.canResume && order.resumeMatchId ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleRequestOneOnOneContactExchange(order.resumeMatchId as string)}
-                                disabled={processingOneOnOneContactExchangeIds.includes(order.resumeMatchId)}
-                                className="inline-flex min-h-9 items-center rounded-lg bg-neutral-900 px-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            {order.status === "ready" && order.product_type === "one_on_one_contact_exchange" ? (
+                              <ContactPaymentOrderCheck orderId={order.toss_order_id} matchId={order.canResume ? order.resumeMatchId : null} />
+                            ) : null}
+                            {order.status === "paid" && order.contactDelivery === "delivered" && order.contactDeliveryMatchId ? (
+                              <Link
+                                href={oneOnOneMatchHref(order.contactDeliveryMatchId)}
+                                className="inline-flex min-h-11 items-center px-2 font-medium text-neutral-700 underline"
                               >
-                                {processingOneOnOneContactExchangeIds.includes(order.resumeMatchId)
-                                  ? "결제창 준비 중..."
-                                  : "결제 이어하기"}
-                              </button>
+                                이 매칭 확인
+                              </Link>
                             ) : null}
                             {order.status === "ready" && order.canResumeProduct ? (
                               <button
@@ -9641,6 +9646,11 @@ export default function MyPage() {
                               </button>
                             ) : null}
                           </div>
+                          {order.product_type === "one_on_one_contact_exchange" && order.status === "paid" && order.contactDelivery !== "delivered" ? (
+                            <p className="mt-2 text-xs leading-5 text-neutral-600">
+                              다시 결제하지 마세요. 내역을 새로고침해도 같다면 주문번호와 함께 문의해 주세요.
+                            </p>
+                          ) : null}
                         </article>
                       ))}
                     </div>

@@ -223,10 +223,15 @@ function text(tree) {
 }
 for (const remaining of [0, 1, 2]) for (const replacingSourceId of [null, 'fixture-card', 'other-card']) test(`real home result markup shows ${remaining} remaining and preserves button permission during ${replacingSourceId ?? 'no replacement'}`, () => {
   const source = ast('components/dating/OneOnOneHomePanel.tsx');
-  const call = find(source, n => ts.isCallExpression(n) && n.expression.getText(source) === 'displayedGroups.map');
+  // The separate presentation-only projection also maps displayedGroups.
+  // Exercise the original render path that actually binds refresh controls.
+  const call = find(source, n => ts.isCallExpression(n) && n.expression.getText(source) === 'displayedGroups.map' &&
+    n.arguments[0]?.getText(source).includes('<OneOnOneRefreshControl'));
+  assert.ok(call);
   const initialBrowseCount = find(source, n => ts.isVariableDeclaration(n) && n.name.getText(source) === 'INITIAL_BROWSE_COUNT');
   const render = evaluate('const ' + initialBrowseCount.getText(source) + '; exports.render = ' + call.arguments[0].getText(source) + ';', {
-    ...copy, activeCards: [], refreshingRecommendationIds: [], onRefreshRecommendations() {}, onReload() {},
+    ...copy, activeCards: [], candidateViews: [{ regular: [], additional: [] }],
+    refreshingRecommendationIds: [], onRefreshRecommendations() {}, onReload() {},
     OneOnOneRefreshControl: 'RefreshControl', refreshNotice: null, plusActive: false,
     OneOnOneExpansionPanel: 'ExpansionPanel', processingAutoKeys: [], onReported() {}, onAutoSelect() {},
     onCandidateHidden: undefined, onCandidateRestored: undefined, onFavoriteChanged: undefined, starterPreview: false, arrivedFromOnboarding: false, favoriteBusyKeys: [],

@@ -2200,10 +2200,11 @@ function singleReaders(fixture, { atTime = now, viewerId = fixture.own.user_id, 
     replace: async (body, origin = 'http://localhost') => observed(await apiLoad('@/app/api/dating/1on1/recommendations/replace/route').POST(new Request('http://localhost/api/dating/1on1/recommendations/replace', {
       method: 'POST', headers: { host: 'localhost', origin }, body: JSON.stringify(body),
     }))),
-    availability: async (group, patch = {}, receipt) => {
+    availability: async (group, patch = {}, receipt, checkedThrough) => {
       const query = new URLSearchParams({ source_card_id: group.source_card_id, generation_key: group.single_refresh_generation, ...patch });
       return observed(await apiLoad('@/app/api/dating/1on1/recommendations/replace/route').GET(new Request(`http://localhost/api/dating/1on1/recommendations/replace?${query}`, {
-        headers: typeof receipt === 'string' ? { 'X-Jimtul-Candidate-Receipt': receipt } : undefined,
+        headers: typeof receipt === 'string' ? { 'X-Jimtul-Candidate-Receipt': receipt,
+          ...(typeof checkedThrough === 'string' ? { 'X-Jimtul-Candidate-Checked-Through': checkedThrough } : {}) } : undefined,
       })));
     },
   };
@@ -2270,6 +2271,61 @@ test('single-slot availability with an authentic prior receipt can detect a newc
   assert.equal(denied.calls.length, 0);
   assert.equal(denied.rpcCalls.length, 0);
   assert.deepEqual(f.tables, snapshot);
+});
+
+test('an idle signed-deck availability check reads only the owned card, viewer profile and one new registration ID', async () => {
+  const f = singleFixture(13);
+  const [group] = (await singleReaders(f).get()).body.items;
+  const patch = { probe_candidate_id: group.single_refresh_candidate_ids[0] };
+  const snap = structuredClone(f.tables);
+  const result = await singleReaders(f, { atTime: now + 300_000 }).availability(group, patch, group.impression_ticket);
+  expectSingleAvailability(result, group, false, f, snap);
+  assert.equal(result.calls.length, 3);
+  const arrival = result.calls.find(call => call.table === 'dating_1on1_cards' && call.fields === 'id');
+  assert.ok(arrival);
+  assert.equal(arrival.to, 0, 'no more than one row');
+  assert.deepEqual(arrival.filters.find(([op, field]) => op === 'gt' && field === 'created_at'),
+    ['gt', 'created_at', new Date(now).toISOString()]);
+  assert.ok(result.calls.filter(call => call.table === 'profiles').every(call =>
+    call.filters.some(([op, field, value]) => op === 'in' && field === 'user_id' && value.length === 1 && value[0] === f.own.user_id)));
+});
+
+test('a signed-deck arrival is only a hint: blocked new registrations never become an availability notice', async () => {
+  const f = singleFixture(13);
+  const [group] = (await singleReaders(f).get()).body.items;
+  const fresh = { ...f.cards[0], id: localId(891), user_id: localId(892), phone: '+821099911779',
+    created_at: new Date(now + 20).toISOString(), photo_paths: [`${localId(892)}/photo.webp`] };
+  f.tables.dating_1on1_cards.push(fresh);
+  f.tables.profiles.push({ user_id: fresh.user_id, phone_e164: fresh.phone, is_banned: false, phone_verified: true });
+  f.tables.dating_user_blocks = [{ blocker_user_id: fresh.user_id, blocked_user_id: f.own.user_id }];
+  const snap = structuredClone(f.tables);
+  const patch = { probe_candidate_id: group.single_refresh_candidate_ids[0] };
+  const result = await singleReaders(f, { atTime: now + 300_000 }).availability(group, patch, group.impression_ticket);
+  expectSingleAvailability(result, group, false, f, snap);
+  assert.ok(result.calls.some(call => call.table === 'dating_user_blocks'), 'possible arrival must enter the existing eligibility check');
+  const cutoff = result.response.headers.get('x-jimtul-candidate-checked-through');
+  assert.equal(cutoff, String(now + 300_000));
+  const next = await singleReaders(f, { atTime: now + 480_000 }).availability(group, patch, group.impression_ticket, cutoff);
+  expectSingleAvailability(next, group, false, f, snap);
+  assert.equal(next.calls.length, 3, 'the same unusable registration does not repeatedly trigger a full read');
+  const future = await singleReaders(f, { atTime: now + 480_000 }).availability(group, patch, group.impression_ticket, String(now + 500_000));
+  expectSingleAvailability(future, group, false, f, snap);
+  assert.ok(future.calls.some(call => call.table === 'dating_user_blocks'), 'invalid future cutoff cannot skip authoritative checking');
+});
+
+test('candidate viewing options sort/filter only the supplied cards and preserve normal order when reset', () => {
+  const { DEFAULT_CANDIDATE_VIEW, readCandidateViewRange, selectCandidateView } = load('@/lib/dating-1on1-candidate-view');
+  const candidate = (id, age, region) => ({id, age, region});
+  const cards = [candidate('far', 30, '부산 해운대구'), candidate('unknown', null, '미입력'),
+    candidate('local', 28, '서울 강남구'), candidate('neighbor', 35, '경기 성남시')];
+  const original = ids(cards);
+  const view = options => ids(selectCandidateView(cards, '서울 강남구', options, item => item.age));
+  assert.deepEqual(view(DEFAULT_CANDIDATE_VIEW), original);
+  assert.deepEqual(view({ minAge: '28', maxAge: '30', nearbyFirst: true }), ['local', 'far']);
+  assert.deepEqual(view({ minAge: '', maxAge: '', nearbyFirst: true }), ['local', 'neighbor', 'far', 'unknown']);
+  assert.deepEqual(view({ minAge: '31', maxAge: '30', nearbyFirst: false }), original);
+  assert.equal(readCandidateViewRange({ minAge: '20.5', maxAge: '30', nearbyFirst: false }).valid, false);
+  assert.deepEqual(ids(cards), original, 'do not mutate the server-issued list');
 });
 
 test('single-slot availability honors active revisions, hides, and blocks rather than counting stale members', async () => {

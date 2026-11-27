@@ -9,6 +9,9 @@ for (const key of Object.keys(env)) {
 }
 const unitFiles = [
   'check-operator-page-repair.cjs',
+  'check-admin-operations-worklist.cjs',
+  'check-contact-payment-order-state.cjs',
+  'check-open-card-one-on-one-entry.cjs',
   'check-matching-participation.cjs',
   'check-candidate-activity-balance.cjs',
   'check-voucher-profile-ux.cjs',
@@ -127,6 +130,7 @@ const browserFiles = [
   'check-one-on-one-conversion-browser.cjs',
   'check-profile-edit-browser.cjs',
   'check-payment-confirmation-browser.cjs',
+  'check-contact-payment-order-state-browser.cjs',
   'check-landing-stories-browser.cjs',
   'check-contextual-paid-offers-browser.cjs',
   'check-contact-care-checkout-browser.cjs',
@@ -163,6 +167,7 @@ const browserFiles = [
   'check-contact-care-browser.cjs',
   'check-voucher-profile-browser.cjs',
   'check-admin-contact-vouchers-browser.cjs',
+  'check-admin-operations-worklist-browser.cjs',
   'check-payment-measurement-browser.cjs',
   'check-revenue-journey-browser.cjs',
   'check-contact-intro-browser.cjs',

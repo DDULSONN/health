@@ -42,10 +42,14 @@ async function main() {
         }
         if (url.pathname === NOTICE_API) {
           assert.equal(request.method(), 'GET');
-          assert.equal(url.search, '');
+          assert.equal(url.search, '?entry=1');
+          assert(request.headers()['x-jimtul-viewer'], 'entry read scoped with the UI member');
           noticeReads++;
-          const result = { matchId: mode === 'eligible' ? currentMatch
-            : mode === 'invalid' ? 'https://example.invalid/invalid' : null };
+          const result = { matchId: ['eligible', 'incoming'].includes(mode) ? currentMatch
+            : mode === 'invalid' ? 'https://example.invalid/invalid' : null,
+            hasIncoming: ['incoming','incoming-unknown'].includes(mode),
+            incomingCount: mode === 'incoming' ? 2 : null,
+            suggestion: ['nearby','profile'].includes(mode) ? mode : null };
           return route.fulfill({ json: result, status: mode === 'error' ? 503 : 200 });
         }
         if (url.pathname === MATCHES_API) {
@@ -101,12 +105,36 @@ async function main() {
       assert.equal(await notice.count(), 0, 'no duplicate home invite above the focused match');
       assert.equal(fullMatchReads, 1);
       assert.equal(noticeReads, 6, 'one light read per eligible-home visit, none at checkout destination');
+      const incoming = page.getByRole('region', { name: '받은 1:1 요청 안내', exact: true });
+      const suggestion = page.getByRole('region', { name: '1:1 둘러보기 안내', exact: true });
+      await inspectHome('incoming');
+      await incoming.getByText('받은 1:1 요청 2건', { exact: true }).waitFor();
+      assert.equal(await incoming.getByRole('link', { name: '요청 보기' }).getAttribute('href'),
+        '/community/dating/cards?tab=one_on_one&focus=incoming#one-on-one-incoming');
+      assert.equal(await notice.count(), 0, 'incoming is higher priority than an already accepted match');
+      await inspectHome('incoming-unknown');
+      await incoming.getByText('받은 1:1 요청', { exact: true }).waitFor();
+      await inspectHome('nearby');
+      await suggestion.getByText('가까운 1:1 후보도 볼까요?', { exact: false }).waitFor();
+      await suggestion.getByText('요청 무료 · 연락처 교환만 유료', { exact: true }).waitFor();
+      assert.equal(await suggestion.getByRole('link', { name: '후보 보기' }).getAttribute('href'), '/community/dating/cards?tab=one_on_one');
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await suggestion.getByRole('button', { name: '1:1 추천 안내 닫기' }).click();
+      await suggestion.waitFor({ state: 'hidden' });
+      await inspectHome('nearby');
+      assert.equal(await suggestion.count(), 0, 'promotional dismissals are respected');
+      await inspectHome('profile');
+      const reuse = suggestion.getByRole('link', { name: '기존 프로필로 시작', exact: true });
+      await reuse.waitFor();
+      assert.equal(await reuse.getAttribute('href'), '/onboarding/dating?target=one_on_one');
+      assert.equal(fullMatchReads, 1, 'contextual home states never preload the full inbox');
+      assert.equal(noticeReads, 11);
       assert.deepEqual(problems, []);
       completed.push(width);
       await ctx.close();
     }
     assert(!fixture.writes.some(write => !write.path.startsWith('/api/analytics/')));
-    console.log(JSON.stringify({ widths: completed, noticeReads: 12, openedMatches: 2, payments: 0, externalRequests: 0, screenshot: path.join(fixture.output, 'contact-home-notice-320.png') }));
+    console.log(JSON.stringify({ widths: completed, noticeReads: 22, openedMatches: 2, payments: 0, externalRequests: 0, screenshot: path.join(fixture.output, 'contact-home-notice-320.png') }));
   } finally {
     await browser?.close();
     await fixture.close();

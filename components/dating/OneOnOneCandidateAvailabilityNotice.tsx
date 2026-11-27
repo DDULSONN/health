@@ -5,6 +5,7 @@ import { fetchClientJson } from "@/lib/client-json-request";
 import { eligibleForSingleCandidateRefresh, type SingleCandidateRefreshFields, type SingleCandidateRefreshNotice } from "@/lib/use-one-on-one-candidate-replace";
 
 const AVAILABILITY_CHECK_MS = 3 * 60 * 1000;
+const CHECKED_THROUGH_HEADER = "X-Jimtul-Candidate-Checked-Through";
 type Group = SingleCandidateRefreshFields & { recommendations?: Array<{ id?: string }>; new_candidate_notice?: { state: string } | null };
 
 export function firstWaitingSingleCandidateGroup<T extends Group>(groups: T[], notice?: SingleCandidateRefreshNotice | null) {
@@ -38,6 +39,7 @@ export default function OneOnOneCandidateAvailabilityNotice({ group, viewerId, i
     let nextCheckAt = Date.now() + AVAILABILITY_CHECK_MS;
     let misses = 0;
     let done = false;
+    let checkedThrough = "";
     let timer: ReturnType<typeof setTimeout> | undefined;
     let request: AbortController | undefined;
 
@@ -59,11 +61,13 @@ export default function OneOnOneCandidateAvailabilityNotice({ group, viewerId, i
         const { response, body } = await fetchClientJson<{ available?: unknown; generation_key?: unknown; refresh_list?: unknown }>(
           `/api/dating/1on1/recommendations/replace?${query}`, {
             method: "GET", credentials: "same-origin", cache: "no-store", signal: controller.signal,
-            headers: { "X-Jimtul-Candidate-Receipt": receipt! },
+            headers: { "X-Jimtul-Candidate-Receipt": receipt!, ...(checkedThrough ? { [CHECKED_THROUGH_HEADER]: checkedThrough } : {}) },
           }, 8_000,
         );
         if (canCheck() && !controller.signal.aborted) {
           readLocked.current = false;
+          const cutoff = response.headers.get(CHECKED_THROUGH_HEADER);
+          if (response.ok && body?.generation_key === generation && cutoff && /^\d{13}$/.test(cutoff)) checkedThrough = cutoff;
           const available = response.ok && body?.available === true && body.generation_key === generation;
           done = available || response.status === 401 || response.status === 403 || response.status === 409;
           if (response.status === 429) {

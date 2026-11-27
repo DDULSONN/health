@@ -1,5 +1,6 @@
 import { isAllowedAdminUser } from "@/lib/admin";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
+import { buildMaskedDatingCsv as buildCsv } from "@/lib/admin-dating-export-csv";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -15,25 +16,9 @@ type ExportKind =
 
 const BATCH_SIZE = 1000;
 
-function escapeCsvCell(value: unknown): string {
-  const text = value == null ? "" : String(value);
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
-
-function buildCsv(headers: string[], rows: Array<Array<unknown>>): string {
-  const lines = [
-    headers.map(escapeCsvCell).join(","),
-    ...rows.map((row) => row.map(escapeCsvCell).join(",")),
-  ];
-  return `\uFEFF${lines.join("\r\n")}`;
-}
-
 function fileNameFor(kind: ExportKind) {
   const date = new Date().toISOString().slice(0, 10);
-  return `dating-${kind}-${date}.csv`;
+  return `dating-${kind}-masked-${date}.csv`;
 }
 
 function toCurrentAgeFromBirthYear(value: unknown) {
@@ -500,7 +485,7 @@ export async function GET(req: Request) {
       targetType: "dating_export",
       targetId: kind,
       requestId,
-      metadata: { kind, bytes: Buffer.byteLength(csv, "utf8") },
+      metadata: { kind, bytes: Buffer.byteLength(csv, "utf8"), masked: true },
     });
 
     return new NextResponse(csv, {

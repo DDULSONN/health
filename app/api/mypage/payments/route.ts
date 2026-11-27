@@ -2,6 +2,7 @@ import { getMoreViewStatusBySex } from "@/lib/dating-more-view";
 import { getDailyBaseApplyLimit, getKstDateString, isKoreanWeekend } from "@/lib/dating-apply-limits";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
+import { contactOrderDelivery, contactOrderMatchId, type ContactOrderMatch } from "@/lib/contact-payment-order-state";
 import { NextResponse } from "next/server";
 
 type TossOrderRow = {
@@ -36,7 +37,10 @@ const GENERIC_RESUMABLE_PRODUCTS = new Set([
 ]);
 
 function json(status: number, payload: Record<string, unknown>) {
-  return NextResponse.json(payload, { status });
+  return NextResponse.json(payload, {
+    status,
+    headers: { "Cache-Control": "private, no-store", Vary: "Cookie, Authorization" },
+  });
 }
 
 export async function GET(req: Request) {
@@ -55,6 +59,7 @@ export async function GET(req: Request) {
       supabase
         .from("toss_test_payment_orders")
         .select("id,product_ref_id,product_type,product_meta,toss_order_id,order_name,amount,status,approved_at,created_at,raw_response")
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(20),
       supabase
@@ -81,43 +86,47 @@ export async function GET(req: Request) {
     const creditsRemaining = Math.max(0, Number(creditsRes.data?.credits ?? 0));
     const baseRemaining = Math.max(0, baseLimit - baseUsed);
     const orders = (ordersRes.data ?? []) as TossOrderRow[];
-    const readyMatchIds = Array.from(
+    const contactMatchIds = Array.from(
       new Set(
         orders
-          .filter((order) => order.product_type === "one_on_one_contact_exchange" && order.status === "ready")
-          .map((order) => order.product_ref_id)
-          .filter((value): value is string => Boolean(value))
+          .filter((order) => order.status === "ready" || order.status === "paid")
+          .map(contactOrderMatchId)
+          .filter((id): id is string => id !== null)
       )
     );
     const resumableMatchIds = new Set<string>();
+    const ownMatches = new Map<string, ContactOrderMatch>();
 
-    if (readyMatchIds.length > 0) {
+    if (contactMatchIds.length > 0) {
       const matchesRes = await admin
         .from("dating_1on1_match_proposals")
-        .select("id,source_user_id,candidate_user_id,state,contact_exchange_status")
-        .in("id", readyMatchIds);
+        .select("id,source_user_id,candidate_user_id,state,contact_exchange_status,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_note")
+        .in("id", contactMatchIds)
+        .or(`source_user_id.eq.${user.id},candidate_user_id.eq.${user.id}`);
 
       if (matchesRes.error) {
         console.error(`[mypage-payments] ${requestId} resumable matches query failed`, matchesRes.error);
       } else {
         for (const match of matchesRes.data ?? []) {
           const isParticipant = match.source_user_id === user.id || match.candidate_user_id === user.id;
+          if (!isParticipant) continue;
+          ownMatches.set(match.id, match);
           const isAccepted = match.state === "mutual_accepted" || match.state === "candidate_accepted";
           const isPayable = match.contact_exchange_status === "none" || match.contact_exchange_status === "awaiting_applicant_payment";
-          if (isParticipant && isAccepted && isPayable) resumableMatchIds.add(match.id);
+          if (isAccepted && isPayable) resumableMatchIds.add(match.id);
         }
       }
     }
 
     const latestReadyOrderIdByMatch = new Map<string, string>();
     for (const order of orders) {
+      const matchId = contactOrderMatchId(order);
       if (
-        order.product_type === "one_on_one_contact_exchange" &&
+        matchId &&
         order.status === "ready" &&
-        order.product_ref_id &&
-        !latestReadyOrderIdByMatch.has(order.product_ref_id)
+        !latestReadyOrderIdByMatch.has(matchId)
       ) {
-        latestReadyOrderIdByMatch.set(order.product_ref_id, order.id);
+        latestReadyOrderIdByMatch.set(matchId, order.id);
       }
     }
 
@@ -132,23 +141,24 @@ export async function GET(req: Request) {
         moreViewMale: moreViewStatus.male,
         moreViewFemale: moreViewStatus.female,
       },
-      orders: orders.map((row) => ({
-        ...row,
-        method: row.raw_response?.method ?? null,
-        receiptUrl: row.raw_response?.receipt?.url ?? null,
-        canResume:
-          row.product_type === "one_on_one_contact_exchange" &&
+      orders: orders.map(({ raw_response, ...row }) => {
+        const matchId = contactOrderMatchId(row);
+        const canResume =
           row.status === "ready" &&
-          Boolean(row.product_ref_id) &&
-          latestReadyOrderIdByMatch.get(row.product_ref_id ?? "") === row.id &&
-          resumableMatchIds.has(row.product_ref_id ?? ""),
-        resumeMatchId:
-          row.product_type === "one_on_one_contact_exchange" && resumableMatchIds.has(row.product_ref_id ?? "")
-            ? row.product_ref_id
-            : null,
-        canResumeProduct:
-          row.status === "ready" && GENERIC_RESUMABLE_PRODUCTS.has(row.product_type),
-      })),
+          matchId !== null &&
+          latestReadyOrderIdByMatch.get(matchId) === row.id &&
+          resumableMatchIds.has(matchId);
+        const delivery = contactOrderDelivery(row, matchId ? ownMatches.get(matchId) : undefined, user.id);
+        return {
+          ...row,
+          method: raw_response?.method ?? null,
+          receiptUrl: raw_response?.receipt?.url ?? null,
+          canResume,
+          resumeMatchId: canResume ? matchId : null,
+          canResumeProduct: row.status === "ready" && GENERIC_RESUMABLE_PRODUCTS.has(row.product_type),
+          ...(delivery ? { contactDelivery: delivery.status, contactDeliveryMatchId: delivery.matchId } : {}),
+        };
+      }),
     });
   } catch (error) {
     console.error(`[mypage-payments] ${requestId} unhandled`, error);

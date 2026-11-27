@@ -1,4 +1,5 @@
 import { verifyImpressionTicket } from "@/lib/dating-1on1-impressions";
+import { probeOneOnOneRegistrationAfterDeck } from "@/lib/dating-1on1-passive-availability";
 import { loadOneOnOneRecommendations } from "@/lib/dating-1on1-recommendation-service";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
@@ -9,6 +10,7 @@ import { NextResponse } from "next/server";
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie, Authorization" };
 const generationPattern = /^[0-9a-f]{64}$/;
 const cardIdPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const checkedThroughHeader = "X-Jimtul-Candidate-Checked-Through";
 function json(payload: object, status: number) { return NextResponse.json(payload, { status, headers }); }
 function stale() { return json({ code: "SINGLE_REFRESH_STALE", error: "추천 목록을 다시 불러온 뒤 눌러 주세요." }, 409); }
 function privateResponse(response: Response) {
@@ -37,10 +39,30 @@ export async function GET(req: Request) {
       if (limit.retryAfterSec > 0) response.headers.set("Retry-After", String(limit.retryAfterSec));
       return response;
     }
-    return privateResponse(await loadOneOnOneRecommendations(createAdminClient(), user, undefined, undefined, {
-      mode: "availability", sourceCardId, generationKey, plannedAt: new Date().toISOString(),
+    const admin = createAdminClient();
+    const now = Date.now();
+    const checked = (response: Response) => {
+      if (ticket && response.status === 200) response.headers.set(checkedThroughHeader, String(now));
+      return response;
+    };
+    if (ticket) {
+      // A later cutoff can only skip this member's optional hint. It never
+      // grants a read, changes a deck or affects the POST replacement path.
+      const seenThrough = req.headers.get(checkedThroughHeader) ?? "";
+      const cutoff = /^\d{13}$/.test(seenThrough) && Number(seenThrough) >= ticket.issued &&
+        Number(seenThrough) <= now ? Number(seenThrough) : ticket.issued;
+      const result = await probeOneOnOneRegistrationAfterDeck(admin, {
+        userId: user.id, sourceCardId, issuedAt: cutoff, now, signal: req.signal,
+      });
+      if (result === "stale") return stale();
+      if (result === "ineligible") return json({ code: "SINGLE_REFRESH_INELIGIBLE" }, 403);
+      if (result === "unavailable") return json({ code: "SINGLE_REFRESH_UNAVAILABLE" }, 503);
+      if (result === "unchanged") return checked(json({ available: false, generation_key: generationKey }, 200));
+    }
+    return checked(privateResponse(await loadOneOnOneRecommendations(admin, user, undefined, undefined, {
+      mode: "availability", sourceCardId, generationKey, plannedAt: new Date(now).toISOString(),
       signal: req.signal, previousCandidateCardIds: ticket?.cards,
-    }));
+    })));
   } catch {
     return json({ code: "SINGLE_REFRESH_UNAVAILABLE" }, 503);
   }

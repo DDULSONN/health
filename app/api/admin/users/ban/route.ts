@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { requireAdminRoute } from "@/lib/admin-route";
-import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
+import { hideBannedMemberDatingCards } from "@/lib/admin-ban-visibility";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 function normalizeReason(value: unknown) {
   const reason = typeof value === "string" ? value.trim().replace(/\s{2,}/g, " ").slice(0, 300) : "";
@@ -10,6 +11,8 @@ function normalizeReason(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const originError = ensureAllowedMutationOrigin(request);
+  if (originError) return originError;
   const requestId = crypto.randomUUID();
   const auth = await requireAdminRoute();
   if (!auth.ok) return auth.response;
@@ -117,58 +120,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "회원 정보가 변경되었거나 삭제되어 밴 상태를 저장하지 못했습니다." }, { status: 409 });
   }
 
-  let hiddenOpenCards = 0;
-  let hiddenPaidCards = 0;
-  let hiddenOneOnOneCards = 0;
-  let cardCleanupFailed = false;
-  if (banned) {
-    const [openCardsRes, paidCardsRes, oneOnOneCardsRes] = await Promise.all([
-      auth.admin
-        .from("dating_cards")
-        .update({ status: "hidden", expires_at: nowIso })
-        .eq("owner_user_id", userId)
-        .in("status", ["pending", "public"])
-        .select("id,sex"),
-      auth.admin
-        .from("dating_paid_cards")
-        .update({ status: "expired", expires_at: nowIso })
-        .eq("user_id", userId)
-        .in("status", ["pending", "approved"])
-        .select("id"),
-      auth.admin
-        .from("dating_1on1_cards")
-        .update({ status: "rejected", updated_at: nowIso })
-        .eq("user_id", userId)
-        .in("status", ["submitted", "reviewing", "approved"])
-        .select("id"),
-    ]);
-
-    if (openCardsRes.error || paidCardsRes.error || oneOnOneCardsRes.error) {
-      cardCleanupFailed = true;
-      console.error(
-        "[POST /api/admin/users/ban] hide visible cards failed",
-        openCardsRes.error ?? paidCardsRes.error ?? oneOnOneCardsRes.error
-      );
-    }
-    hiddenOpenCards = openCardsRes.data?.length ?? 0;
-    hiddenPaidCards = paidCardsRes.data?.length ?? 0;
-    hiddenOneOnOneCards = oneOnOneCardsRes.data?.length ?? 0;
-
-    const vacatedSexes = [
-      ...new Set(
-        (openCardsRes.data ?? [])
-          .map((card) => (card as { sex?: unknown }).sex)
-          .filter((sex): sex is "male" | "female" => sex === "male" || sex === "female")
-      ),
-    ];
-    await Promise.all(
-      vacatedSexes.map((sex) =>
-        promotePendingCardsBySex(auth.admin, sex).catch((error) => {
-          console.error(`[POST /api/admin/users/ban] promote ${sex} pending cards failed`, error);
-        })
-      )
-    );
-  }
+  const { hiddenOpenCards, hiddenPaidCards, hiddenOneOnOneCards, cardCleanupFailed } = banned
+    ? await hideBannedMemberDatingCards(auth.admin, userId, nowIso)
+    : { hiddenOpenCards: 0, hiddenPaidCards: 0, hiddenOneOnOneCards: 0, cardCleanupFailed: false };
 
   await recordAdminAuditEvent({
     admin: auth.admin,

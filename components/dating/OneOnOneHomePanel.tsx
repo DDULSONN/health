@@ -24,7 +24,9 @@ import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } 
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import CandidateImpression from "@/components/dating/CandidateImpression";
 import OneOnOneCandidateReplaceButton from "@/components/dating/OneOnOneCandidateReplaceButton";
+import OneOnOneCandidateViewControls from "@/components/dating/OneOnOneCandidateViewControls";
 import OneOnOneCandidateAvailabilityNotice, { firstWaitingSingleCandidateGroup } from "@/components/dating/OneOnOneCandidateAvailabilityNotice";
+import { DEFAULT_CANDIDATE_VIEW, selectCandidateView, type CandidateViewOptions } from "@/lib/dating-1on1-candidate-view";
 import { eligibleForSingleCandidateRefresh, type SingleCandidateRefreshFields, type SingleCandidateRefreshNotice } from "@/lib/use-one-on-one-candidate-replace";
 import CandidateFavoriteButton from "@/components/dating/CandidateFavoriteButton";
 import OneOnOneFavorites from "@/components/dating/OneOnOneFavorites";
@@ -269,6 +271,7 @@ export default function OneOnOneHomePanel({
   const [plusGuideOpen, setPlusGuideOpen] = useState(false);
   const [matchGuideOpen, setMatchGuideOpen] = useState(false);
   const [allCandidatesVisible, setAllCandidatesVisible] = useState(false);
+  const [candidateView, setCandidateView] = useState<{ key: string; options: CandidateViewOptions } | null>(null);
   const [favoriteBusyKeys, setFavoriteBusyKeys] = useState<string[]>([]);
   const [actionNow] = useState(() => Date.now());
   const incomingFocused = useRef(false);
@@ -320,7 +323,20 @@ export default function OneOnOneHomePanel({
   const starterKeys = getOneOnOneStarterKeys(recommendationGroups);
   const starterPreview = arrivedFromOnboarding && !allCandidatesVisible && !targetMatchId && !focusIncomingRequests && starterKeys.size > 0;
   const displayedGroups = starterPreview ? getOneOnOneStarterGroups(recommendationGroups) : recommendationGroups;
-  const waitingSingleCandidateGroup = firstWaitingSingleCandidateGroup(displayedGroups, singleRefreshNotice);
+  const viewKey = JSON.stringify([singleRefreshViewerId, recommendationGroups[0]?.source_card_id]);
+  const viewOptions = !starterPreview && candidateView?.key === viewKey ? candidateView.options : DEFAULT_CANDIDATE_VIEW;
+  const customizedView = viewOptions.nearbyFirst || Boolean(viewOptions.minAge || viewOptions.maxAge);
+  const candidateViews = customizedView ? displayedGroups.map(group => {
+    const sourceRegion = activeCards.find(card => card.id === group.source_card_id)?.region ?? null;
+    return {
+      regular: selectCandidateView(group.recommendations ?? [], sourceRegion, viewOptions, getOneOnOneAge),
+      additional: selectCandidateView(group.admin_recommendations ?? [], sourceRegion, viewOptions, getOneOnOneAge),
+    };
+  }) : [];
+  const visibleCandidateCount = customizedView
+    ? candidateViews.reduce((sum, view) => sum + view.regular.length + view.additional.length, 0)
+    : recommendationCount;
+  const waitingSingleCandidateGroup = customizedView ? undefined : firstWaitingSingleCandidateGroup(displayedGroups, singleRefreshNotice);
   const favorites = recommendationGroups.flatMap(group => (group.favorite_candidates ?? [])
     .filter(card => card.id && group.source_card_id && !hiddenCandidateIds.has(card.id))
     .map(card => ({ group, card })));
@@ -601,13 +617,21 @@ export default function OneOnOneHomePanel({
                     {starterPreview ? "추천 후보 중 3명까지 먼저 보여드려요. 전체 후보도 바로 볼 수 있어요." : "프로필을 보고 무료로 요청을 보내세요. 서로 수락하면 연락처를 교환할 수 있어요."}
                   </p>
                 </div>
-                <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-rose-700">{starterPreview ? `${starterKeys.size}명 먼저 보기` : `${recommendationCount}명`}</span>
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-rose-700">{starterPreview ? `${starterKeys.size}명 먼저 보기` : `${visibleCandidateCount}명`}</span>
               </div>
               {showCandidateReplaceTip && singleRefreshViewerId ? <OneOnOneCandidateReplaceTip viewerId={singleRefreshViewerId} /> : null}
               {starterPreview ? <button type="button" onClick={() => setAllCandidatesVisible(true)}
                 className="mt-2 min-h-[44px] rounded-lg border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
                 후보 모두 보기 · {recommendationCount}명
               </button> : null}
+              {!starterPreview && !recommendationsLoading && !recommendationsError && recommendationCount > 0 ?
+                <OneOnOneCandidateViewControls key={viewKey} options={viewOptions} visible={visibleCandidateCount} total={recommendationCount}
+                  change={options => setCandidateView({ key: viewKey, options })} reset={() => setCandidateView(null)} /> : null}
+              {customizedView && !recommendationsLoading && !recommendationsError && visibleCandidateCount === 0 ?
+                <div className="mt-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-700">
+                  이 범위에 표시할 후보가 없어요. <button type="button" onClick={() => setCandidateView(null)}
+                    className="min-h-11 font-semibold underline underline-offset-2">전체 후보 다시 보기</button>
+                </div> : null}
 
               {recommendationsLoading ? (
                 <p role="status" className="mt-3 rounded-xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">추천 후보를 불러오는 중이에요.</p>
@@ -624,8 +648,8 @@ export default function OneOnOneHomePanel({
                   {displayedGroups.map((group, groupIndex) => {
                     const sourceCardId = String(group.source_card_id ?? "");
                     const sourceCard = activeCards.find((card) => card.id === sourceCardId);
-                    const recommendations = group.recommendations ?? [];
-                    const adminRecommendations = group.admin_recommendations ?? [];
+                    const recommendations = candidateViews[groupIndex]?.regular ?? group.recommendations ?? [];
+                    const adminRecommendations = candidateViews[groupIndex]?.additional ?? group.admin_recommendations ?? [];
                     const refreshing = refreshingRecommendationIds.includes(sourceCardId);
                      const replacing = singleRefreshBusy?.sourceCardId === sourceCardId;
                     const canRefresh = Boolean(sourceCardId && group.can_refresh);
@@ -649,7 +673,8 @@ export default function OneOnOneHomePanel({
                           card={candidate}
                           reportTarget={{ type: "one_on_one_card", id: candidateId }}
                           onReported={onReported}
-                          badge={additional ? "추가 후보" : candidate.recommendation_region_widened ? undefined : getSharedCandidateMunicipality(sourceCard?.region, candidate.region)}
+                          badge={additional ? "추가 후보" : eligibleForSingleCandidateRefresh(group, candidateId) ? "이미 본 후보"
+                            : candidate.recommendation_region_widened ? "지역 범위 넓힘" : getSharedCandidateMunicipality(sourceCard?.region, candidate.region)}
                           badgeClassName="bg-neutral-100 text-neutral-600"
                         >
                           <button

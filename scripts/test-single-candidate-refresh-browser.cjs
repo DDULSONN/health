@@ -6,6 +6,7 @@ const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const replacePath = '/api/dating/1on1/recommendations/replace';
 const listPath = '/api/dating/1on1/recommendations/my';
 const availabilityWait = 180_010;
+const checkedThrough = '1795700000000';
 
 module.exports = async ({ browser, origin, output }) => {
   let passed = 0;
@@ -17,6 +18,11 @@ module.exports = async ({ browser, origin, output }) => {
     const own = { id: id(1), user_id: 'fixture-member', sex: 'female', name: '검증 프로필', age: 29, region: '서울', status: 'approved', created_at: new Date().toISOString() };
     const card = (n, name) => ({ ...own, id: id(n), user_id: id(n + 50), sex: 'male', name, age: 30, photo_signed_urls: [] });
     const old = card(2, '교체 대상'), other = card(3, '유지 후보'), added = card(4, '추가 추천 회원'), favorite = card(5, '찜한 추천 회원');
+    if (surface === 'home' && scenario === 'success') {
+      old.region = '부산 해운대구';
+      other.age = 31;
+      other.region = '서울 강남구';
+    }
     const fresh = { ...card(6, '처음 보는 회원'), recommendation_region_widened: true };
     const fallback = card(10, '이전에 본 다른 회원');
     const matched = card(7, '연락처 유지 회원');
@@ -41,6 +47,18 @@ module.exports = async ({ browser, origin, output }) => {
           visibility = next;
           document.dispatchEvent(new Event('visibilitychange'));
         };
+        // Wait for the first reply to reach React before hiding the page;
+        // otherwise aborting the request legitimately discards its cutoff.
+        const readJson = Response.prototype.json;
+        Response.prototype.json = function (...args) {
+          const body = readJson.apply(this, args);
+          if (this.headers.has('X-Jimtul-Candidate-Checked-Through')) {
+            void body.then(() => queueMicrotask(() => {
+              document.documentElement.dataset.fixtureAvailabilityBodyRead = 'true';
+            }), () => {});
+          }
+          return body;
+        };
       });
     }
     await context.route('**/*', async route => {
@@ -51,11 +69,13 @@ module.exports = async ({ browser, origin, output }) => {
       if (req.method() === 'GET' && url.pathname === replacePath) {
         assert.deepEqual(Object.fromEntries(url.searchParams), { source_card_id: own.id, generation_key: 'demo-generation', probe_candidate_id: old.id });
         assert.equal(req.headers()['x-jimtul-candidate-receipt'], 'demo-receipt');
+        assert.equal(req.headers()['x-jimtul-candidate-checked-through'], availabilityReads > 0 ? checkedThrough : undefined);
         assert.equal(url.href.includes('demo-receipt'), false);
         availabilityReads++;
         startAvailability();
         if (scenario === 'availability-identity') await holdAvailability;
-        return route.fulfill({ json: { available: availabilityReady, generation_key: 'demo-generation', refresh_list: scenario === 'availability-reload' } }).catch(() => {});
+        return route.fulfill({ headers: { 'X-Jimtul-Candidate-Checked-Through': checkedThrough },
+          json: { available: availabilityReady, generation_key: 'demo-generation', refresh_list: scenario === 'availability-reload' } }).catch(() => {});
       }
       if (req.method() !== 'GET') {
         if (url.pathname === '/api/dating/1on1/recommendations/impressions' || url.pathname.startsWith('/api/analytics/')) return route.fulfill({ json: { ok: true } });
@@ -120,6 +140,26 @@ module.exports = async ({ browser, origin, output }) => {
         await acknowledge.click();
         await replaceTip.waitFor({ state: 'hidden' });
         assert.equal(posts, 0, 'dismissing the tip never replaces a candidate');
+        const initialReads = reads;
+        const options = page.getByText('후보 보기 조건', { exact: true });
+        await options.click();
+        await page.getByRole('checkbox', { name: '내 등록 지역에서 가까운 순' }).check();
+        assert.equal(await name(other.name).evaluate((first, laterName) => {
+          const second = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,p,span"))
+            .find(node => node.textContent.trim() === laterName);
+          return Boolean(second && (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING));
+        }, old.name), true);
+        await page.getByRole('spinbutton', { name: '최소 나이' }).fill('31');
+        await page.getByRole('spinbutton', { name: '최대 나이' }).fill('31');
+        await name(other.name).waitFor();
+        await name(old.name).waitFor({ state: 'hidden' });
+        await page.getByText('받은 후보 3명 중 1명 표시 · 새로고침 차감 없음', { exact: true }).waitFor();
+        await quota.waitFor();
+        assert.equal(posts, 0, 'display settings never swap or debit candidates');
+        assert.equal(reads, initialReads, 'display settings never refetch recommendations');
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+        await page.getByRole('button', { name: '조건 초기화' }).click();
+        await name(old.name).waitFor();
         await page.reload();
         await replace.waitFor(); await quota.waitFor();
         assert.equal(await replaceTip.count(), 0, 'an acknowledged tip does not return for this member on reload');
@@ -156,6 +196,7 @@ module.exports = async ({ browser, origin, output }) => {
             assert.equal(reads, before + 1);
             assert.equal(await stock.count(), 0);
           } else {
+            await page.locator('html[data-fixture-availability-body-read="true"]').waitFor({ state: 'attached' });
             assert.equal(await stock.count(), 0);
             await page.evaluate(() => window.fixtureSetVisibility('hidden'));
             availabilityReady = true;

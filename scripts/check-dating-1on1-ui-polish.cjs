@@ -107,6 +107,7 @@ if (require.main === module) {
       // Reviewed saved-candidate actions reuse the existing matching callback.
       'onClick={() => onAutoSelect(sourceCardId, candidateId, card.name)}',
       'onClick={() => setAllCandidatesVisible(true)}',
+      'onClick={() => setCandidateView(null)}',
       ...Array(2).fill('onBusyChange={value => favoriteBusy(sourceCardId, candidateId, value)}'),
       'onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, !group.favorite_candidates?.some(card => card.id === candidateId))}',
       'onUpdated={() => onFavoriteChanged(sourceCardId, candidateId, false)}',

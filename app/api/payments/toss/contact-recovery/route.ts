@@ -11,10 +11,15 @@ export async function GET(req: Request) {
   try {
     const { user } = await getRequestAuthContext(req);
     if (!user) return json({ ok: false }, 401);
-    const orderId = normalizeFailureOrderId(new URL(req.url).searchParams.get("orderId"));
+    const params = new URL(req.url).searchParams;
+    const orderId = normalizeFailureOrderId(params.get("orderId"));
     if (!orderId) return json({ ok: false }, 400);
     const result = await getContactPaymentRecovery(createAdminClient(), user.id, orderId);
     if (!result) return json({ ok: false }, 404);
+    // The member payment list needs only the state, not the recovery profile.
+    if (params.get("view") === "order-status") {
+      return json({ ok: true, state: result.view.state });
+    }
     // Never send the provider payment key, checkout URL, raw order or phones on GET.
     return json({ ok: true, recovery: result.view });
   } catch {

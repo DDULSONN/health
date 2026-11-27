@@ -267,7 +267,7 @@ test('prior payment route source, excluding only these reviewed additions, is pi
   }
 });
 
-test('MyPage stays byte-for-byte pinned outside the explicit Love Pass result and admin labels', () => {
+test('reviewed MyPage order status and admin links remain pinned outside the Love Pass additions', () => {
   const source = withoutLovePassMypageAdditions(read('app/mypage/page.tsx'));
-  assert.equal(createHash('sha256').update(source).digest('hex'), '2b8c93b6d2fb86cdf521eb65f20356bde7e2b4488d6992ab9f0957ed738b6f75');
+  assert.equal(createHash('sha256').update(source).digest('hex'), '95b1e02c5abf5df251844ffd05c5bbe76236e145c02cc93fb07db85674c3c369');
 });

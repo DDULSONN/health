@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo, type Post, type Report } from "@/lib/community";
+import AdminOperationsPanel from "@/components/admin/AdminOperationsPanel";
 
 type Tab = "reports" | "posts";
 
@@ -94,6 +95,7 @@ export default function AdminPage() {
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">관리자</h1>
       </div>
+      <AdminOperationsPanel />
       {tab === "posts" && postsError && <p role="alert" className="mb-3 text-sm text-red-600">{postsError}</p>}
 
       <div className="flex rounded-xl border border-neutral-300 overflow-hidden mb-5">

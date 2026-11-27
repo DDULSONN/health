@@ -263,7 +263,9 @@ const movedFunctions = {
   // stay pinned. Actual-page tests cover navigation without refresh or submission.
   // Reviewed mobile shortcut, shared preview clock, and verified local-area badge.
   // Moved matching and payment helpers below retain their existing pins.
-  OneOnOneHomePanel: 'ae5ff7b3bf60340270d6b02e7f3d164623ba34b2febe04f50ca38c9a7c2a229f',
+  // Reviewed presentation-only age/distance view and labels. The independent
+  // 1:1 UI contract still pins existing action/availability bindings.
+  OneOnOneHomePanel: '7c6a9a3b5494877cd4afa611b384dc49b84cdb78f3c7584ee2f37b1bf78c7f20',
   OneOnOneCandidateCard: '45ce8332663f7e34260930d3b65955518c552f8dbe04d5eb858e9fbccf59d841',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',

@@ -701,13 +701,18 @@ async function sendInBatchesSafely(input: {
 
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
   let firstFailure: string | null = null;
   const failureBuckets = new Map<string, number>();
 
   for (let start = 0; start < recipients.length; start += SEND_CONCURRENCY) {
     const batch = recipients.slice(start, start + SEND_CONCURRENCY);
+    const excluded = await fetchMarketingUnsubscribedUserIds(admin, batch.map((item) => item.user_id), CAMPAIGN_KEY)
+      .catch(() => new Set(batch.map((item) => item.user_id)));
+    const eligible = batch.filter((item) => !excluded.has(item.user_id));
+    skipped += batch.length - eligible.length;
     const results = await Promise.all(
-      batch.map(async (item) => {
+      eligible.map(async (item) => {
         const sentAt = new Date().toISOString();
         const meta = {
           scope,
@@ -826,7 +831,7 @@ async function sendInBatchesSafely(input: {
     .slice(0, 5)
     .map(([reason, count]) => `${count}건 · ${reason}`);
 
-  return { sent, failed, firstFailure, failureSummary };
+  return { sent, failed, skipped, firstFailure, failureSummary };
 }
 
 export async function GET(request: Request) {
@@ -949,7 +954,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const { sent, failed, firstFailure, failureSummary } = await sendInBatchesSafely({
+    const { sent, failed, skipped, firstFailure, failureSummary } = await sendInBatchesSafely({
       admin: auth.admin,
       adminUserId: auth.user.id,
       recipients,
@@ -977,6 +982,7 @@ export async function POST(request: Request) {
       requested: recipients.length,
       sent,
       failed,
+      skipped,
       failure_summary: failureSummary,
       first_failure: firstFailure,
     });
