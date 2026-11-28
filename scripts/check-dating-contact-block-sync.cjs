@@ -51,6 +51,10 @@ const route = loadRoute();
 
 function makeQuery(result, call) {
   const query = {
+    or(value) {
+      call.filters.push(["or", value]);
+      return query;
+    },
     eq(key, value) {
       call.filters.push([key, value]);
       return query;
@@ -180,6 +184,6 @@ test("clears phone blocks from both stores and scopes deletion to the signed-in 
   assert.equal(response.status, 200);
   const deletes = currentAdmin.calls.filter((call) => call.operation === "delete");
   assert.deepEqual(deletes.map((call) => call.table), ["dating_contact_blocks", "dating_1on1_phone_blocks"]);
-  assert.deepEqual(deletes[0].filters, [["user_id", "user-4"], ["block_type", "phone"]]);
+  assert.deepEqual(deletes[0].filters, [["user_id", "user-4"], ["block_type", "phone"], ["or", "label.is.null,label.not.like.member-block:%"]]);
   assert.deepEqual(deletes[1].filters, [["user_id", "user-4"]]);
 });

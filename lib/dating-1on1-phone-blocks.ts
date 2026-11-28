@@ -57,12 +57,11 @@ export function maskBlockedPhone(phoneE164: string) {
 }
 
 export function isMissingPhoneBlocksTableError(error: { message?: string; code?: string } | null | undefined) {
-  const message = String(error?.message ?? "");
-  return (
-    error?.code === "42P01" ||
-    message.includes("dating_1on1_phone_blocks") ||
-    message.includes("schema cache")
-  );
+  const code = String(error?.code ?? "");
+  const message = String(error?.message ?? "").toLowerCase();
+  if (code) return code === "42P01" || code === "PGRST205";
+  return message.includes("dating_1on1_phone_blocks") &&
+    (message.includes("could not find the table") || /relation .+ does not exist/.test(message));
 }
 
 export async function getOneOnOnePhoneBlockMapForUsers(

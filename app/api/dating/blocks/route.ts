@@ -1,3 +1,4 @@
+import { prepareMemberContactBlock, saveMemberContactBlock } from "@/lib/dating-member-contact-block";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
@@ -149,10 +150,10 @@ export async function POST(req: Request) {
       }
     | null;
 
-  const blockedUserId = String(body?.blocked_user_id ?? "").trim();
+  const blockedUserId = String(body?.blocked_user_id ?? "").trim().toLowerCase();
   const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 300) : null;
 
-  if (!blockedUserId) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(blockedUserId)) {
     return NextResponse.json({ error: "차단할 사용자를 찾을 수 없습니다." }, { status: 400 });
   }
   if (blockedUserId === user.id) {
@@ -160,6 +161,9 @@ export async function POST(req: Request) {
   }
 
   const admin = createAdminClient();
+  let contactBlock;
+  try { contactBlock = await prepareMemberContactBlock(admin, user.id, blockedUserId); }
+  catch { return NextResponse.json({ error: "차단할 회원 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 503 }); }
   const insertRes = await admin
     .from("dating_user_blocks")
     .upsert(
@@ -177,6 +181,9 @@ export async function POST(req: Request) {
     console.error("[POST /api/dating/blocks] upsert failed", insertRes.error);
     return NextResponse.json({ error: "차단 처리에 실패했습니다." }, { status: 500 });
   }
+
+  try { await saveMemberContactBlock(admin, contactBlock); }
+  catch { return NextResponse.json({ error: "현재 계정 차단은 저장했지만 재가입 방지 설정을 완료하지 못했습니다. 다시 차단을 눌러 주세요." }, { status: 503 }); }
 
   return NextResponse.json({
     ok: true,

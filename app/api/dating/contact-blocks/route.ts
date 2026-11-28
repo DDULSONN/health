@@ -1,3 +1,4 @@
+import { memberBlockSource, memberBlockDisplayLabel, removeMemberContactBlock } from "@/lib/dating-member-contact-block";
 import {
   type DatingContactBlockItem,
   type DatingContactBlockType,
@@ -53,7 +54,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "오픈카드 지인 차단 목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
-  return NextResponse.json({ items: (data ?? []) as DatingContactBlockItem[] });
+  return NextResponse.json({ items: ((data ?? []) as DatingContactBlockItem[]).map(row => ({ ...row, label: memberBlockDisplayLabel(row.label) })) });
 }
 
 export async function POST(req: Request) {
@@ -124,6 +125,16 @@ export async function DELETE(req: Request) {
   }
 
   const admin = createAdminClient();
+  const existing = await admin.from("dating_contact_blocks").select("label").eq("id", id).eq("user_id", user.id).maybeSingle();
+  if (existing.error) return NextResponse.json({ error: "차단 정보를 확인하지 못했습니다." }, { status: 503 });
+  const source = memberBlockSource(existing.data?.label);
+  if (source) {
+    const unlinked = await admin.from("dating_user_blocks").delete().eq("blocker_user_id", user.id).eq("blocked_user_id", source);
+    if (unlinked.error) return NextResponse.json({ error: "연동된 회원 차단 해제에 실패했습니다." }, { status: 503 });
+    try { await removeMemberContactBlock(admin, user.id, source); }
+    catch { return NextResponse.json({ error: "연동된 연락처 차단 해제를 완료하지 못했습니다. 다시 시도해 주세요." }, { status: 503 }); }
+    return NextResponse.json({ ok: true, id });
+  }
   const { error } = await admin.from("dating_contact_blocks").delete().eq("id", id).eq("user_id", user.id);
   if (error) {
     console.error("[DELETE /api/dating/contact-blocks] failed", error);

@@ -1,4 +1,5 @@
 import type { createAdminClient } from "@/lib/supabase/server";
+import { prepareMemberContactBlock, saveMemberContactBlock } from "@/lib/dating-member-contact-block";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -23,6 +24,12 @@ export function safeReportEvidence(value: unknown): Record<string, unknown> | nu
 export async function applyReportBlock(admin: Admin, reporterId: string, reportedId: string) {
   let blocked = false;
   let pendingMatchesCanceled = false;
+  let identityBlock: Awaited<ReturnType<typeof prepareMemberContactBlock>> = null;
+  try {
+    identityBlock = await prepareMemberContactBlock(admin, reporterId, reportedId);
+  } catch {
+    console.error("[dating report] identity snapshot failed; preserving report and account block");
+  }
   try {
     const result = await admin.from("dating_user_blocks").upsert({
       blocker_user_id: reporterId,
@@ -38,6 +45,11 @@ export async function applyReportBlock(admin: Admin, reporterId: string, reporte
   // A saved report must remain successful even if an independent follow-up fails.
   // Do not cancel mutual matches, payment processing, or an approved contact exchange.
   if (blocked) {
+    try {
+      await saveMemberContactBlock(admin, identityBlock);
+    } catch {
+      console.error("[dating report] identity block failed; preserving report and account block");
+    }
     try {
       const result = await admin.from("dating_1on1_match_proposals")
         .update({ state: "admin_canceled", updated_at: new Date().toISOString() })

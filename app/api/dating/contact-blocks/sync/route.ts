@@ -171,7 +171,9 @@ export async function DELETE(req: Request) {
 
   const admin = createAdminClient();
   const [datingRes, oneOnOneRes] = await Promise.all([
-    admin.from("dating_contact_blocks").delete().eq("user_id", user.id).eq("block_type", "phone"),
+    // Clearing an address-book import must not undo a separately blocked member.
+    admin.from("dating_contact_blocks").delete().eq("user_id", user.id).eq("block_type", "phone")
+      .or("label.is.null,label.not.like.member-block:%"),
     admin.from("dating_1on1_phone_blocks").delete().eq("user_id", user.id),
   ]);
 

@@ -58,8 +58,9 @@ function database(initial, options = {}) {
         tables[table].push(...rows);
       }
       if (q.op === "upsert") {
-        assert.equal(table, "dating_user_blocks");
-        const existing = tables[table].find((row) => row.blocker_user_id === q.payload.blocker_user_id && row.blocked_user_id === q.payload.blocked_user_id);
+        assert.ok(["dating_user_blocks", "dating_contact_blocks"].includes(table));
+        const keys = table === "dating_user_blocks" ? ["blocker_user_id", "blocked_user_id"] : ["user_id", "block_type", "value_hash"];
+        const existing = tables[table].find((row) => keys.every(key => row[key] === q.payload[key]));
         if (existing) Object.assign(existing, q.payload);
         else tables[table].push(structuredClone(q.payload));
       }
@@ -101,7 +102,7 @@ function load(file, db, options = {}) {
   };
   const compile = (target) => {
     const source = fs.readFileSync(path.join(root, target), "utf8");
-    const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
     const loadedModule = { exports: {} };
     new Function("require", "module", "exports", code)(resolve, loadedModule, loadedModule.exports);
     return loadedModule.exports;
@@ -130,6 +131,24 @@ function request(body, url = "http://localhost/api/dating/user-reports", method 
 }
 const userPath = "app/api/dating/user-reports/route.ts", openPath = "app/api/dating/cards/report/route.ts";
 const userBody = { target_type: "one_on_one_match", target_id: matchId, reason_code: "safety_risk", detail: "연락 후 불쾌한 언행이 있었습니다." };
+test("report block also persists verified identity without exposing the phone", async () => {
+  const data = initial();
+  Object.assign(data.profiles[1], { phone_verified: true, phone_e164: "+821012345678" });
+  const result = await submit(userPath, data, {}, userBody);
+  assert.equal(result.body.blocked, true);
+  assert.equal(result.db.tables.dating_contact_blocks.length, 1);
+  assert.equal(result.db.tables.dating_contact_blocks[0].value_hint, "회원 차단 연동");
+  assert.ok(!JSON.stringify(result.body).includes("12345678"));
+});
+test("identity storage failure cannot discard a report or the current account block", async () => {
+  const data = initial();
+  Object.assign(data.profiles[1], { phone_verified: true, phone_e164: "+821012345678" });
+  const result = await submit(userPath, data, { fail: q => q.table === "dating_contact_blocks" ? { code: "57014" } : null }, userBody);
+  assert.equal(result.body.ok, true);
+  assert.equal(result.body.blocked, true);
+  assert.equal(result.db.tables.dating_user_reports.length, 1);
+  assert.equal(result.db.tables.dating_user_blocks.length, 1);
+});
 async function submit(file, data, options, body) {
   const db = database(data, options);
   const route = load(file, db, options);

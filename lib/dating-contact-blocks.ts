@@ -46,14 +46,9 @@ export function isMissingDatingContactBlocksTableError(error: unknown): boolean 
   if (!error || typeof error !== "object") return false;
   const code = String((error as { code?: unknown }).code ?? "");
   const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
-  return (
-    code === "42P01" ||
-    code === "PGRST205" ||
-    message.includes("dating_contact_blocks") ||
-    message.includes("could not find the table") ||
-    message.includes("does not exist") ||
-    message.includes("schema cache")
-  );
+  if (code) return code === "42P01" || code === "PGRST205";
+  return message.includes("dating_contact_blocks") &&
+    (message.includes("could not find the table") || /relation .+ does not exist/.test(message));
 }
 
 export function normalizeDatingContactPhone(raw: string): string {
@@ -185,8 +180,6 @@ export async function getDatingProfilePhoneMapForUsers(adminClient: SupabaseClie
       .in("user_id", chunk);
 
     if (error) {
-      const message = String(error.message ?? "").toLowerCase();
-      if (message.includes("phone_e164") || message.includes("could not find")) return phoneByUserId;
       throw error;
     }
 
