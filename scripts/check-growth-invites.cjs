@@ -16,9 +16,9 @@ const baselines = {
  // First-use presentation reviewed against 550ef281. Existing handlers are pinned
  // by check-onboarding-polish; draft, error/retry and signup journeys use real-page browser tests.
  'app/onboarding/dating/page.tsx': '63dfc19bb7f2a140fd3c4c0c61ee6ea945b702b8fb4ffef846f0c8341c416c03',
- // Reviewed against 34fff182: bounded read-only identity/card loading, retry UI,
- // no login prompt during checking, and exact edit return. Save handler pinned below.
- 'app/dating/1on1/page.tsx': '521f1b432f59058a87b68653c133615f0694e787d6de46f7e3e40d3e2705f460',
+ // Explicit confirmation and bounded, resumable photo uploads are covered by
+ // check-dating-1on1-photo-recovery-browser; save/analytics pinned below.
+ 'app/dating/1on1/page.tsx': 'beca4fecf969f8a9052b4b10ad2e32e9c2b3c2481f5b1bfd89ce28f4b466d9fa',
  // Bounded raw/lite/blur upload and error text; save-after-all-upload contract
  // and unchanged-photo preservation exercised by check-dating-trust-ux-browser.cjs.
  'app/community/dating/cards/new/page.tsx': '578f51961a523fcc40bb18e4a48e01be7a0f733c3b253611a1a5695c19e40530',
@@ -130,10 +130,10 @@ test('reviewed registration guards preserve post-success analytics; redirects/pa
  assert.ok(!/fetch\(|setInterval|auth\.getUser|auth\.getSession/.test(read('components/GrowthPrompts.tsx')));
 });
 
-test('profile login recovery leaves the complete save/upload/edit/analytics handler byte-identical', () => {
+test('reviewed save/upload/edit/analytics handler stays pinned', () => {
  const source = read('app/dating/1on1/page.tsx');
  const start = source.indexOf('  const handleSubmit =');
  const end = source.indexOf('\n  const returnTo =', start);
  assert.ok(start > 0 && end > start);
- assert.equal(hash(source.slice(start, end)), '273663b9b1775674f46c8ace6fb01b3d0fe5cbd00551313dc63ac5d8c292da84');
+ assert.equal(hash(source.slice(start, end)), '8f35869bf6929b0ec2581c4f2859e0036fdd8d8b9791beccc04ffe345a395c01');
 });

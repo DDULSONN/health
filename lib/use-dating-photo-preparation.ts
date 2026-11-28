@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { prepareDatingPhoto } from "@/lib/dating-photo-preparation";
+import { prepareDatingPhoto, type DatingPhotoPreparationOptions } from "@/lib/dating-photo-preparation";
 
-export function useDatingPhotoPreparation(maxBytes: number) {
+export function useDatingPhotoPreparation(maxBytes: number, options: DatingPhotoPreparationOptions = {}) {
   const active = useRef(new Map<number, AbortController>());
   const mounted = useRef(true);
   const [pending, setPending] = useState<number[]>([]);
@@ -35,7 +35,7 @@ export function useDatingPhotoPreparation(maxBytes: number) {
     setErrors(current => current.map((error, index) => index === slot ? "" : error));
     const isCurrent = () => mounted.current && active.current.get(slot) === controller;
     try {
-      const prepared = await prepareDatingPhoto(file, maxBytes, controller.signal);
+      const prepared = await prepareDatingPhoto(file, maxBytes, controller.signal, options);
       if (isCurrent()) commit(prepared);
     } catch (error) {
       if (isCurrent() && !controller.signal.aborted) {

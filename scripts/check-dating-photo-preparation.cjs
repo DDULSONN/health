@@ -38,6 +38,34 @@ for (const type of ['jpeg', 'png', 'webp']) test(type + ' is returned unchanged 
   const f = fixture(), file = new File(['image'], 'photo.' + type, { type: 'image/' + type });
   assert.equal(await f.prepareDatingPhoto(file, limit), file); assert.equal(f.images.length, 0);
 });
+test('standalone picker opens the file before input reset, then uses detached bytes', async () => {
+  const f = fixture(), file = new File(['image'], 'phone.JPG', { type: 'image/jpeg', lastModified: 123 });
+  const read = file.arrayBuffer.bind(file);
+  let pickerCleared = false, reads = 0;
+  file.arrayBuffer = () => { assert.ok(!pickerCleared); reads++; return read(); };
+  const task = f.prepareDatingPhoto(file, limit, undefined, { snapshotPickedFile: true });
+  pickerCleared = true;
+  const copy = await task;
+  assert.notEqual(copy, file); assert.equal(await copy.text(), 'image'); assert.equal(reads, 1);
+  assert.deepEqual([copy.name, copy.type, copy.lastModified], [file.name, file.type, file.lastModified]);
+  assert.equal(f.images.length, 0); assert.equal(f.timers.size, 0);
+});
+for (const result of ['unreadable', 'short', 'timeout', 'canceled']) test('picker snapshot fails safely without decoding: ' + result, async () => {
+  const f = fixture(), file = new File(['example'], 'phone.JPG', { type: 'image/jpeg' });
+  const signal = new AbortController();
+  file.arrayBuffer = () => result === 'unreadable' ? Promise.reject(new Error('private picker path'))
+    : result === 'short' ? Promise.resolve(new ArrayBuffer(1)) : new Promise(() => {});
+  const task = f.prepareDatingPhoto(file, limit, signal.signal, { snapshotPickedFile: true });
+  if (result === 'timeout') f.expire();
+  if (result === 'canceled') signal.abort();
+  await assert.rejects(task, e => result === 'canceled' ? e.name === 'AbortError' : /사진 앱/.test(e.message) && !e.message.includes('private'));
+  assert.equal(f.images.length, 0); assert.equal(f.timers.size, 0);
+});
+test('snapshot does not bypass large-photo encoding or transport size limit', async () => {
+  const f = fixture(), file = new File([new Uint8Array(4 * 1024 * 1024)], 'phone.JPG', { type: 'image/jpeg' });
+  const result = await f.prepareDatingPhoto(file, limit, undefined, { snapshotPickedFile: true });
+  assert.ok(result.size <= f.DATING_PHOTO_UPLOAD_MAX_BYTES); assert.equal(f.images.length, 1); assert.equal(f.timers.size, 0);
+});
 test('HEIC detection handles uppercase, empty MIME and HEIF MIME', () => {
   const f = fixture();
   assert.ok(f.isHeicPhoto(new File(['x'], 'PHOTO.HEIF')));

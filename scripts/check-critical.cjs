@@ -163,6 +163,7 @@ const browserFiles = [
   'check-onboarding-entry-browser.cjs',
   'check-dating-photo-browser.cjs',
   'check-dating-photo-upload-browser.cjs',
+  'check-dating-1on1-photo-recovery-browser.cjs',
   'check-dating-trust-ux-browser.cjs',
   'check-recommendation-refresh-browser.cjs',
   'check-winter-candidates-browser.cjs',

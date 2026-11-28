@@ -6,8 +6,11 @@ export const PHOTO_PREPARATION_HELP = "사진을 처리하지 못했어요. 다�
 export const DATING_PHOTO_ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp,.heic,.heif";
 export const HEIC_HELP = "HEIC는 지원되는 브라우저에서 JPG로 자동 변환돼요. 변환이 안 되면 사진을 캡처하거나 JPG로 선택해 주세요.";
 export const PHOTO_PROCESSING_MESSAGE = "사진을 처리 중이에요. 잠시만 기다려 주세요.";
+const PHOTO_PICKER_READ_HELP = "선택한 사진을 읽지 못했어요. 사진 앱에 저장한 뒤 다시 선택하거나 캡처해서 올려 주세요.";
 const TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
+
+export type DatingPhotoPreparationOptions = { snapshotPickedFile?: boolean };
 
 export function isHeicPhoto(file: File) {
   return /^image\/hei[cf](?:-sequence)?$/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
@@ -22,9 +25,38 @@ export function datingPhotoError(file: File, maxBytes: number, allowHeic = false
   return "";
 }
 
-export async function prepareDatingPhoto(file: File, maxBytes: number, signal?: AbortSignal): Promise<File> {
+async function snapshotPickedPhoto(file: File, signal?: AbortSignal): Promise<File> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let abort = () => {};
+  const interrupted = new Promise<never>((_, reject) => {
+    abort = () => reject(new DOMException("Cancelled", "AbortError"));
+    signal?.addEventListener("abort", abort, { once: true });
+    timer = setTimeout(() => reject(new Error(PHOTO_PICKER_READ_HELP)), 8_000);
+  });
+
+  try {
+    // Start the read in the picker change event, before callers clear the
+    // input and before an iCloud/webview may release its temporary handle.
+    const bytes = await Promise.race([file.arrayBuffer(), interrupted]);
+    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+    if (bytes.byteLength !== file.size) throw new Error(PHOTO_PICKER_READ_HELP);
+    return new File([bytes], file.name, { type: file.type, lastModified: file.lastModified });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new Error(PHOTO_PICKER_READ_HELP);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
+  }
+}
+
+export async function prepareDatingPhoto(
+  file: File, maxBytes: number, signal?: AbortSignal, { snapshotPickedFile = false }: DatingPhotoPreparationOptions = {},
+): Promise<File> {
   const error = datingPhotoError(file, maxBytes, true);
   if (error) throw new Error(error);
+  if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+  if (snapshotPickedFile) file = await snapshotPickedPhoto(file, signal);
   if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
   const heic = isHeicPhoto(file);
   if (!heic && TYPES.has(file.type.toLowerCase()) && file.size <= DATING_PHOTO_UPLOAD_MAX_BYTES) return file;

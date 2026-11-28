@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { recordGrowthProfileCreated } from "@/lib/growth-analytics";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
+import { DatingPhotoUploadError, uploadDatingPhoto } from "@/lib/dating-photo-upload";
+import { fetchClientJson } from "@/lib/client-json-request";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
 import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
 import { getDatingBirthYearErrorMessage, parseDatingBirthYear } from "@/lib/dating-age";
@@ -125,14 +127,6 @@ function getOneOnOnePhotoError(file: File) {
   return "";
 }
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isRetryableStatus(status: number) {
-  return status === 408 || status === 425 || status === 429 || status >= 500;
-}
-
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
@@ -145,37 +139,6 @@ function friendlySubmitError(error: unknown) {
     return "네트워크 연결이 불안정합니다. 잠시 후 다시 시도해주세요.";
   }
   return error instanceof Error ? error.message : String(error);
-}
-
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs: number) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(input, {
-      ...init,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit, timeoutMs: number, retries: number) {
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    try {
-      const res = await fetchWithTimeout(input, init, timeoutMs);
-      if (!isRetryableStatus(res.status) || attempt === retries) return res;
-      lastError = new Error(`Retryable response: ${res.status}`);
-    } catch (error) {
-      lastError = error;
-      if (!isAbortError(error) && !(error instanceof TypeError)) throw error;
-      if (attempt === retries) throw error;
-    }
-    await delay(700 * (attempt + 1));
-  }
-  throw lastError instanceof Error ? lastError : new Error("요청에 실패했습니다.");
 }
 
 function OneOnOnePublicLanding({ checking = false, returnTo = "/dating/1on1" }: { checking?: boolean; returnTo?: string }) {
@@ -279,7 +242,7 @@ function DatingOneOnOnePageContent() {
   const [workoutFrequency, setWorkoutFrequency] = useState("");
   const [photoSlotOne, setPhotoSlotOne] = useState<File | null>(null);
   const [photoSlotTwo, setPhotoSlotTwo] = useState<File | null>(null);
-  const photoPreparation = useDatingPhotoPreparation(PHOTO_MAX_FILE_SIZE);
+  const photoPreparation = useDatingPhotoPreparation(PHOTO_MAX_FILE_SIZE, { snapshotPickedFile: true });
   const [existingPhotoUrls, setExistingPhotoUrls] = useState<string[]>([]);
 
   const [consentFakeInfo, setConsentFakeInfo] = useState(false);
@@ -294,6 +257,8 @@ function DatingOneOnOnePageContent() {
   const [formStep, setFormStep] = useState(1);
   const birthYearInputRef = useRef<HTMLInputElement | null>(null);
   const formTopRef = useRef<HTMLDivElement | null>(null);
+  const activeSubmitRef = useRef<symbol | null>(null);
+  const uploadDraftRef = useRef<{ editId: string; paths: WeakMap<File, string> } | null>(null);
 
   const allConsented = consentFakeInfo && consentNoShow && consentFee && consentPrivacy && consentNoDirectContact;
   const canSubmitForm = isEditMode ? true : Boolean(status?.canWrite);
@@ -386,7 +351,9 @@ function DatingOneOnOnePageContent() {
   };
 
   useEffect(() => {
+    uploadDraftRef.current = null;
     if (isLocalPreview) {
+      uploadDraftRef.current = { editId, paths: new WeakMap() };
       setStatus({
         loggedIn: true,
         isAdmin: false,
@@ -427,6 +394,7 @@ function DatingOneOnOnePageContent() {
         if (!statusBody.loggedIn) throw new Error("로그인 상태를 확인하지 못했어요. 잠시 후 다시 확인해 주세요.");
 
         if (!mounted) return;
+        uploadDraftRef.current = { editId, paths: new WeakMap() };
 
         if (statusBody.isAdmin) {
           const cardsRes = await fetch("/api/dating/1on1/cards", readOptions);
@@ -493,6 +461,7 @@ function DatingOneOnOnePageContent() {
 
     return () => {
       mounted = false;
+      uploadDraftRef.current = null;
       clearTimeout(readTimer);
       controller.abort();
     };
@@ -528,7 +497,9 @@ function DatingOneOnOnePageContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
-    if (submitting) return;
+    if (activeSubmitRef.current) return;
+    // Enter and step navigation are not permission to upload or save the form.
+    if (formStep < FORM_STEPS.length) { handleNextStep(); return; }
     setError("");
     setInfo("");
 
@@ -557,23 +528,27 @@ function DatingOneOnOnePageContent() {
       return;
     }
 
+    const draft = uploadDraftRef.current;
+    if (!draft || draft.editId !== editId) { setError("신청 화면을 다시 확인한 뒤 시도해 주세요."); return; }
+    const submission = Symbol();
+    activeSubmitRef.current = submission;
+    let checkingSave = false;
     setSubmitting(true);
     try {
       const uploadedPaths: string[] = [];
       if (selectedPhotos.length > 0) {
         for (const [index, file] of selectedPhotos.entries()) {
+          const uploaded = draft.paths.get(file);
+          if (uploaded) { uploadedPaths.push(uploaded); continue; }
           setInfo(`사진 ${index + 1} 업로드 중...`);
           const fd = new FormData();
           fd.append("file", file);
-          const uploadRes = await fetchWithRetry("/api/dating/1on1/upload", {
-            method: "POST",
-            body: fd,
-          }, 60000, 1);
-          const uploadBody = (await uploadRes.json().catch(() => ({}))) as { path?: string; error?: string };
-          if (!uploadRes.ok || !uploadBody.path) {
-            throw new Error(`사진 ${index + 1}: ${uploadBody.error ?? "사진 업로드에 실패했습니다. 캡처해서 다시 올려주세요."}`);
-          }
-          uploadedPaths.push(uploadBody.path);
+          const path = await uploadDatingPhoto("/api/dating/1on1/upload", fd, "one_on_one", { retryTransient: true }).catch((error: unknown) => {
+            throw new Error(`사진 ${index + 1}: ${error instanceof DatingPhotoUploadError ? error.message : "사진 업로드가 끝나지 않았어요. 다시 시도해 주세요."}`);
+          });
+          if (uploadDraftRef.current !== draft) return;
+          draft.paths.set(file, path);
+          uploadedPaths.push(path);
         }
       }
 
@@ -597,15 +572,21 @@ function DatingOneOnOnePageContent() {
         consent_no_direct_contact: consentNoDirectContact,
       };
 
+      if (uploadDraftRef.current !== draft) return;
       setInfo(isEditMode ? "신청서 수정 중..." : "신청서 등록 중...");
-      const res = await fetchWithTimeout(isEditMode ? "/api/dating/1on1/my" : "/api/dating/1on1/cards", {
+      checkingSave = true;
+      const { response: res, body } = await fetchClientJson<{ id?: string; ok?: boolean; error?: string }>(isEditMode ? "/api/dating/1on1/my" : "/api/dating/1on1/cards", {
         method: isEditMode ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(isEditMode ? { id: editId, ...payload } : payload),
       }, 60000);
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (uploadDraftRef.current !== draft) return;
+      if (res.ok && (typeof body?.id !== "string" || !body.id.trim() || (isEditMode && (body.ok !== true || body.id !== editId)))) {
+        throw new Error("save_confirmation_missing");
+      }
+      checkingSave = false;
       if (!res.ok) {
-        const message = body.error ?? "신청 저장에 실패했습니다.";
+        const message = typeof body?.error === "string" ? body.error : "신청 저장에 실패했습니다.";
         if (message.includes("출생연도")) {
           setFormStep(2);
           setError(message);
@@ -617,6 +598,7 @@ function DatingOneOnOnePageContent() {
       }
 
       if (!isEditMode) recordGrowthProfileCreated("one_on_one");
+      draft.paths = new WeakMap();
       setInfo(
         isEditMode
           ? editingArchivedProfile
@@ -654,10 +636,17 @@ function DatingOneOnOnePageContent() {
         router.replace("/mypage");
       }
     } catch (e) {
-      setInfo("");
-      setError(friendlySubmitError(e));
+      if (uploadDraftRef.current === draft) {
+        setInfo("");
+        setError(checkingSave
+          ? "신청 저장 결과를 확인하지 못했어요. 다시 저장하기 전에 마이페이지에서 반영 여부를 먼저 확인해 주세요."
+          : friendlySubmitError(e));
+      }
     } finally {
-      setSubmitting(false);
+      if (activeSubmitRef.current === submission) {
+        activeSubmitRef.current = null;
+        setSubmitting(false);
+      }
     }
   };
 
@@ -984,11 +973,11 @@ function DatingOneOnOnePageContent() {
               </button>
             )}
             {formStep < 5 ? (
-              <button type="button" disabled={photoPreparation.busy} onClick={handleNextStep} className="h-14 flex-1 rounded-full bg-neutral-950 px-5 text-base font-black text-white disabled:opacity-50">
+              <button key="next-step" type="button" disabled={photoPreparation.busy} onClick={(event) => { event.preventDefault(); handleNextStep(); }} className="h-14 flex-1 rounded-full bg-neutral-950 px-5 text-base font-black text-white disabled:opacity-50">
                 다음
               </button>
             ) : (
-              <button type="submit" disabled={!allConsented || !canSubmitForm || submitting || photoPreparation.busy} className="h-14 flex-1 rounded-full bg-rose-500 px-4 text-base font-black text-white shadow-lg shadow-rose-200 disabled:cursor-not-allowed disabled:opacity-50">
+              <button key="save-step" type="submit" disabled={!allConsented || !canSubmitForm || submitting || photoPreparation.busy} className="h-14 flex-1 rounded-full bg-rose-500 px-4 text-base font-black text-white shadow-lg shadow-rose-200 disabled:cursor-not-allowed disabled:opacity-50">
                 {submitting ? "처리 중..." : isEditMode ? "수정 저장" : "신청서 제출"}
               </button>
             )}

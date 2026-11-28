@@ -8,9 +8,10 @@ function load(file,deps={},globals={}){
   new Function('require','exports',...Object.keys(globals),js)(name=>{if(name in deps)return deps[name];if(name.startsWith('@/'))return load(name.slice(2)+'.ts',deps,globals);throw Error('Unexpected dependency '+name);},exports,...Object.values(globals));return exports;
 }
 function transport(response){
-  let calls=0,expire;const timers=new Set();
-  const api=load('lib/dating-photo-upload.ts',{}, {fetch:async(_u,options)=>{calls++;return typeof response==='function'?response(options):response;},setTimeout:fn=>{expire=fn;timers.add(1);return 1;},clearTimeout:id=>timers.delete(id)});
-  return {...api,run:()=>api.uploadDatingPhoto('/api/dating/1on1/upload',new FormData(),'one_on_one'),calls:()=>calls,timers,expire:()=>expire()};
+  let calls=0,timerId=0;const timers=new Map();
+  const api=load('lib/dating-photo-upload.ts',{}, {fetch:async(_u,options)=>{calls++;return typeof response==='function'?response(options,calls):response;},setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timers.delete(id)});
+  const trigger=ms=>[...timers.values()].find(timer=>timer.ms===ms)?.fn();
+  return {...api,run:(options)=>api.uploadDatingPhoto('/api/dating/1on1/upload',new FormData(),'one_on_one',options),calls:()=>calls,timers,expire:()=>trigger(45000),retry:()=>trigger(350)};
 }
 test('valid upload path accepted without automatic retries; timer removed',async()=>{const f=transport(new Response(JSON.stringify({path:'cards/me/photo.webp'})));assert.equal(await f.run(),'cards/me/photo.webp');assert.equal(f.calls(),1);assert.equal(f.timers.size,0);});
 for(const [status,reason] of [[400,'rejected'],[401,'auth'],[403,'auth'],[413,'too_large'],[429,'rate_limited'],[500,'server'],[503,'server']])test('HTTP '+status+' gets privacy-safe actionable error and fixed reason',async()=>{
@@ -23,6 +24,41 @@ test('network failure preserves fixed diagnostic',async()=>{const f=transport(()
 for(const bodyStage of [false,true])test('timeout covers headers AND response body '+bodyStage,async()=>{
   const f=transport(({signal})=>{const pending=new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError'))));return bodyStage?{ok:true,json:()=>pending}:pending;});
   const promise=f.run();await Promise.resolve();f.expire();await assert.rejects(promise,e=>e.diagnostic.reason==='timeout');assert.equal(f.timers.size,0);
+});
+for (const bodyStage of [false,true]) test('deadline releases the uploader even when fetch/JSON ignores abort '+bodyStage,async()=>{
+  let signal, bodyWasRead=false;
+  const f=transport(options=>{signal=options.signal;const hung=new Promise(()=>{});return bodyStage?{ok:true,json:()=>{bodyWasRead=true;return hung;}}:hung;});
+  const task=f.run({retryTransient:true});await Promise.resolve();
+  assert.equal(bodyWasRead,bodyStage);f.expire();
+  await assert.rejects(task,e=>e.diagnostic.reason==='timeout');
+  assert.equal(signal.aborted,true);assert.equal(f.calls(),1);assert.equal(f.timers.size,0);
+});
+for (const first of ['network',503]) test('standalone opt-in can recover one interrupted upload: '+first,async()=>{
+  const f=transport((_options,calls)=>{if(calls>1)return new Response('{"path":"cards/me/photo.webp"}');
+    if(first==='network')throw new TypeError('private transport error');return new Response('not JSON',{status:first});});
+  const task=f.run({retryTransient:true});await Promise.resolve();f.retry();
+  assert.equal(await task,'cards/me/photo.webp');assert.equal(f.calls(),2);assert.equal(f.timers.size,0);
+});
+for (const [status,reason] of [[401,'auth'],[413,'too_large'],[429,'rate_limited']]) test('opt-in does not retry HTTP '+status,async()=>{
+  const f=transport(new Response('not JSON',{status}));
+  await assert.rejects(f.run({retryTransient:true}),e=>e.diagnostic.reason===reason);
+  assert.equal(f.calls(),1);assert.equal(f.timers.size,0);
+});
+test('an unreadable success body never triggers another POST',async()=>{
+  const f=transport(new Response('not JSON',{status:200}));
+  await assert.rejects(f.run({retryTransient:true}),e=>e.diagnostic.reason==='invalid_response');
+  assert.equal(f.calls(),1);assert.equal(f.timers.size,0);
+});
+test('the original budget cancels a pending retry without issuing a second POST',async()=>{
+  const f=transport(new Response('unavailable',{status:503}));
+  const task=f.run({retryTransient:true});await Promise.resolve();f.expire();
+  await assert.rejects(task,e=>e.diagnostic.reason==='timeout');assert.equal(f.calls(),1);assert.equal(f.timers.size,0);
+});
+test('a failed retry still makes at most two upload requests and never reads provider errors',async()=>{
+  const f=transport(()=>new Response('private provider diagnostics',{status:503}));
+  const task=f.run({retryTransient:true});await Promise.resolve();f.retry();
+  await assert.rejects(task,e=>e.diagnostic.reason==='server'&&!e.message.includes('private'));
+  assert.equal(f.calls(),2);assert.equal(f.timers.size,0);
 });
 function server(options={}){
   const writes=[],kv=[],logs=[],mirrorChecks=[];
