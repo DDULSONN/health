@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import AdminSupportAttention from "@/components/admin/AdminSupportAttention";
 import dynamic from "next/dynamic";
 import type { PayerContactChoice } from "@/lib/dating-private-contact";
 import OneOnOneExchangedContact from "@/components/dating/OneOnOneExchangedContact";
@@ -4292,7 +4293,7 @@ export default function MyPage() {
       setSupportPanelOpen(true);
       setSupportSubject("");
       setSupportMessage("");
-      setSupportInfo("문의가 접수되었습니다. 운영자가 확인 후 답변드릴게요.");
+      setSupportInfo("문의가 접수되었습니다. 단순 이용방법은 자동으로 안내하며, 확인이 필요한 내용은 운영자가 답변드립니다. 내 문의 이력에서 확인해 주세요.");
     } catch (e) {
       setSupportError(e instanceof Error ? e.message : "문의 접수에 실패했습니다.");
     } finally {
@@ -10004,7 +10005,7 @@ export default function MyPage() {
                       <p className="mt-3 whitespace-pre-wrap break-words text-sm text-neutral-700">{item.message}</p>
                       {item.admin_reply && (
                         <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                          <p className="text-xs font-semibold text-emerald-800">운영자 답변</p>
+                          <p className="text-xs font-semibold text-emerald-800">{item.admin_reply.startsWith("[자동 안내]") ? "자동 안내" : "운영자 답변"}</p>
                           <p className="mt-1 whitespace-pre-wrap break-words text-sm text-emerald-900">{item.admin_reply}</p>
                           {item.answered_at && (
                             <p className="mt-2 text-[11px] text-emerald-700">
@@ -11636,6 +11637,7 @@ export default function MyPage() {
 
       {showAdminSection && (
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
+          <AdminSupportAttention />
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-violet-900">
               {adminManageTab === "dating_stats"

@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { scheduleSupportReply } from "@/lib/support-auto-reply";
+import { after, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
@@ -94,6 +95,7 @@ export async function POST(req: Request) {
       return json(500, { ok: false, requestId, error: "문의 접수에 실패했습니다." });
     }
 
+    scheduleSupportReply(insertRes.data.id, after);
     return json(200, { ok: true, requestId, item: insertRes.data });
   } catch (error) {
     console.error("[POST /api/mypage/support] unhandled", error);

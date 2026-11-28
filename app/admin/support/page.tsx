@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import type { SupportTriage } from "@/lib/support-triage";
 
 type AdminSupportItem = {
   id: string;
@@ -17,6 +18,7 @@ type AdminSupportItem = {
   admin_reply: string | null;
   created_at: string;
   answered_at: string | null;
+  triage: SupportTriage & { automatic: boolean; needs_attention: boolean };
 };
 
 const STATUS_LABELS: Record<AdminSupportItem["status"], string> = {
@@ -33,25 +35,32 @@ export default function AdminSupportPage() {
   const [statusFilter, setStatusFilter] = useState<"" | AdminSupportItem["status"]>("");
   const [savingIds, setSavingIds] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [view, setView] = useState("important");
+  const [offset, setOffset] = useState(0);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
 
+  const requestVersion = useRef(0);
   const loadItems = useCallback(async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
     setError("");
     try {
-      const qs = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : "";
+      const qs = `?view=${view}&offset=${offset}&status=${encodeURIComponent(statusFilter)}`;
       const res = await fetch(`/api/admin/support${qs}`, { cache: "no-store" });
-      const body = (await res.json().catch(() => ({}))) as { items?: AdminSupportItem[]; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { items?: AdminSupportItem[]; error?: string; nextOffset?: number | null };
       if (!res.ok) {
         throw new Error(body.error ?? "문의 목록을 불러오지 못했습니다.");
       }
+      if (version !== requestVersion.current) return;
       setItems(Array.isArray(body.items) ? body.items : []);
+      setNextOffset(body.nextOffset ?? null);
       setDrafts(Object.fromEntries((body.items ?? []).map((item) => [item.id, item.admin_reply ?? ""])));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "문의 목록을 불러오지 못했습니다.");
+      if (version === requestVersion.current) setError(e instanceof Error ? e.message : "문의 목록을 불러오지 못했습니다.");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, view, offset]);
 
   useEffect(() => {
     let mounted = true;
@@ -68,6 +77,7 @@ export default function AdminSupportPage() {
     })();
     return () => {
       mounted = false;
+      requestVersion.current++;
     };
   }, [loadItems, supabase]);
 
@@ -82,6 +92,8 @@ export default function AdminSupportPage() {
           id: item.id,
           status,
           admin_reply: drafts[item.id] ?? "",
+          expected_status: item.status,
+          expected_reply: item.admin_reply,
         }),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -102,7 +114,7 @@ export default function AdminSupportPage() {
         <div>
           <p className="text-sm font-semibold text-neutral-900">고객 문의 관리</p>
           <p className="mt-1 text-xs text-neutral-500">
-            결제, 소개팅, 신고/악용 관련 문의를 여기서 답변하고 종결할 수 있습니다.
+            단순 이용방법은 자동 안내합니다. 결제·환불·신고·계정 문제와 확인이 필요한 문의를 먼저 보여드립니다.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -114,7 +126,9 @@ export default function AdminSupportPage() {
           </Link>
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as "" | AdminSupportItem["status"])}
+            aria-label="문의 상태"
+            onChange={(e) => { setOffset(0); setStatusFilter(e.target.value as "" | AdminSupportItem["status"]); }}
+            disabled={view === "important" || view === "pending"}
             className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs text-neutral-700"
           >
             <option value="">전체 상태</option>
@@ -124,6 +138,15 @@ export default function AdminSupportPage() {
           </select>
         </div>
       </div>
+
+      <nav aria-label="문의 분류" className="mb-4 flex flex-wrap gap-2">
+        {[["important", "중요 · 관리자 확인"], ["pending", "자동 안내 대기"], ["auto", "자동답변 완료"], ["all", "전체 문의"]].map(([key, label]) => (
+          <button key={key} type="button" aria-pressed={view === key} onClick={() => { setView(key); setOffset(0); setStatusFilter(""); }}
+            className={`rounded-lg border px-3 py-2 text-sm ${view === key ? "bg-neutral-900 text-white" : "bg-white text-neutral-700"}`}>{label}</button>
+        ))}
+        <button type="button" onClick={() => void loadItems()} className="rounded-lg border px-3 py-2 text-sm">새로고침</button>
+      </nav>
+      <p className="mb-4 text-xs text-neutral-500">문의 원문과 접수는 항상 보존됩니다. 자동 안내가 5분 이상 대기하면 관리자 확인 목록에 나타납니다. 새로고침은 작성 중인 답변을 다시 불러옵니다.</p>
 
       {error && <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
@@ -154,6 +177,14 @@ export default function AdminSupportPage() {
                 </div>
 
                 <p className="mt-3 whitespace-pre-wrap break-words text-sm text-neutral-700">{item.message}</p>
+
+                <div className={`mt-3 rounded-lg p-3 text-sm ${item.triage.needs_attention ? "bg-amber-50 text-amber-900" : "bg-sky-50 text-sky-900"}`}>
+                  <p className="font-semibold">{item.triage.automatic ? "자동 안내 완료" : item.triage.needs_attention ? "관리자 확인 필요" : "문의 분류"}</p>
+                  <p className="mt-1 break-words">요약: {item.triage.summary}</p>
+                  <p className="mt-1">{item.triage.reason}</p>
+                  {!item.admin_reply && <button type="button" className="mt-2 underline" onClick={() => setDrafts(prev => ({ ...prev, [item.id]: item.triage.draft }))}>답변 초안 가져오기</button>}
+                  {item.user_id && <p className="mt-2 break-all text-xs">회원 ID: {item.user_id}</p>}
+                </div>
 
                 <textarea
                   value={drafts[item.id] ?? ""}
@@ -194,6 +225,10 @@ export default function AdminSupportPage() {
           })}
         </div>
       )}
+      <div className="mt-4 flex gap-2">
+        {offset > 0 && <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => setOffset(0)}>처음으로</button>}
+        {nextOffset !== null && <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => setOffset(nextOffset)}>이전 문의 더 보기</button>}
+      </div>
     </main>
   );
 }

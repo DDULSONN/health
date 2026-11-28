@@ -60,6 +60,10 @@
     {
       "path": "/api/cron/public-reactions",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/support-auto-reply",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
