@@ -34,7 +34,12 @@ test('paid detail and application never send back navigation to purchase registr
 test('login copy changes no authentication actions and completion links remain application-specific', () => {
   assert.match(read('app/login/page.tsx'), /로그인하고 프로필과 매칭을 확인하세요/);
   for (const [file, anchor] of [['app/dating/paid/[id]/apply/page.tsx', 'paid-card-applied'], ['app/community/dating/cards/[id]/apply/page.tsx', 'open-card-applied']]) {
-    const source = read(file); assert.ok(source.includes('historyHref="/mypage?section=matching&match=applied#' + anchor + '"'));
+    const source = read(file), href = '"/mypage?section=matching&match=applied#' + anchor + '"';
+    if (anchor === 'open-card-applied') {
+      assert.ok(source.includes('const APPLY_HISTORY_HREF = ' + href));
+      assert.match(source, /historyHref=\{APPLY_HISTORY_HREF\}/);
+      assert.match(source, /href=\{APPLY_HISTORY_HREF\}/);
+    } else assert.ok(source.includes('historyHref=' + href));
     assert.match(source, /setCompleted\(true\)/); assert.match(source, /completed \|\|/);
   }
   assert.match(read('components/dating/ApplicationCompleteNotice.tsx'), /heading.current\?\.focus\(\)/);
@@ -69,12 +74,13 @@ test('simultaneous checkout makes one request and valid response keeps checkout 
 });
 function openSubmit(response) {
   const state = {}, writes = [];
-  const context = { completed: false, submitting: false, creditCheckoutInFlightRef: { current: false }, photoPreparation: { isProcessing: () => false },
+  const context = { completed: false, submitInFlightRef: { current: false }, creditCheckoutInFlightRef: { current: false }, photoPreparation: { isProcessing: () => false },
     normalizeInstagramId: v => v, validInstagramId: () => true, instagramId: 'fixture', consent: true, photos: [], reuseLastPhotos: true,
     lastApplication: { photo_paths: ['own/one', 'own/two'] }, uploadedPathsRef: { current: [] }, id: 'fixture-card', age: '30', heightCm: '175', region: '서울', job: '회사원', trainingYears: '2', introText: '기존 지원 글',
     JSON, Number, setError: v => { state.error = v; }, setErrorCode() {}, setProfileEditUrl() {}, setSubmitting: v => { state.busy = v; }, setCompleted: v => { state.completed = v; },
     clearApplyCheckoutDraft: () => { state.cleared = true; }, window: { sessionStorage: {} }, viewerIdRef: { current: 'fixture' },
-    fetch: async (url, options) => { writes.push({ url, options }); return { ok: true, json: async () => response }; } };
+    APPLY_OUTCOME_UNKNOWN: '내 지원 내역을 먼저 확인해 주세요.', setShowApplyHistory: v => { state.history = v; },
+    fetchClientJson: async (url, options) => { writes.push({ url, options }); return { response: { ok: true, status: 200 }, body: response }; } };
   return { state, writes, run: handler('app/community/dating/cards/[id]/apply/page.tsx', 'handleSubmit', context) };
 }
 for (const body of [null, {}, { ok: false }, { ok: 'true' }, { ok: true }]) test('open application only explicit success clears draft: ' + JSON.stringify(body), async () => {
@@ -82,5 +88,6 @@ for (const body of [null, {}, { ok: false }, { ok: 'true' }, { ok: true }]) test
   assert.equal(f.writes.length, 1); assert.equal(f.writes[0].url, '/api/dating/cards/apply');
   assert.deepEqual(JSON.parse(f.writes[0].options.body).photo_paths, ['own/one', 'own/two']);
   assert.equal(Boolean(f.state.completed), body?.ok === true); assert.equal(Boolean(f.state.cleared), body?.ok === true);
+  assert.equal(Boolean(f.state.history), body?.ok !== true); assert.equal(f.state.busy, false);
   if (body?.ok !== true) assert.match(f.state.error, /내 지원/);
 });
