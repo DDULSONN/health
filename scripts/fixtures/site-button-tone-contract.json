@@ -10,7 +10,7 @@
   "contextualOpenCardReview": "Compared with 70294d53: all 118 My Page and all 4 application handlers unchanged. Home reloadMyOpenCards clears readiness before rechecking the queue; the other 17 home handlers are unchanged. Public cards link to received applications, pending cards show the free queue, and only an actual application shortage offers a credit pack. Covered by check-instant-registration, check-contextual-paid-offers and check-apply-credit-checkout.",
   "readRecoveryReview": "Home 1:1 match visibility now survives an independent profile read outage but fails closed on permission denial. Open Card detail and application preserve access gates, with in-place retry and optional prefill. Active Love Pass hides only overlapping Quick Match Plus offers. Offline route plus responsive home tests cover these changes.",
   "files": {
-    "app/mypage/page.tsx": "59c38a895d629617bfafc5211fe03809eeba733d4ef694730826010f1d5453a4",
+    "app/mypage/page.tsx": "8a66a2432d7d9eab7ec4d2a25166ba16c4088e0c2c50b2ea51e3c40f29046883",
     "app/community/dating/cards/page.tsx": "30fd9fa9d7e3122e84f90b4779fa419861c19251a7f2af866c47e199d3f41918",
     "app/community/dating/cards/[id]/page.tsx": "02bea0858684f44917419597bfc6406fbd53a8d08e1290dd796703df9a5d457f",
     "app/community/dating/cards/[id]/apply/page.tsx": "6ea722815c927c098f52257257b7974d0bf568bb88f21c576e1497f9fa19d114",

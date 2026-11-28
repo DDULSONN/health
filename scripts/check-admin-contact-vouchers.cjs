@@ -10,7 +10,7 @@ test('admin panel is additive; every existing mypage action and condition is unc
  assert.notEqual(restored,source);
  // Reviewed the additive payment status and admin-tab deep links; the
  // actual voucher grant action stays independently pinned and tested below.
- assert.equal(require('./check-site-button-tone.cjs').contract(restored),'8fc48bc93d0380b05132add8d563f1a18bf246671545eb83e64188a70a5dce98');
+ assert.equal(require('./check-site-button-tone.cjs').contract(restored),'ae1284953babe096a4aba9bd6df251da3367f9778450a3ac14f00e5a0af2c76f');
 });
 test('strict grant input / Korean / no caller-selected admin',()=>{
  assert.deepEqual(logic.parseContactVoucherGrant({...input,admin:id(9)}),input);

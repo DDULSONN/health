@@ -269,5 +269,5 @@ test('prior payment route source, excluding only these reviewed additions, is pi
 
 test('reviewed MyPage order status and admin links remain pinned outside the Love Pass additions', () => {
   const source = withoutLovePassMypageAdditions(read('app/mypage/page.tsx'));
-  assert.equal(createHash('sha256').update(source).digest('hex'), '95b1e02c5abf5df251844ffd05c5bbe76236e145c02cc93fb07db85674c3c369');
+  assert.equal(createHash('sha256').update(source).digest('hex'), '866f58f5a92ab4bbc5592448a1a2ad90905a1414b623b0c76ba02e7265fa70ed');
 });

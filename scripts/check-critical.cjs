@@ -126,6 +126,7 @@ const unitFiles = [
   'check-profiles-authority-write-guard.cjs',
 ];
 const browserFiles = [
+  'check-support-browser.cjs',
   'check-love-pass-journey-browser.cjs',
   'check-love-pass-placement-browser.cjs',
   'check-mobile-navigation-browser.cjs',
