@@ -11,7 +11,7 @@ function transport(response){
   let calls=0,timerId=0;const timers=new Map();
   const api=load('lib/dating-photo-upload.ts',{}, {fetch:async(_u,options)=>{calls++;return typeof response==='function'?response(options,calls):response;},setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timers.delete(id)});
   const trigger=ms=>[...timers.values()].find(timer=>timer.ms===ms)?.fn();
-  return {...api,run:(options)=>api.uploadDatingPhoto('/api/dating/1on1/upload',new FormData(),'one_on_one',options),calls:()=>calls,timers,expire:()=>trigger(45000),retry:()=>trigger(350)};
+  return {...api,run:(options,url='/api/dating/1on1/upload')=>api.uploadDatingPhoto(url,new FormData(),url==='/api/dating/cards/upload'?'open_raw':'one_on_one',options),calls:()=>calls,timers,expire:()=>trigger(45000),retry:()=>trigger(350)};
 }
 test('valid upload path accepted without automatic retries; timer removed',async()=>{const f=transport(new Response(JSON.stringify({path:'cards/me/photo.webp'})));assert.equal(await f.run(),'cards/me/photo.webp');assert.equal(f.calls(),1);assert.equal(f.timers.size,0);});
 for(const [status,reason] of [[400,'rejected'],[401,'auth'],[403,'auth'],[413,'too_large'],[429,'rate_limited'],[500,'server'],[503,'server']])test('HTTP '+status+' gets privacy-safe actionable error and fixed reason',async()=>{
@@ -21,6 +21,11 @@ for(const [status,reason] of [[400,'rejected'],[401,'auth'],[403,'auth'],[413,'t
 });
 for(const body of ['html',JSON.stringify({}),JSON.stringify({path:''}),JSON.stringify({path:123})])test('invalid successful response is not treated as a saved photo: '+body,async()=>{const f=transport(new Response(body));await assert.rejects(f.run(),e=>e.diagnostic.reason==='invalid_response');assert.equal(f.timers.size,0);});
 test('network failure preserves fixed diagnostic',async()=>{const f=transport(()=>{throw TypeError('private URL');});await assert.rejects(f.run(),e=>e.diagnostic.reason==='network'&&!e.message.includes('private'));});
+for (const status of [404,410]) test('OpenCard application upload identifies an unavailable card without retry: '+status,async()=>{
+  const f=transport(new Response('private provider detail',{status}));
+  await assert.rejects(f.run({retryTransient:true},'/api/dating/cards/upload'),e=>e.diagnostic.reason==='rejected'&&e.message==='지금은 이 오픈카드에 지원할 수 없어요.');
+  assert.equal(f.calls(),1);assert.equal(f.timers.size,0);
+});
 for(const bodyStage of [false,true])test('timeout covers headers AND response body '+bodyStage,async()=>{
   const f=transport(({signal})=>{const pending=new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError'))));return bodyStage?{ok:true,json:()=>pending}:pending;});
   const promise=f.run();await Promise.resolve();f.expire();await assert.rejects(promise,e=>e.diagnostic.reason==='timeout');assert.equal(f.timers.size,0);

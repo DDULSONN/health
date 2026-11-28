@@ -11,6 +11,7 @@ const router = { replace: (url: string) => { fixtureWindow().fixtureRedirect = u
 export const useRouter = () => router;
 const params = new URLSearchParams(window.location.search);
 export const useSearchParams = () => params;
+export const useParams = () => ({ id: /^\/community\/dating\/cards\/([^/]+)\/apply\/?$/.exec(window.location.pathname)?.[1] });
 const client = { auth: {
   getUser: async () => {
     const mode = fixtureWindow().fixtureAuthMode;

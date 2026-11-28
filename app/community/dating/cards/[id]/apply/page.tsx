@@ -4,7 +4,8 @@ import Link from "next/link";
 import ApplicationCompleteNotice from "@/components/dating/ApplicationCompleteNotice";
 import CompactPaidOffer from "@/components/dating/CompactPaidOffer";
 import dynamic from "next/dynamic";
-import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
+import { DATING_PHOTO_ACCEPT, DATING_PHOTO_UPLOAD_MAX_BYTES, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
+import { DatingPhotoUploadError, uploadDatingPhoto } from "@/lib/dating-photo-upload";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
 import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -53,6 +54,8 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const HEIC_TYPES = ["image/heic", "image/heif"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
+const APPLY_HISTORY_HREF = "/mypage?section=matching&match=applied#open-card-applied";
+const APPLY_OUTCOME_UNKNOWN = "지원 결과를 확인하지 못했어요. 다시 지원하기 전에 내 지원 내역을 먼저 확인해 주세요.";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
@@ -89,6 +92,8 @@ export default function DatingCardApplyPage() {
   const [card, setCard] = useState<CardDetail | null>(null);
   const viewerIdRef = useRef("");
   const uploadedPathsRef = useRef<string[]>([]);
+  const confirmedUploadsRef = useRef(new WeakMap<File, { cardId: string; slot: number; path: string }>());
+  const submitInFlightRef = useRef(false);
   const creditCheckoutInFlightRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -96,6 +101,7 @@ export default function DatingCardApplyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [error, setError] = useState("");
+  const [showApplyHistory, setShowApplyHistory] = useState(false);
   const [errorCode, setErrorCode] = useState("");
   const [profileEditUrl, setProfileEditUrl] = useState<string | null>(null);
   const [creditRequesting, setCreditRequesting] = useState(false);
@@ -113,7 +119,7 @@ export default function DatingCardApplyPage() {
   const [instagramId, setInstagramId] = useState("");
   const [consent, setConsent] = useState(false);
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
-  const photoPreparation = useDatingPhotoPreparation(MAX_FILE_SIZE);
+  const photoPreparation = useDatingPhotoPreparation(MAX_FILE_SIZE, { snapshotPickedFile: true });
 
   const fillFromLatestApplication = useCallback((item: LatestApplicationPrefill) => {
     uploadedPathsRef.current = item.photo_paths;
@@ -196,6 +202,11 @@ export default function DatingCardApplyPage() {
 
   const handlePhotoChange = (index: number, file: File | null) => {
     uploadedPathsRef.current = [];
+    if (!showApplyHistory) {
+      setError("");
+      setErrorCode("");
+      setProfileEditUrl(null);
+    }
     setPhotos(current => current.map((photo, slot) => slot === index ? file : photo));
     if (file) {
       setReuseLastPhotos(false);
@@ -203,7 +214,7 @@ export default function DatingCardApplyPage() {
   };
 
   const handleUseLatestAgain = () => {
-    if (!lastApplication) return;
+    if (!lastApplication || submitInFlightRef.current || creditCheckoutInFlightRef.current) return;
     editedBeforePrefill.current = true;
     photoPreparation.cancel(0);
     photoPreparation.cancel(1);
@@ -212,10 +223,11 @@ export default function DatingCardApplyPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (completed || submitInFlightRef.current || creditCheckoutInFlightRef.current) return;
     if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
-    if (completed || submitting || creditCheckoutInFlightRef.current) return;
     setError("");
     setErrorCode("");
+    setShowApplyHistory(false);
     setProfileEditUrl(null);
 
     const normalizedInstagramId = normalizeInstagramId(instagramId);
@@ -251,31 +263,36 @@ export default function DatingCardApplyPage() {
         setError("사진은 JPG, PNG, WebP 형식만 업로드할 수 있어요.");
         return;
       }
-      if (photo.size > MAX_FILE_SIZE) {
-        setError("사진은 한 장당 10MB 이하만 업로드할 수 있어요.");
+      if (photo.size > DATING_PHOTO_UPLOAD_MAX_BYTES) {
+        setError("사진을 줄이지 못했어요. 사진을 다시 선택해 주세요.");
         return;
       }
     }
 
+    submitInFlightRef.current = true;
     setSubmitting(true);
+    let applying = false;
+    let uploadingSlot = -1;
 
     try {
       let uploadedPaths: string[] = [];
 
       if (hasNewPhotos) {
         for (let i = 0; i < photos.length; i += 1) {
+          const file = photos[i]!;
+          const saved = confirmedUploadsRef.current.get(file);
+          if (saved?.cardId === id && saved.slot === i) {
+            uploadedPaths.push(saved.path);
+            continue;
+          }
+          uploadingSlot = i;
           const fd = new FormData();
-          fd.append("file", photos[i]!);
+          fd.append("file", file);
           fd.append("cardId", id);
           fd.append("index", String(i));
-          const uploadRes = await fetch("/api/dating/cards/upload", { method: "POST", body: fd });
-          const uploadBody = (await uploadRes.json().catch(() => ({}))) as { path?: string; error?: string };
-          if (!uploadRes.ok || !uploadBody.path) {
-            setError(uploadBody.error ?? "사진 업로드에 실패했습니다.");
-            setSubmitting(false);
-            return;
-          }
-          uploadedPaths.push(uploadBody.path);
+          const path = await uploadDatingPhoto("/api/dating/cards/upload", fd, "open_raw", { retryTransient: true });
+          confirmedUploadsRef.current.set(file, { cardId: id, slot: i, path });
+          uploadedPaths.push(path);
         }
       } else {
         uploadedPaths = lastApplication?.photo_paths ?? [];
@@ -295,12 +312,10 @@ export default function DatingCardApplyPage() {
         consent,
       };
 
-      const res = await fetch("/api/dating/cards/apply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
+      // This POST can consume a support credit. Never automatically replay it,
+      // even if the server committed the application but lost the response.
+      applying = true;
+      const { response: res, body } = await fetchClientJson<{
         ok?: boolean;
         error?: string;
         code?: string;
@@ -308,11 +323,22 @@ export default function DatingCardApplyPage() {
         details?: string;
         requestId?: string;
         profile_edit_url?: string;
-      };
+      }>("/api/dating/cards/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }, 45_000);
+
+      if (res.status >= 500 || (res.ok && body?.ok !== true)) {
+        setError(APPLY_OUTCOME_UNKNOWN);
+        setShowApplyHistory(true);
+        return;
+      }
 
       if (!res.ok) {
-        setErrorCode(body.code ?? "");
-        if (body.profile_edit_url) {
+        setErrorCode(body?.code ?? "");
+        if (body?.code === "DUPLICATE_APPLICATION") setShowApplyHistory(true);
+        if (body?.profile_edit_url) {
           setProfileEditUrl(body.profile_edit_url);
         }
         const mappedByCode: Record<string, string> = {
@@ -322,32 +348,32 @@ export default function DatingCardApplyPage() {
           FORBIDDEN: "이 카드에는 지원할 수 없습니다.",
         };
         const message =
-          (body.code && mappedByCode[body.code]) ??
-          body.error ??
-          body.message ??
-          body.details ??
+          (body?.code ? mappedByCode[body.code] : undefined) ??
+          body?.error ??
+          body?.message ??
+          body?.details ??
           "지원 처리 중 오류가 발생했습니다.";
-        setError(body.requestId ? `${message} (요청 ID: ${body.requestId})` : message);
-        setSubmitting(false);
-        return;
-      }
-
-      if (body?.ok !== true) {
-        setError("지원 결과를 확인하지 못했어요. 마이페이지의 ‘내 지원’을 먼저 확인해 주세요.");
-        setSubmitting(false);
+        setError(body?.requestId ? `${message} (요청 ID: ${body.requestId})` : message);
         return;
       }
       try { clearApplyCheckoutDraft(window.sessionStorage, viewerIdRef.current, id); } catch { /* Storage may be disabled. */ }
       setCompleted(true);
-    } catch {
-      setError("네트워크 오류가 발생했습니다.");
+    } catch (failure) {
+      if (applying) {
+        setError(APPLY_OUTCOME_UNKNOWN);
+        setShowApplyHistory(true);
+      } else {
+        const message = failure instanceof DatingPhotoUploadError ? failure.message : "사진을 올리지 못했어요. 다시 시도해 주세요.";
+        setError(uploadingSlot >= 0 ? `지원 사진 ${uploadingSlot + 1}: ${message}` : message);
+      }
+    } finally {
+      submitInFlightRef.current = false;
+      setSubmitting(false);
     }
-
-    setSubmitting(false);
   };
 
   const handleRequestApplyCredits = async () => {
-    if (creditCheckoutInFlightRef.current || submitting) return;
+    if (creditCheckoutInFlightRef.current || submitInFlightRef.current) return;
     if (photos.some(Boolean) && uploadedPathsRef.current.length !== 2) {
       setError("변경한 사진이 아직 저장되지 않았어요. 아래 지원하기를 눌러 사진과 작성 내용을 확인한 뒤 충전해주세요.");
       return;
@@ -391,7 +417,7 @@ export default function DatingCardApplyPage() {
     }
   };
 
-  if (completed) return <ApplicationCompleteNotice historyHref="/mypage?section=matching&match=applied#open-card-applied" listHref={listHref} />;
+  if (completed) return <ApplicationCompleteNotice historyHref={APPLY_HISTORY_HREF} listHref={listHref} />;
 
   if (loadIssue) return (
     <main className="mx-auto max-w-lg px-4 py-8">
@@ -462,6 +488,7 @@ export default function DatingCardApplyPage() {
               <button
                 type="button"
                 onClick={handleUseLatestAgain}
+                disabled={submitting || creditRequesting}
                 className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
               >
                 {prefillNotice ? "다시 불러오기" : "불러오기"}
@@ -479,12 +506,15 @@ export default function DatingCardApplyPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (submitInFlightRef.current || creditCheckoutInFlightRef.current) return;
                     editedBeforePrefill.current = true;
                     photoPreparation.cancel(0);
                     photoPreparation.cancel(1);
+                    uploadedPathsRef.current = lastApplication.photo_paths;
                     setReuseLastPhotos(true);
                     setPhotos([null, null]);
                   }}
+                  disabled={submitting || creditRequesting}
                   className="mt-2 inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                 >
                   이전 사진 다시 사용
@@ -530,20 +560,22 @@ export default function DatingCardApplyPage() {
         </Field>
 
         <Field label="지원 사진 1" required={!reuseLastPhotos}>
-          <input type="file" accept={DATING_PHOTO_ACCEPT} disabled={submitting} onChange={(e) => {
+          <input id="open-card-apply-photo-1" className="peer sr-only" type="file" accept={DATING_PHOTO_ACCEPT} disabled={submitting || creditRequesting} onChange={(e) => {
             const file = e.target.files?.[0] ?? null;
-            e.currentTarget.value = "";
             void photoPreparation.select(0, file, prepared => handlePhotoChange(0, prepared));
+            e.currentTarget.value = "";
           }} />
+          <label htmlFor="open-card-apply-photo-1" className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-neutral-300 px-3 text-sm peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-disabled:cursor-not-allowed peer-disabled:opacity-50">{photos[0] ? "지원 사진 1 변경" : "지원 사진 1 선택"}</label>
           {photos[0] && <p className="mt-1 break-all text-xs text-neutral-600">선택한 사진: {photos[0].name}</p>}
         </Field>
 
         <Field label="지원 사진 2" required={!reuseLastPhotos}>
-          <input type="file" accept={DATING_PHOTO_ACCEPT} disabled={submitting} onChange={(e) => {
+          <input id="open-card-apply-photo-2" className="peer sr-only" type="file" accept={DATING_PHOTO_ACCEPT} disabled={submitting || creditRequesting} onChange={(e) => {
             const file = e.target.files?.[0] ?? null;
-            e.currentTarget.value = "";
             void photoPreparation.select(1, file, prepared => handlePhotoChange(1, prepared));
+            e.currentTarget.value = "";
           }} />
+          <label htmlFor="open-card-apply-photo-2" className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-neutral-300 px-3 text-sm peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-disabled:cursor-not-allowed peer-disabled:opacity-50">{photos[1] ? "지원 사진 2 변경" : "지원 사진 2 선택"}</label>
           {photos[1] && <p className="mt-1 break-all text-xs text-neutral-600">선택한 사진: {photos[1].name}</p>}
           <PhotoPreparationStatus pending={photoPreparation.pending} errors={photoPreparation.errors} />
           <p className="mt-2 text-xs leading-5 text-neutral-500">{HEIC_HELP}</p>
@@ -558,7 +590,12 @@ export default function DatingCardApplyPage() {
 
         {error && (
           <div className="space-y-2">
-            <p className="text-sm text-red-600">{error}</p>
+            <p role="alert" className="text-sm text-red-600">{error}</p>
+            {showApplyHistory && (
+              <Link href={APPLY_HISTORY_HREF} className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-2">
+                내 지원 내역 확인
+              </Link>
+            )}
             {profileEditUrl && (
               <Link href={profileEditUrl} className="inline-block text-sm text-pink-700 underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
                 닉네임 설정하러 가기

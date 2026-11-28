@@ -164,6 +164,7 @@ const browserFiles = [
   'check-dating-photo-browser.cjs',
   'check-dating-photo-upload-browser.cjs',
   'check-dating-1on1-photo-recovery-browser.cjs',
+  'check-open-card-apply-photo-browser.cjs',
   'check-dating-trust-ux-browser.cjs',
   'check-recommendation-refresh-browser.cjs',
   'check-winter-candidates-browser.cjs',

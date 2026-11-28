@@ -19,7 +19,7 @@ function waitForRetry(signal: AbortSignal) {
 
 // Uploads only. Never retry profile writes/payments, or leave a submit pending indefinitely.
 export async function uploadDatingPhoto(
-  url: "/api/dating/cards/upload-card" | "/api/dating/1on1/upload",
+  url: "/api/dating/cards/upload-card" | "/api/dating/cards/upload" | "/api/dating/1on1/upload",
   form: FormData,
   stage: UploadDiagnostic["stage"],
   { retryTransient = false }: { retryTransient?: boolean } = {},
@@ -52,7 +52,9 @@ export async function uploadDatingPhoto(
     if (!response.ok) {
       const reason = response.status === 413 ? "too_large" : response.status === 401 || response.status === 403 ? "auth"
         : response.status === 429 ? "rate_limited" : response.status >= 500 ? "server" : "rejected";
-      const message = reason === "too_large" ? "사진 용량이 너무 커요. 사진을 다시 선택하면 용량을 줄여 업로드해요."
+      const closedCard = url === "/api/dating/cards/upload" && (response.status === 404 || response.status === 410);
+      const message = closedCard ? "지금은 이 오픈카드에 지원할 수 없어요."
+        : reason === "too_large" ? "사진 용량이 너무 커요. 사진을 다시 선택하면 용량을 줄여 업로드해요."
         : reason === "auth" ? "로그인 상태를 확인한 뒤 다시 시도해 주세요."
         : reason === "rate_limited" ? "잠시 후 다시 시도해 주세요."
         : reason === "rejected" ? "사진을 처리하지 못했어요. 다른 사진이나 캡처한 사진으로 다시 선택해 주세요."
